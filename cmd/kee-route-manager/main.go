@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,6 +22,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
+	"github.com/jarymor-ux/kee-route-manager/internal/instance"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/operation"
 	"github.com/jarymor-ux/kee-route-manager/internal/platform"
@@ -32,7 +33,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/xray"
 )
 
-var version = "1.0.0-rc.1"
+var version = "1.0.0-rc.2"
 var commit = "dev"
 var buildTime = "unknown"
 
@@ -46,8 +47,6 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		err = serve(os.Args[2:])
-	case "ui-proxy":
-		err = serveProxy(os.Args[2:])
 	case "validate":
 		err = validate(os.Args[2:])
 	case "passwd":
@@ -65,7 +64,7 @@ func main() {
 	case "update-apply":
 		err = updateCheck(os.Args[2:], true)
 	case "version", "--version", "-version":
-		fmt.Printf("Kee Route Manager %s (%s, %s, %s/%s)\n", version, commit, buildTime, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("Kee Route Manager Core %s (%s, %s, %s/%s)\n", version, commit, buildTime, runtime.GOOS, runtime.GOARCH)
 		return
 	default:
 		usage()
@@ -76,12 +75,12 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func usage() {
-	fmt.Fprintln(os.Stderr, `Kee Route Manager
+	fmt.Fprintln(os.Stderr, `Kee Route Manager Core
 
 Usage:
   kee-route-manager serve [--config PATH]
-  kee-route-manager ui-proxy [--config PATH]
   kee-route-manager validate [--config PATH]
   kee-route-manager passwd [--config PATH] --username NAME --password-stdin
   kee-route-manager benchmark [--config PATH]
@@ -90,54 +89,66 @@ Usage:
   kee-route-manager restore-xray [--config PATH]
   kee-route-manager update-check [--config PATH]
   kee-route-manager update-apply [--config PATH]
-  kee-route-manager version`)
+  kee-route-manager version
+
+The UI is a separate kee-route-manager-ui process.`)
 }
-func configFlag(args []string, name string) (config.Config, string, error) {
-	f := flag.NewFlagSet(name, flag.ContinueOnError)
-	path := f.String("config", defaultConfigPath(), "config path")
-	if e := f.Parse(args); e != nil {
-		return config.Config{}, "", e
-	}
-	c, e := config.Load(*path)
-	return c, *path, e
-}
+
 func defaultConfigPath() string {
-	if _, e := os.Stat("/opt/etc/ndm"); e == nil {
+	if _, err := os.Stat("/opt/etc/ndm"); err == nil {
 		return "/opt/etc/kee-route-manager/config.yaml"
 	}
 	return "/etc/kee-route-manager/config.yaml"
 }
-func validate(args []string) error {
-	c, p, e := configFlag(args, "validate")
-	if e != nil {
-		return e
+
+func loadConfig(args []string, name string) (config.Config, string, error) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	path := flags.String("config", defaultConfigPath(), "config path")
+	if err := flags.Parse(args); err != nil {
+		return config.Config{}, "", err
 	}
-	b, _ := json.MarshalIndent(c.Sanitized(), "", "  ")
-	fmt.Printf("Configuration is valid: %s\n%s\n", p, b)
+	if flags.NArg() != 0 {
+		return config.Config{}, "", fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	cfg, err := config.Load(*path)
+	return cfg, *path, err
+}
+
+func validate(args []string) error {
+	cfg, path, err := loadConfig(args, "validate")
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg.Sanitized(), "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Configuration is valid: %s\n%s\n", path, data)
 	return nil
 }
+
 func passwd(args []string) error {
-	f := flag.NewFlagSet("passwd", flag.ContinueOnError)
-	path := f.String("config", defaultConfigPath(), "config path")
-	user := f.String("username", "", "username")
-	stdin := f.Bool("password-stdin", false, "read password from stdin")
-	if e := f.Parse(args); e != nil {
-		return e
+	flags := flag.NewFlagSet("passwd", flag.ContinueOnError)
+	path := flags.String("config", defaultConfigPath(), "config path")
+	username := flags.String("username", "", "username")
+	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
+	if err := flags.Parse(args); err != nil {
+		return err
 	}
-	if !*stdin {
+	if !*passwordStdin {
 		return fmt.Errorf("--password-stdin is required")
 	}
-	c, e := config.Load(*path)
-	if e != nil {
-		return e
+	cfg, err := config.Load(*path)
+	if err != nil {
+		return err
 	}
-	r := bufio.NewReader(io.LimitReader(os.Stdin, 2049))
-	password, e := r.ReadString('\n')
-	if e != nil && len(password) == 0 {
-		return e
+	reader := bufio.NewReader(io.LimitReader(os.Stdin, 2049))
+	password, err := reader.ReadString('\n')
+	if err != nil && len(password) == 0 {
+		return err
 	}
 	password = strings.TrimRight(password, "\r\n")
-	return auth.CreateCredentials(c.Web.CredentialsFile, *user, password)
+	return auth.CreateCredentials(cfg.Web.CredentialsFile, *username, password)
 }
 
 type runtimeBundle struct {
@@ -151,238 +162,276 @@ type runtimeBundle struct {
 	updater  *update.Updater
 }
 
-func build(c config.Config) (*runtimeBundle, error) {
-	if e := os.MkdirAll(c.Paths.RunDir, 0700); e != nil {
-		return nil, e
+func build(cfg config.Config) (*runtimeBundle, error) {
+	if err := os.MkdirAll(cfg.Paths.RunDir, 0o700); err != nil {
+		return nil, err
 	}
-	p, r, e := platform.New(c)
-	if e != nil {
-		return nil, e
+	adapter, runner, err := platform.New(cfg)
+	if err != nil {
+		return nil, err
 	}
-	initial := model.NewState(version, c.Xray.SlotTagPrefix, c.Pool.Size)
-	st, e := store.New(c.Paths.StateDir, c.Paths.CacheDir, initial)
-	if e != nil {
-		return nil, e
+	initial := model.NewState(version, cfg.Xray.SlotTagPrefix, cfg.Pool.Size)
+	stateStore, err := store.New(cfg.Paths.StateDir, cfg.Paths.CacheDir, initial)
+	if err != nil {
+		return nil, err
 	}
-	ops, e := operation.New(c.Paths.StateDir)
-	if e != nil {
-		return nil, e
+	operations, err := operation.New(cfg.Paths.StateDir)
+	if err != nil {
+		return nil, err
 	}
-	xm := xray.NewManager(c, r, p)
-	fetch := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
-	be := bench.New(c, xray.NewBatchRunner(c))
-	mgr := core.New(c, version, st, ops, p, xm, fetch, be)
-	up := update.New(c.Update, c.Paths.StateDir, version)
-	return &runtimeBundle{c, p, r, st, ops, xm, mgr, up}, nil
+	xrayManager := xray.NewManager(cfg, runner, adapter)
+	fetcher := subscription.New(cfg.Subscriptions, cfg.Health.ProviderRetryBackoff, cfg.Paths.CacheDir)
+	benchmark := bench.New(cfg, xray.NewBatchRunner(cfg))
+	manager := core.New(cfg, version, stateStore, operations, adapter, xrayManager, fetcher, benchmark)
+	updater := update.New(cfg.Update, cfg.Paths.StateDir, version)
+	return &runtimeBundle{cfg, adapter, runner, stateStore, operations, xrayManager, manager, updater}, nil
 }
+
 func serve(args []string) error {
-	c, _, e := configFlag(args, "serve")
-	if e != nil {
-		return e
+	cfg, _, err := loadConfig(args, "serve")
+	if err != nil {
+		return err
 	}
-	if c.Instance.Role != "controller" {
+	if cfg.Instance.Role != "controller" {
 		return fmt.Errorf("instance.role must be controller for serve")
 	}
-	b, e := build(c)
-	if e != nil {
-		return e
+	lock, err := instance.Acquire(cfg.Paths.RunDir)
+	if err != nil {
+		return err
 	}
-	rolled, e := b.updater.PrepareStartup()
-	if e != nil {
-		return fmt.Errorf("update recovery: %w", e)
+	defer lock.Close()
+	bundle, err := build(cfg)
+	if err != nil {
+		return err
 	}
-	if rolled {
-		exe, _ := os.Executable()
-		return syscall.Exec(exe, os.Args, os.Environ())
+	rolledBack, err := bundle.updater.PrepareStartup()
+	if err != nil {
+		return fmt.Errorf("update recovery: %w", err)
+	}
+	if rolledBack {
+		executable, execErr := os.Executable()
+		if execErr != nil {
+			return execErr
+		}
+		return syscall.Exec(executable, os.Args, os.Environ())
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	b.manager.Start(ctx)
-	defer b.manager.Stop()
-	srv, e := web.New(c, b.manager, b.updater, b.platform.RestartKRM)
-	if e != nil {
-		return e
-	}
-	go updateLoop(ctx, b)
-	if c.Update.Enabled {
+	bundle.manager.Start(ctx)
+	defer bundle.manager.Stop()
+	go updateLoop(ctx, bundle)
+	if cfg.Update.Enabled {
 		go func() {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(c.Update.HealthGracePeriod.Duration):
-				if e := b.updater.MarkHealthy(); e != nil {
-					log.Printf("update health mark: %v", e)
+			case <-time.After(cfg.Update.HealthGracePeriod.Duration):
+				if bundle.manager.Ready() {
+					if markErr := bundle.updater.MarkHealthy(); markErr != nil {
+						log.Printf("update health mark: %v", markErr)
+					}
 				}
 			}
 		}()
 	}
-	log.Printf("Kee Route Manager %s listening on %s (%s)", version, c.Web.Listen, c.Platform.Kind)
-	return srv.ListenAndServe(ctx)
+	if !cfg.Web.Enabled {
+		log.Printf("Kee Route Manager Core %s running without HTTP API (%s)", version, cfg.Platform.Kind)
+		<-ctx.Done()
+		return nil
+	}
+	server, err := web.New(cfg, bundle.manager, bundle.updater, bundle.platform.RestartKRM)
+	if err != nil {
+		return err
+	}
+	log.Printf("Kee Route Manager Core %s API listening on %s (%s)", version, cfg.Web.Listen, cfg.Platform.Kind)
+	return server.ListenAndServe(ctx)
 }
-func updateLoop(ctx context.Context, b *runtimeBundle) {
-	if !b.cfg.Update.Enabled {
+
+func updateLoop(ctx context.Context, bundle *runtimeBundle) {
+	if !bundle.cfg.Update.Enabled {
 		return
 	}
-	interval := b.cfg.Update.CheckInterval.Duration
+	interval := bundle.cfg.Update.CheckInterval.Duration
 	if interval < time.Hour {
 		interval = time.Hour
 	}
-	t := time.NewTicker(interval)
-	defer t.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			r, e := b.updater.Check(ctx)
-			if e != nil {
-				log.Printf("update check: %v", e)
+		case <-ticker.C:
+			result, err := bundle.updater.Check(ctx)
+			if err != nil {
+				log.Printf("update check: %v", err)
 				continue
 			}
-			if r.Available {
-				log.Printf("update available: %s", r.LatestVersion)
-				if b.cfg.Update.AutoApply {
-					if _, e = b.updater.Apply(ctx, r); e != nil {
-						log.Printf("update apply: %v", e)
+			if result.Available {
+				log.Printf("update available: %s", result.LatestVersion)
+				if bundle.cfg.Update.AutoApply {
+					if _, err = bundle.updater.Apply(ctx, result); err != nil {
+						log.Printf("update apply: %v", err)
 						continue
 					}
 					time.Sleep(time.Second)
-					_ = b.platform.RestartKRM(context.Background())
+					_ = bundle.platform.RestartKRM(context.Background())
 					return
 				}
 			}
 		}
 	}
 }
-func serveProxy(args []string) error {
-	c, _, e := configFlag(args, "ui-proxy")
-	if e != nil {
-		return e
-	}
-	if c.Instance.Role != "ui-proxy" {
-		return fmt.Errorf("instance.role must be ui-proxy")
-	}
-	handler, e := web.ProxyHandler(c)
-	if e != nil {
-		return e
-	}
-	if e = web.EnsureTLS(c.Web.TLS, c.Web.Listen); e != nil {
-		return e
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-	srv := &http.Server{Addr: c.Web.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() {
-		<-ctx.Done()
-		cc, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(cc)
-	}()
-	if c.Web.TLS.Enabled {
-		e = srv.ListenAndServeTLS(c.Web.TLS.CertFile, c.Web.TLS.KeyFile)
-	} else {
-		e = srv.ListenAndServe()
-	}
-	if e == http.ErrServerClosed {
-		return nil
-	}
-	return e
-}
+
 func runBenchmark(args []string) error {
-	c, _, e := configFlag(args, "benchmark")
-	if e != nil {
-		return e
+	cfg, _, err := loadConfig(args, "benchmark")
+	if err != nil {
+		return err
 	}
-	b, e := build(c)
-	if e != nil {
-		return e
+	lock, err := instance.Acquire(cfg.Paths.RunDir)
+	if err != nil {
+		return fmt.Errorf("benchmark must be started through the running core API: %w", err)
+	}
+	defer lock.Close()
+	bundle, err := build(cfg)
+	if err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if e = b.manager.RunBenchmark(ctx, "manual", "cli"); e != nil {
-		return e
+	if err = bundle.manager.RunBenchmark(ctx, "manual", "cli"); err != nil {
+		return err
 	}
-	out, _ := json.MarshalIndent(b.store.State().LastBenchmark, "", "  ")
-	fmt.Println(string(out))
+	output, err := json.MarshalIndent(bundle.store.State().LastBenchmark, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(output))
 	return nil
 }
+
 func status(args []string) error {
-	c, _, e := configFlag(args, "status")
-	if e != nil {
-		return e
+	cfg, _, err := loadConfig(args, "status")
+	if err != nil {
+		return err
 	}
-	b, e := build(c)
-	if e != nil {
-		return e
+	var state model.State
+	statePath := filepath.Join(cfg.Paths.StateDir, "state.json")
+	if data, readErr := os.ReadFile(statePath); readErr == nil {
+		if err = json.Unmarshal(data, &state); err != nil {
+			return fmt.Errorf("decode %s: %w", statePath, err)
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
+	} else {
+		state = model.NewState(version, cfg.Xray.SlotTagPrefix, cfg.Pool.Size)
 	}
-	out, _ := json.MarshalIndent(b.manager.Status(context.Background()), "", "  ")
-	fmt.Println(string(out))
+	var current any
+	operationPath := filepath.Join(cfg.Paths.StateDir, "operation.json")
+	if data, readErr := os.ReadFile(operationPath); readErr == nil {
+		_ = json.Unmarshal(data, &current)
+	}
+	output, err := json.MarshalIndent(map[string]any{
+		"version":   version,
+		"platform":  cfg.Platform.Kind,
+		"state":     state,
+		"operation": current,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(output))
 	return nil
 }
+
 func doctor(args []string) error {
-	c, p, e := configFlag(args, "doctor")
-	if e != nil {
-		return e
+	cfg, path, err := loadConfig(args, "doctor")
+	if err != nil {
+		return err
 	}
-	fmt.Printf("config: %s\nplatform: %s\narch: %s/%s\n", p, c.Platform.Kind, runtime.GOOS, runtime.GOARCH)
-	checks := []struct{ name, path string }{{"xray", c.Xray.Binary}, {"config-dir", c.Xray.ConfigDir}, {"managed-dir", c.Xray.ManagedDir}}
+	fmt.Printf("config: %s\nplatform: %s\narch: %s/%s\n", path, cfg.Platform.Kind, runtime.GOOS, runtime.GOARCH)
+	checks := []struct {
+		name string
+		path string
+	}{{"xray", cfg.Xray.Binary}, {"config-dir", cfg.Xray.ConfigDir}, {"managed-dir", cfg.Xray.ManagedDir}}
 	failed := false
-	for _, x := range checks {
-		if _, e := os.Stat(x.path); e != nil {
-			fmt.Printf("FAIL %-14s %s: %v\n", x.name, x.path, e)
+	for _, check := range checks {
+		if _, statErr := os.Stat(check.path); statErr != nil {
+			fmt.Printf("FAIL %-14s %s: %v\n", check.name, check.path, statErr)
 			failed = true
 		} else {
-			fmt.Printf("OK   %-14s %s\n", x.name, x.path)
+			fmt.Printf("OK   %-14s %s\n", check.name, check.path)
 		}
 	}
-	if _, e := exec.LookPath(c.Xray.Binary); e != nil && !filepath.IsAbs(c.Xray.Binary) {
+	if _, lookupErr := exec.LookPath(cfg.Xray.Binary); lookupErr != nil && !filepath.IsAbs(cfg.Xray.Binary) {
 		failed = true
-		fmt.Printf("FAIL xray lookup: %v\n", e)
+		fmt.Printf("FAIL xray lookup: %v\n", lookupErr)
 	}
 	if failed {
 		return fmt.Errorf("doctor found failures")
 	}
 	return nil
 }
+
 func restoreXray(args []string) error {
-	c, _, e := configFlag(args, "restore-xray")
-	if e != nil {
-		return e
+	cfg, _, err := loadConfig(args, "restore-xray")
+	if err != nil {
+		return err
 	}
-	b, e := build(c)
-	if e != nil {
-		return e
+	lock, err := instance.Acquire(cfg.Paths.RunDir)
+	if err != nil {
+		return fmt.Errorf("stop the controller before restore: %w", err)
 	}
-	return b.manager.RestoreOriginalXray(context.Background())
+	defer lock.Close()
+	bundle, err := build(cfg)
+	if err != nil {
+		return err
+	}
+	return bundle.manager.RestoreOriginalXray(context.Background())
 }
 
 func updateCheck(args []string, apply bool) error {
-	c, _, e := configFlag(args, "update")
-	if e != nil {
-		return e
+	cfg, _, err := loadConfig(args, "update")
+	if err != nil {
+		return err
 	}
-	u := update.New(c.Update, c.Paths.StateDir, version)
-	r, e := u.Check(context.Background())
-	if e != nil {
-		return e
+	var lock *instance.Lock
+	if apply {
+		lock, err = instance.Acquire(cfg.Paths.RunDir)
+		if err != nil {
+			return fmt.Errorf("apply updates through the running core API: %w", err)
+		}
+		defer lock.Close()
 	}
-	b, _ := json.MarshalIndent(r, "", "  ")
-	fmt.Println(string(b))
-	if apply && r.Available {
-		pending, e := u.Apply(context.Background(), r)
-		if e != nil {
-			return e
-		}
-		b, _ = json.MarshalIndent(pending, "", "  ")
-		fmt.Println(string(b))
-		adapter, _, e := platform.New(c)
-		if e != nil {
-			return fmt.Errorf("update installed but service restart setup failed: %w", e)
-		}
-		time.Sleep(time.Second)
-		if e = adapter.RestartKRM(context.Background()); e != nil {
-			return fmt.Errorf("update installed but service restart failed: %w", e)
-		}
+	updater := update.New(cfg.Update, cfg.Paths.StateDir, version)
+	result, err := updater.Check(context.Background())
+	if err != nil {
+		return err
+	}
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(output))
+	if !apply || !result.Available {
+		return nil
+	}
+	pending, err := updater.Apply(context.Background(), result)
+	if err != nil {
+		return err
+	}
+	output, err = json.MarshalIndent(pending, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(output))
+	adapter, _, err := platform.New(cfg)
+	if err != nil {
+		return fmt.Errorf("update installed but service restart setup failed: %w", err)
+	}
+	time.Sleep(time.Second)
+	if err = adapter.RestartKRM(context.Background()); err != nil {
+		return fmt.Errorf("update installed but service restart failed: %w", err)
 	}
 	return nil
 }
