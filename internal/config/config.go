@@ -241,6 +241,11 @@ func Default() Config {
 }
 
 func Load(path string) (Config, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve config path: %w", err)
+	}
+	path = absolute
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)

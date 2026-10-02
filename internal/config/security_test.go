@@ -112,3 +112,24 @@ func TestCanonicalRC2RolesLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRelativeConfigResolvesAbsolutePaths(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	os.WriteFile(p, []byte(validYAML), 0600)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(wd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(c.Paths.StateDir) || !filepath.IsAbs(c.API.UnixSocket) {
+		t.Fatal("relative path retained")
+	}
+}
