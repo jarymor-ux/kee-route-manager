@@ -1,24 +1,22 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-rc.2 — 2026-10-02
 
-- Added a one-command Keenetic bootstrap installer with architecture detection and release SHA-256 verification.
+Experimental prerelease; real Keenetic acceptance deferred to separate owner-authorized hardware stage.
 
-## 1.0.0-rc.1 — 2026-10-02
+- Split daemon, UI and socket CLI; flock on state and tunnel confdir with owner metadata.
+- Fix embedded assets/PWA routing; keep auth in core and enforce CA/SPKI upstream trust.
+- Reserve asynchronous benchmark operations before202; remove benchmark direct transitions.
+- Compare independent VPN/WAN targets; parallel emergency fallback with quorum, stability and cooldown.
+- Add TunnelCore boundary, persistent Xray selection, durable transition journal/reconciliation and validated previous state fallback.
+- Atomically replace owned nft table with metadata/conflict checks; independent managed bypass. Keenetic capability explicitly unsupported.
+- Reverse restore owned routing patches and retain unrelated user edits.
+- Remove unsafe updater executable replacement; apply disabled, correct SemVer/channel discovery/signature verification.
+- Bound auth/config/resource limits; fair provider merge and central redaction; bounded private runtime logging and supervision.
+- Authenticate version-pinned install payload and all assets with Ed25519/SHA256; native verifier before downloaded executable.
+- Add adversarial tests, race/static/vulnerability/shell/JS/fuzz/cross-build/packaging gates, repository AI contract and end-to-end agent installation runbook.
+- Apache-2.0 license selected by owner; security policy, contribution guide and CODEOWNERS.
 
-- Replaced shell/Python split with one dependency-free Go controller.
-- Added adaptive HTTPS Web/PWA interface and optional UI proxy role.
-- Added user-defined credentials, PBKDF2 password hashing, sessions, CSRF and security headers.
-- Added strict YAML configuration without executable shell sourcing.
-- Added 20-source subscription model, cache/backoff and normalized deduplication.
-- Added VLESS Reality/TCP and VLESS WS/TLS parsers.
-- Added configurable five-slot Xray hot pool and dynamic API switching.
-- Added fast fallback before background benchmark.
-- Added explicit fail-open direct mode and automatic VPN recovery.
-- Added adaptive speed samples streamed to `io.Discard`.
-- Added persistent operation, state, event and Xray rollback journals.
-- Added Keenetic RCI/NDMC metrics, clients, policy, WOL, reboot and logs.
-- Added OpenWrt/procd and Linux/systemd adapters.
-- Added optional managed IPv4 nftables interception for OpenWrt/Linux.
-- Added signed self-update with atomic replacement and rollback.
-- Added clean installers, restore-aware uninstallers, cross-builds and release tooling.
+## 1.0.0-rc.1
+
+Initial release candidate. Published tag/assets preserved unchanged. See immutable RC1 tag for original code and documentation.
