@@ -138,6 +138,8 @@ kee-route-managerctl status --config CONFIG_PATH
 kee-route-managerctl switch --slot 1 --config CONFIG_PATH
 ```
 
+Для UI дополнительно `kee-route-manager-ui ready --config UI_CONFIG_PATH`: проверяет собственный HTTPS и ответ core через proxy.
+
 Реальный slot выбрать из status; пустой slot не переключать. Benchmark возвращает operation ID; дождаться операции и появления pool. Попытка запуска второго daemon должна завершиться ошибкой ownership до запуска scheduler. Проверить direct/restore только после анализа платформенных capabilities. Отказ одного health target не должен переводить VPN в direct. Для Keenetic Xray outage пока требует документированного ручного восстановления собственной interception конфигурации, с независимым recovery доступом. Не пытаться угадать недокументированные команды отключения firewall.
 
 ## 9. Удаление, reinstall и rollback

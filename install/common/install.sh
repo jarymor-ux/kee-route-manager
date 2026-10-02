@@ -23,6 +23,10 @@ case "$PLATFORM" in
  linux-systemd|ui-proxy) PREFIX=; BIN=/usr/local/bin; RUN=/run/kee-route-manager;;
  *) fail 'unsupported platform';;
 esac
+case "$PLATFORM" in
+ linux-systemd|ui-proxy) command -v systemctl >/dev/null 2>&1 || fail 'systemd is required';;
+ openwrt) [ -f /etc/rc.common ] || fail 'OpenWrt rc.common/procd is required';;
+esac
 CONFIG_DIR=$PREFIX/etc/kee-route-manager
 UI_DIR=$PREFIX/etc/kee-route-manager-ui
 CONFIG=$CONFIG_DIR/config.yaml
@@ -33,6 +37,10 @@ INPUT=${KRM_CONFIG_FILE:-}
 # Resolve before changing working directories in callers.
 case "$INPUT" in /*);; *) fail 'KRM_CONFIG_FILE must be an absolute path';; esac
 if [ "$MODE" != ui ]; then
+ admin_user=$(printf '%s' "${KRM_ADMIN_USER:-admin}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+ admin_bytes=$(printf '%s' "$admin_user" | wc -c | tr -d '[:space:]')
+ [ "$admin_bytes" -ge 3 ] && [ "$admin_bytes" -le 64 ] || fail 'admin username must be 3..64 bytes'
+ if printf '%s' "$admin_user" | LC_ALL=C grep -q '[[:cntrl:]]'; then fail 'admin username contains controls'; fi
  for name in kee-route-managerd kee-route-managerctl; do
   src=$ROOT/dist/$name-linux-$ARCH
   [ -x "$src" ] || fail "missing signed release executable: $src"
@@ -50,7 +58,8 @@ if [ "$MODE" != ui ]; then
   IFS= read -r password < /dev/tty || { stty echo < /dev/tty; fail 'password input interrupted'; }
   stty echo < /dev/tty; TTY_HIDDEN=0; printf '\n' > /dev/tty
  fi
- [ "${#password}" -ge 10 ] && [ "${#password}" -le 1024 ] || fail 'password must be 10..1024 characters'
+ password_bytes=$(printf '%s' "$password" | wc -c | tr -d '[:space:]')
+ [ "$password_bytes" -ge 10 ] && [ "$password_bytes" -le 1024 ] || fail 'password must be 10..1024 characters'
  printf '%s\n' "$password" > "$STAGE/password"; unset password
 
 fi
@@ -76,7 +85,7 @@ if [ "$MODE" != ui ]; then
  chmod 0700 "$CONFIG_DIR" "$RUN"
  cp "$STAGE/core.yaml" "$CONFIG"; chmod 0600 "$CONFIG"
  for name in kee-route-managerd kee-route-managerctl; do cp "$ROOT/dist/$name-linux-$ARCH" "$BIN/$name"; chmod 0755 "$BIN/$name"; done
- "$BIN/kee-route-managerctl" passwd --config "$CONFIG" --username "${KRM_ADMIN_USER:-admin}" --password-stdin < "$STAGE/password"
+ "$BIN/kee-route-managerctl" passwd --config "$CONFIG" --username "$admin_user" --password-stdin < "$STAGE/password"
 fi
 if [ "$MODE" != core ]; then
  mkdir -p "$UI_DIR"; chmod 0755 "$UI_DIR"
