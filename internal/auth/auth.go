@@ -21,6 +21,10 @@ import (
 
 const CookieName = "krm_session"
 const defaultIterations = 600000
+const maxIterations = 1000000
+
+// Bound concurrent CPU-expensive verifications across all server instances.
+var verificationSlots = make(chan struct{}, 2)
 
 type Credentials struct {
 	SchemaVersion int       `json:"schema_version"`
@@ -58,12 +62,33 @@ func LoadCredentials(path string) (Credentials, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return Credentials{}, err
 	}
-	if c.SchemaVersion != 1 || c.Algorithm != "pbkdf2-sha256" || c.Iterations < 100000 || c.Username == "" {
+	if !validCredentials(c) {
 		return Credentials{}, fmt.Errorf("invalid credentials file")
 	}
 	return c, nil
 }
+func validCredentials(c Credentials) bool {
+	if c.SchemaVersion != 1 || c.Algorithm != "pbkdf2-sha256" || c.Iterations < 100000 || c.Iterations > maxIterations || len(c.Username) < 3 || len(c.Username) > 64 || strings.ContainsAny(c.Username, "\r\n\t") {
+		return false
+	}
+	if len(c.Salt) > 64 || len(c.PasswordHash) > 64 {
+		return false
+	}
+	salt, e1 := base64.RawStdEncoding.DecodeString(c.Salt)
+	hash, e2 := base64.RawStdEncoding.DecodeString(c.PasswordHash)
+	return e1 == nil && e2 == nil && len(salt) == 24 && len(hash) == 32
+}
 func Verify(c Credentials, username, password string) bool {
+	if len(username) < 3 || len(username) > 64 || len(password) < 10 || len(password) > 1024 || !validCredentials(c) {
+		return false
+	}
+	select {
+	case verificationSlots <- struct{}{}:
+		defer func() { <-verificationSlots }()
+	default:
+		return false
+	}
+
 	userOK := subtleString(c.Username, username)
 	salt, err1 := base64.RawStdEncoding.DecodeString(c.Salt)
 	want, err2 := base64.RawStdEncoding.DecodeString(c.PasswordHash)
@@ -155,12 +180,16 @@ func (s *SessionStore) Create(username, ip string) (Session, error) {
 	now := time.Now().UTC()
 	v := Session{id, csrf, username, ip, now, now.Add(s.ttl)}
 	s.mu.Lock()
-	s.sessions[id] = v
 	for k, x := range s.sessions {
 		if now.After(x.ExpiresAt) {
 			delete(s.sessions, k)
 		}
 	}
+	if len(s.sessions) >= 1024 {
+		s.mu.Unlock()
+		return Session{}, errors.New("session capacity reached")
+	}
+	s.sessions[id] = v
 	s.mu.Unlock()
 	return v, nil
 }
@@ -189,6 +218,7 @@ type Limiter struct {
 	mu       sync.Mutex
 	window   time.Duration
 	max      int
+	global   []time.Time
 	attempts map[string][]time.Time
 }
 
@@ -200,6 +230,22 @@ func (l *Limiter) Allow(key string) bool {
 	cut := now.Add(-l.window)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// Prune all inactive clients, not only the next client's key.
+	for k, ts := range l.attempts {
+		if len(ts) == 0 || !ts[len(ts)-1].After(cut) {
+			delete(l.attempts, k)
+		}
+	}
+	keptGlobal := l.global[:0]
+	for _, t := range l.global {
+		if t.After(cut) {
+			keptGlobal = append(keptGlobal, t)
+		}
+	}
+	l.global = keptGlobal
+	if l.max < 1 || l.window <= 0 || len(l.global) >= l.max*8 {
+		return false
+	}
 	old := l.attempts[key]
 	kept := old[:0]
 	for _, t := range old {
@@ -212,6 +258,7 @@ func (l *Limiter) Allow(key string) bool {
 		return false
 	}
 	l.attempts[key] = append(kept, now)
+	l.global = append(l.global, now)
 	return true
 }
 func (l *Limiter) Reset(key string) { l.mu.Lock(); delete(l.attempts, key); l.mu.Unlock() }
