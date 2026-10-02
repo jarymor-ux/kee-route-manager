@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-BIN=/opt/bin/kee-route-managerd
-CONFIG=/opt/etc/kee-route-manager/config.yaml
-RUN=/opt/var/run/kee-route-manager
+BIN=/opt/bin/kee-route-manager-ui
+CONFIG=/opt/etc/kee-route-manager-ui/config.yaml
+RUN=/opt/var/run/kee-route-manager-ui
 PIDFILE=$RUN/supervisor.pid
 CHILD_FILE=$RUN/service-child.pid
 start_ticks(){ awk '{sub(/^[^)]*\) /,""); print $20}' "/proc/$1/stat" 2>/dev/null; }

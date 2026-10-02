@@ -1,76 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-
-VERSION="$(tr -d '[:space:]' < VERSION)"
-[[ -n "$VERSION" ]] || { echo 'VERSION is empty' >&2; exit 1; }
+KRM_VERSION="$(tr -d '[:space:]' < VERSION)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/release}"
 PRIVATE_KEY="${KRM_RELEASE_PRIVATE_KEY:-}"
-BASE_URL="${KRM_RELEASE_BASE_URL:-https://github.com/jarymor-ux/kee-route-manager/releases/download/v$VERSION}"
+BASE_URL="${KRM_RELEASE_BASE_URL:-https://github.com/jarymor-ux/kee-route-manager/releases/download/v$KRM_VERSION}"
 CHANNEL="${KRM_RELEASE_CHANNEL:-rc}"
-
-if [[ -z "$PRIVATE_KEY" || ! -f "$PRIVATE_KEY" ]]; then
-  echo 'KRM_RELEASE_PRIVATE_KEY must point to the Ed25519 private release key.' >&2
-  exit 1
-fi
-
-"$ROOT/scripts/check.sh"
-
-rm -rf "$OUTPUT_DIR"
-mkdir -p "$OUTPUT_DIR/dist"
+[[ -n "$PRIVATE_KEY" && -f "$PRIVATE_KEY" ]] || { echo 'KRM_RELEASE_PRIVATE_KEY must point to an external Ed25519 private key' >&2; exit 1; }
+[[ "$CHANNEL" == rc ]] || { echo 'RC2 builder supports rc only' >&2; exit 1; }
+# Refuse recursive deletion of arbitrary caller paths.
+[[ "$OUTPUT_DIR" == "$ROOT/release" || "$OUTPUT_DIR" == /tmp/krm-release.* || "$OUTPUT_DIR" == /tmp/krm-release.*/output ]] || { echo 'OUTPUT_DIR must be repo/release or /tmp/krm-release.*' >&2; exit 1; }
+./scripts/check.sh
+mkdir -p "$OUTPUT_DIR"
 DIST="$OUTPUT_DIR/dist"
-COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || printf dev)"
+[[ ! -e "$DIST" ]] || { echo 'Release output already exists; move it aside before rebuilding' >&2; exit 1; }
+mkdir -p "$DIST"
+TOOL_DIR="$(mktemp -d)"
+trap 'rm -rf "$TOOL_DIR"' EXIT
+CGO_ENABLED=0 go build -trimpath -o "$TOOL_DIR/krm-release-tool" ./cmd/krm-release-tool
+COMMIT="${KRM_SOURCE_COMMIT:-$(git rev-parse --short=12 HEAD)}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME"
-
-build_target() {
-  local goarch="$1" suffix="$2" goarm="${3:-}" gomips="${4:-}"
-  local output="$DIST/kee-route-manager-linux-$suffix"
-  echo "Building $output"
-  if [[ -n "$goarm" ]]; then
-    CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" GOARM="$goarm" \
-      go build -trimpath -ldflags "$LDFLAGS" -o "$output" ./cmd/kee-route-manager
-  elif [[ -n "$gomips" ]]; then
-    CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" GOMIPS="$gomips" \
-      go build -trimpath -ldflags "$LDFLAGS" -o "$output" ./cmd/kee-route-manager
-  else
-    CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
-      go build -trimpath -ldflags "$LDFLAGS" -o "$output" ./cmd/kee-route-manager
-  fi
-  chmod 0755 "$output"
-}
-
-build_target amd64 amd64
-build_target arm64 arm64
-build_target arm armv7 7
-build_target mipsle mipsle '' softfloat
-
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/krm-release-tool-linux-amd64" ./cmd/krm-release-tool
-chmod 0755 "$DIST/krm-release-tool-linux-amd64"
-
-"$DIST/krm-release-tool-linux-amd64" manifest \
-  --version "$VERSION" \
-  --channel "$CHANNEL" \
-  --base-url "$BASE_URL" \
-  --dist "$DIST" \
-  --out "$DIST/manifest-$CHANNEL.json" \
-  --private "$PRIVATE_KEY" \
-  --signature "$DIST/manifest-$CHANNEL.json.sig"
-
-(
-  cd "$DIST"
-  sha256sum kee-route-manager-linux-* krm-release-tool-linux-amd64 manifest-"$CHANNEL".json manifest-"$CHANNEL".json.sig > SHA256SUMS
-)
-
+LDFLAGS="-s -w -X main.version=$KRM_VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME"
 for target in amd64 arm64 armv7 mipsle; do
-  "$DIST/kee-route-manager-linux-$target" version > "$DIST/version-$target.txt" || {
-    # Non-native binaries cannot execute on the build host; validate metadata through strings instead.
-    strings "$DIST/kee-route-manager-linux-$target" | grep -F "$VERSION" >/dev/null
-    rm -f "$DIST/version-$target.txt"
-  }
+ case "$target" in armv7) arch=arm; arm=7; mips=;; mipsle) arch=mipsle; arm=; mips=softfloat;; *) arch=$target; arm=; mips=;; esac
+ for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl krm-release-tool; do
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" GOMIPS="$mips" go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/$component-linux-$target" "./cmd/$component"
+ done
 done
-
-printf 'Release output: %s\n' "$OUTPUT_DIR"
+# Signed install payload contains configuration, all service/uninstall scripts and trust key.
+tar -czf "$DIST/release-files.tar.gz" configs install release-public.key LICENSE NOTICE
+python3 scripts/prepare-release.py "$DIST" "$KRM_VERSION"
+"$TOOL_DIR/krm-release-tool" manifest --version "$KRM_VERSION" --channel "$CHANNEL" --base-url "$BASE_URL" --dist "$DIST" --out "$DIST/manifest-rc.json" --private "$PRIVATE_KEY" --signature "$DIST/manifest-rc.json.sig"
+python3 - "$DIST" <<'PY'
+import hashlib,pathlib,sys
+p=pathlib.Path(sys.argv[1]);entries=[]
+for f in sorted(p.iterdir()):
+ if f.is_file() and f.name not in {'SHA256SUMS','SHA256SUMS.sig'}:
+  entries.append(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n')
+(p/'SHA256SUMS').write_text(''.join(entries))
+PY
+"$TOOL_DIR/krm-release-tool" sign --private "$PRIVATE_KEY" --input "$DIST/SHA256SUMS" --out "$DIST/SHA256SUMS.sig"
+python3 scripts/verify-release.py "$DIST"
+printf 'Signed RC2 artifacts: %s\n' "$DIST"

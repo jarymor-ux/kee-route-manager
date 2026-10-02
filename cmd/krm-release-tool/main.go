@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -66,8 +67,9 @@ func manifest(args []string) error {
 	if e := f.Parse(args); e != nil {
 		return e
 	}
-	if *version == "" || *baseURL == "" {
-		return fmt.Errorf("--version and --base-url required")
+	base, err := url.Parse(*baseURL)
+	if *version == "" || err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
+		return fmt.Errorf("--version and an HTTPS --base-url required")
 	}
 	entries, e := os.ReadDir(*dist)
 	if e != nil {
@@ -75,24 +77,42 @@ func manifest(args []string) error {
 	}
 	assets := []update.Asset{}
 	for _, x := range entries {
-		if x.IsDir() || !strings.HasPrefix(x.Name(), "kee-route-manager-linux-") {
+		if x.IsDir() || strings.HasPrefix(x.Name(), "manifest-") || strings.HasPrefix(x.Name(), "SHA256SUMS") {
 			continue
 		}
-		arch, goarm, ok := parseName(x.Name())
-		if !ok {
-			continue
+		if x.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink asset rejected")
 		}
-		p := filepath.Join(*dist, x.Name())
-		h, size, e := hashFile(p)
+		name := x.Name()
+		if strings.ContainsAny(name, " \t\r\n\\") {
+			return fmt.Errorf("unsafe asset name")
+		}
+		component, arch, goarm := "file", "", ""
+		for _, kind := range []string{"kee-route-managerd", "kee-route-manager-ui", "kee-route-managerctl", "krm-release-tool"} {
+			prefix := kind + "-linux-"
+			if strings.HasPrefix(name, prefix) {
+				var ok bool
+				arch, goarm, ok = parseName("kee-route-manager-linux-" + strings.TrimPrefix(name, prefix))
+				if !ok {
+					return fmt.Errorf("invalid binary asset architecture")
+				}
+				component = map[string]string{"kee-route-managerd": "daemon", "kee-route-manager-ui": "ui", "kee-route-managerctl": "ctl", "krm-release-tool": "release-tool"}[kind]
+			}
+		}
+		h, size, e := hashFile(filepath.Join(*dist, name))
 		if e != nil {
 			return e
 		}
-		assets = append(assets, update.Asset{OS: "linux", Arch: arch, GOARM: goarm, URL: strings.TrimRight(*baseURL, "/") + "/" + x.Name(), SHA256: h, Size: size})
+		asset := update.Asset{Name: name, Component: component, Arch: arch, GOARM: goarm, URL: strings.TrimRight(*baseURL, "/") + "/" + name, SHA256: h, Size: size}
+		if arch != "" {
+			asset.OS = "linux"
+		}
+		assets = append(assets, asset)
 	}
 	if len(assets) == 0 {
 		return fmt.Errorf("no release binaries found")
 	}
-	sort.Slice(assets, func(i, j int) bool { return assets[i].Arch+assets[i].GOARM < assets[j].Arch+assets[j].GOARM })
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
 	m := update.Manifest{SchemaVersion: 1, Version: *version, Channel: *channel, PublishedAt: time.Now().UTC(), MinConfigSchema: 1, Assets: assets}
 	b, e := json.MarshalIndent(m, "", "  ")
 	if e != nil {
@@ -138,7 +158,7 @@ func signFiles(keyPath, input, out string) error {
 		return e
 	}
 	sig := ed25519.Sign(ed25519.PrivateKey(raw), b)
-	return os.WriteFile(out, []byte(base64.RawStdEncoding.EncodeToString(sig)+"\n"), 0644)
+	return os.WriteFile(out, []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0644)
 }
 func parseName(n string) (string, string, bool) {
 	s := strings.TrimPrefix(n, "kee-route-manager-linux-")
