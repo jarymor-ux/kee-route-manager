@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,5 +71,20 @@ func TestRefusesSymlink(t *testing.T) {
 	if w, e := New(p, 64, 3); e == nil {
 		w.Close()
 		t.Fatal("accepted symlink")
+	}
+}
+
+func TestRuntimeWriterRedactsBeforeBothOutputs(t *testing.T) {
+	var output bytes.Buffer
+	writer := redactingWriter{target: &output}
+	raw := []byte("subscription https://user:pass@example.invalid/sub?token=hidden Authorization: secret\n")
+	n, e := writer.Write(raw)
+	if e != nil || n != len(raw) {
+		t.Fatalf("write %d %v", n, e)
+	}
+	for _, secret := range []string{"user:pass", "hidden", "secret"} {
+		if strings.Contains(output.String(), secret) {
+			t.Fatalf("leaked %q: %s", secret, output.String())
+		}
 	}
 }

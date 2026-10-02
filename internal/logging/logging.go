@@ -3,6 +3,7 @@ package logging
 
 import (
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"io"
 	"log"
 	"os"
@@ -100,10 +101,21 @@ func Setup(path string) (io.Closer, error) {
 	if e != nil {
 		return nil, e
 	}
-	log.SetOutput(io.MultiWriter(os.Stderr, w))
+	log.SetOutput(redactingWriter{target: io.MultiWriter(os.Stderr, w)})
 	return w, nil
 }
 
 type nilReader struct{}
 
 func (nilReader) Read([]byte) (int, error) { return 0, io.EOF }
+
+type redactingWriter struct{ target io.Writer }
+
+func (w redactingWriter) Write(b []byte) (int, error) {
+	sanitized := []byte(redact.Text(string(b)))
+	_, err := w.target.Write(sanitized)
+	if err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
