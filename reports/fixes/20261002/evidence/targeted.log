@@ -1,0 +1,533 @@
+=== RUN   TestBenchmarkNeverEntersDirect
+--- PASS: TestBenchmarkNeverEntersDirect (0.09s)
+=== RUN   TestBenchmarkAfterFailoverKeepsFallback
+--- PASS: TestBenchmarkAfterFailoverKeepsFallback (0.12s)
+=== RUN   TestXrayFailureUsesIndependentBypass
+--- PASS: TestXrayFailureUsesIndependentBypass (0.10s)
+=== RUN   TestUnsupportedBypassDoesNotClaimDirect
+--- PASS: TestUnsupportedBypassDoesNotClaimDirect (0.02s)
+=== RUN   TestRestoreResetsControllerState
+--- PASS: TestRestoreResetsControllerState (0.09s)
+=== RUN   TestCachedStatusDoesNotExecutePlatformCommands
+--- PASS: TestCachedStatusDoesNotExecutePlatformCommands (0.01s)
+=== RUN   TestBenchmarkReservationIsSynchronous
+--- PASS: TestBenchmarkReservationIsSynchronous (0.07s)
+=== RUN   TestInterruptedSelectionReplaysJournal
+--- PASS: TestInterruptedSelectionReplaysJournal (0.11s)
+=== RUN   TestCrashRecoveryAtEveryJournalStep
+=== RUN   TestCrashRecoveryAtEveryJournalStep/PREPARED
+=== RUN   TestCrashRecoveryAtEveryJournalStep/XRAY_FILES_STAGED
+=== RUN   TestCrashRecoveryAtEveryJournalStep/XRAY_RUNTIME_APPLIED
+=== RUN   TestCrashRecoveryAtEveryJournalStep/FIREWALL_APPLIED
+=== RUN   TestCrashRecoveryAtEveryJournalStep/SELECTION_APPLIED
+=== RUN   TestCrashRecoveryAtEveryJournalStep/STATE_COMMITTED
+--- PASS: TestCrashRecoveryAtEveryJournalStep (0.59s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/PREPARED (0.08s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/XRAY_FILES_STAGED (0.08s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/XRAY_RUNTIME_APPLIED (0.10s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/FIREWALL_APPLIED (0.12s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/SELECTION_APPLIED (0.10s)
+    --- PASS: TestCrashRecoveryAtEveryJournalStep/STATE_COMMITTED (0.12s)
+=== RUN   TestEmergencyFallbackProbesAreParallel
+--- PASS: TestEmergencyFallbackProbesAreParallel (0.01s)
+=== RUN   TestStopWaitsForReservedBenchmarkAndRejectsLateWork
+--- PASS: TestStopWaitsForReservedBenchmarkAndRejectsLateWork (0.09s)
+=== RUN   TestHealthStateMachineComparesWANBeforeFailover
+=== RUN   TestHealthStateMachineComparesWANBeforeFailover/all_monitoring_targets_down
+=== RUN   TestHealthStateMachineComparesWANBeforeFailover/one_target_down_VPN_intact
+=== RUN   TestHealthStateMachineComparesWANBeforeFailover/active_VPN_down
+=== RUN   TestHealthStateMachineComparesWANBeforeFailover/all_VPN_down_WAN_alive
+--- PASS: TestHealthStateMachineComparesWANBeforeFailover (0.19s)
+    --- PASS: TestHealthStateMachineComparesWANBeforeFailover/all_monitoring_targets_down (0.03s)
+    --- PASS: TestHealthStateMachineComparesWANBeforeFailover/one_target_down_VPN_intact (0.01s)
+    --- PASS: TestHealthStateMachineComparesWANBeforeFailover/active_VPN_down (0.08s)
+    --- PASS: TestHealthStateMachineComparesWANBeforeFailover/all_VPN_down_WAN_alive (0.07s)
+=== RUN   TestRetainActiveNodeDuringPoolRefresh
+--- PASS: TestRetainActiveNodeDuringPoolRefresh (0.00s)
+=== RUN   TestRetainActiveNodeDoesNotDuplicate
+--- PASS: TestRetainActiveNodeDoesNotDuplicate (0.00s)
+=== RUN   TestProviderDiversityIsSoft
+--- PASS: TestProviderDiversityIsSoft (0.00s)
+=== RUN   TestAssignSlotsPreservesActiveIdentity
+--- PASS: TestAssignSlotsPreservesActiveIdentity (0.00s)
+=== RUN   TestRegressionSingleSlotReplacement
+=== RUN   TestRegressionSingleSlotReplacement/1
+    routing_regression_test.go:47: size=1 active=fallback pool=[{Index:0 Tag:krm-slot-0 NodeID:fallback Label:fallback Sources:[] Healthy:true LastVerifiedAt:0001-01-01 00:00:00 +0000 UTC Score:1}] healthy replacement measurement={NodeID:fallback LatencyMS:0 ResponseMS:0 SpeedMbps:0 Score:1 Failures:0 Successes:0 Healthy:true Error: CheckedAt:0001-01-01 00:00:00 +0000 UTC}
+=== RUN   TestRegressionSingleSlotReplacement/2
+    routing_regression_test.go:47: size=2 active=fallback pool=[{Index:0 Tag:krm-slot-0 NodeID:active Label:active Sources:[] Healthy:false LastVerifiedAt:0001-01-01 00:00:00 +0000 UTC Score:999999} {Index:1 Tag:krm-slot-1 NodeID:fallback Label:fallback Sources:[] Healthy:true LastVerifiedAt:0001-01-01 00:00:00 +0000 UTC Score:1}] healthy replacement measurement={NodeID:fallback LatencyMS:0 ResponseMS:0 SpeedMbps:0 Score:1 Failures:0 Successes:0 Healthy:true Error: CheckedAt:0001-01-01 00:00:00 +0000 UTC}
+--- PASS: TestRegressionSingleSlotReplacement (0.42s)
+    --- PASS: TestRegressionSingleSlotReplacement/1 (0.19s)
+    --- PASS: TestRegressionSingleSlotReplacement/2 (0.23s)
+=== RUN   TestRegressionRecoveryWithAlternatingWinners
+=== RUN   TestRegressionRecoveryWithAlternatingWinners/alternating
+    routing_regression_test.go:93: round=0 direct=true candidate=active counter=1
+    routing_regression_test.go:93: round=1 direct=false candidate= counter=0
+=== RUN   TestRegressionRecoveryWithAlternatingWinners/stable
+    routing_regression_test.go:93: round=0 direct=true candidate=active counter=1
+    routing_regression_test.go:93: round=1 direct=false candidate= counter=0
+--- PASS: TestRegressionRecoveryWithAlternatingWinners (0.35s)
+    --- PASS: TestRegressionRecoveryWithAlternatingWinners/alternating (0.27s)
+    --- PASS: TestRegressionRecoveryWithAlternatingWinners/stable (0.08s)
+=== RUN   TestRegressionEmergencyBudgetWAN
+=== RUN   TestRegressionEmergencyBudgetWAN/200ms
+    routing_regression_test.go:135: budget=200ms classification=vpn_path_failed direct=true active= WAN HTTP requests=4
+=== RUN   TestRegressionEmergencyBudgetWAN/600ms
+    routing_regression_test.go:135: budget=600ms classification=vpn_path_failed direct=true active= WAN HTTP requests=4
+--- PASS: TestRegressionEmergencyBudgetWAN (0.58s)
+    --- PASS: TestRegressionEmergencyBudgetWAN/200ms (0.29s)
+    --- PASS: TestRegressionEmergencyBudgetWAN/600ms (0.29s)
+=== RUN   TestRegressionSingleSlotPreservesUnauthorizedRoute
+=== RUN   TestRegressionSingleSlotPreservesUnauthorizedRoute/auto
+=== RUN   TestRegressionSingleSlotPreservesUnauthorizedRoute/manual-direct
+--- PASS: TestRegressionSingleSlotPreservesUnauthorizedRoute (0.36s)
+    --- PASS: TestRegressionSingleSlotPreservesUnauthorizedRoute/auto (0.15s)
+    --- PASS: TestRegressionSingleSlotPreservesUnauthorizedRoute/manual-direct (0.21s)
+=== RUN   TestRegressionRecoveryCandidateFailureResetsThreshold
+--- PASS: TestRegressionRecoveryCandidateFailureResetsThreshold (0.11s)
+=== RUN   TestRegressionEmergencyRequiresWANQuorum
+--- PASS: TestRegressionEmergencyRequiresWANQuorum (0.17s)
+=== RUN   TestTransactionReplayPreservesOperatorChanges
+=== RUN   TestTransactionReplayPreservesOperatorChanges/base_target/pending_false
+    transactions_regression_test.go:78: before replay: pending=false drift="adopted routing target drift detected" hash_changed=false
+    transactions_regression_test.go:102: NEGATIVE: startup refused and preserved edit: managed tunnel routing drift detected: adopted routing target drift detected
+=== RUN   TestTransactionReplayPreservesOperatorChanges/base_target/pending_true
+    transactions_regression_test.go:78: before replay: pending=true drift="adopted routing target drift detected" hash_changed=false
+=== RUN   TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_false
+    transactions_regression_test.go:78: before replay: pending=false drift="" hash_changed=true
+    transactions_regression_test.go:102: NEGATIVE: startup refused and preserved edit: managed tunnel configuration drift detected during startup
+=== RUN   TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_true
+    transactions_regression_test.go:78: before replay: pending=true drift="" hash_changed=true
+--- PASS: TestTransactionReplayPreservesOperatorChanges (2.04s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/base_target/pending_false (0.57s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/base_target/pending_true (0.49s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_false (0.63s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_true (0.35s)
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics/65536
+    transactions_regression_test.go:133: action error bytes=65669
+    transactions_regression_test.go:138: durable event file bytes=66014
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics/1049600
+    transactions_regression_test.go:133: action error bytes=1049735
+    transactions_regression_test.go:138: durable event file bytes=1048742
+--- PASS: TestActionEventRoundTripWithLargeDiagnostics (1.48s)
+    --- PASS: TestActionEventRoundTripWithLargeDiagnostics/65536 (0.44s)
+    --- PASS: TestActionEventRoundTripWithLargeDiagnostics/1049600 (1.04s)
+=== RUN   TestProvenReplayRefusesOperatorChanges
+=== RUN   TestProvenReplayRefusesOperatorChanges/base_target
+=== RUN   TestProvenReplayRefusesOperatorChanges/managed_hash
+=== RUN   TestProvenReplayRefusesOperatorChanges/managed_missing
+=== RUN   TestProvenReplayRefusesOperatorChanges/base_unrelated
+--- PASS: TestProvenReplayRefusesOperatorChanges (2.17s)
+    --- PASS: TestProvenReplayRefusesOperatorChanges/base_target (0.41s)
+    --- PASS: TestProvenReplayRefusesOperatorChanges/managed_hash (0.39s)
+    --- PASS: TestProvenReplayRefusesOperatorChanges/managed_missing (0.51s)
+    --- PASS: TestProvenReplayRefusesOperatorChanges/base_unrelated (0.85s)
+=== RUN   TestReplayAcceptsEveryPartialFileWrite
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut5
+--- PASS: TestReplayAcceptsEveryPartialFileWrite (23.10s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut0 (0.75s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut1 (0.68s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut2 (0.67s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut3 (0.68s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut4 (0.69s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut5 (0.66s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut0 (0.98s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut1 (0.67s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut2 (0.79s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut3 (0.84s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut4 (0.85s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut5 (0.86s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut0 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut1 (0.64s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut2 (0.82s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut3 (1.15s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut4 (0.81s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut5 (0.67s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut0 (0.80s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut1 (0.67s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut2 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut3 (4.19s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut4 (1.40s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut5 (1.34s)
+=== RUN   TestCommitPersistsReplayProofBeforeFailedSelection
+--- PASS: TestCommitPersistsReplayProofBeforeFailedSelection (1.38s)
+=== RUN   TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity
+--- PASS: TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity (0.01s)
+=== RUN   TestLegacyReplayWithMatchingIdentity
+--- PASS: TestLegacyReplayWithMatchingIdentity (1.18s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	35.250s
+=== RUN   TestLegacyOversizedEventDoesNotBlockStateRecovery
+--- PASS: TestLegacyOversizedEventDoesNotBlockStateRecovery (0.03s)
+=== RUN   TestEventSerializedBoundIncludesFieldsAndEscaping
+--- PASS: TestEventSerializedBoundIncludesFieldsAndEscaping (0.66s)
+=== RUN   TestJournalSurvivesEveryStage
+=== RUN   TestJournalSurvivesEveryStage/PREPARED
+=== RUN   TestJournalSurvivesEveryStage/XRAY_FILES_STAGED
+=== RUN   TestJournalSurvivesEveryStage/XRAY_RUNTIME_APPLIED
+=== RUN   TestJournalSurvivesEveryStage/FIREWALL_APPLIED
+=== RUN   TestJournalSurvivesEveryStage/SELECTION_APPLIED
+=== RUN   TestJournalSurvivesEveryStage/STATE_COMMITTED
+--- PASS: TestJournalSurvivesEveryStage (0.24s)
+    --- PASS: TestJournalSurvivesEveryStage/PREPARED (0.01s)
+    --- PASS: TestJournalSurvivesEveryStage/XRAY_FILES_STAGED (0.02s)
+    --- PASS: TestJournalSurvivesEveryStage/XRAY_RUNTIME_APPLIED (0.04s)
+    --- PASS: TestJournalSurvivesEveryStage/FIREWALL_APPLIED (0.05s)
+    --- PASS: TestJournalSurvivesEveryStage/SELECTION_APPLIED (0.05s)
+    --- PASS: TestJournalSurvivesEveryStage/STATE_COMMITTED (0.06s)
+=== RUN   TestJournalRejectsSkippedStages
+--- PASS: TestJournalRejectsSkippedStages (0.01s)
+=== RUN   TestCorruptStateFallsBackToPrevious
+--- PASS: TestCorruptStateFallsBackToPrevious (0.06s)
+=== RUN   TestRejectInvalidStateMutation
+--- PASS: TestRejectInvalidStateMutation (0.00s)
+=== RUN   TestBothInvalidCopiesEnterRecovery
+--- PASS: TestBothInvalidCopiesEnterRecovery (0.00s)
+=== RUN   TestPreviousRecoveryIncludesMatchingNodeCache
+--- PASS: TestPreviousRecoveryIncludesMatchingNodeCache (0.08s)
+=== RUN   TestStateNodesEvents
+--- PASS: TestStateNodesEvents (0.02s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/store	2.343s
+=== RUN   TestOutboundReality
+--- PASS: TestOutboundReality (0.00s)
+=== RUN   TestPatchBaseRoute
+--- PASS: TestPatchBaseRoute (0.01s)
+=== RUN   TestManagedBalancerDoesNotSelectDirectByDefault
+--- PASS: TestManagedBalancerDoesNotSelectDirectByDefault (0.00s)
+=== RUN   TestBootstrapInstallsManagedConfigAndSelectsInitialSlot
+--- PASS: TestBootstrapInstallsManagedConfigAndSelectsInitialSlot (2.39s)
+=== RUN   TestWaitReadyHonorsContext
+--- PASS: TestWaitReadyHonorsContext (0.02s)
+=== RUN   TestRestoreNeverConfiguredInstallationIsIdempotent
+--- PASS: TestRestoreNeverConfiguredInstallationIsIdempotent (0.00s)
+=== RUN   TestCommandOutputIsBoundedDuringConcurrentReads
+--- PASS: TestCommandOutputIsBoundedDuringConcurrentReads (0.00s)
+=== RUN   TestValidationHonorsCommandTimeoutAndKillsChildren
+--- PASS: TestValidationHonorsCommandTimeoutAndKillsChildren (0.03s)
+=== RUN   TestRegressionDuplicateRestore
+=== RUN   TestRegressionDuplicateRestore/true
+    review_regression_test.go:82: pre-restore configured=true drift=""
+    review_regression_test.go:91: duplicate=true restored first outbound=vless-reality
+=== RUN   TestRegressionDuplicateRestore/false
+    review_regression_test.go:82: pre-restore configured=true drift=""
+    review_regression_test.go:91: duplicate=false restored first outbound=vless-reality
+--- PASS: TestRegressionDuplicateRestore (1.00s)
+    --- PASS: TestRegressionDuplicateRestore/true (0.44s)
+    --- PASS: TestRegressionDuplicateRestore/false (0.57s)
+=== RUN   TestRegressionPoolRollback
+=== RUN   TestRegressionPoolRollback/false
+    review_regression_test.go:179: retainOld=false error=replace slot 1: injected ado failure runtime slot1 protocol=vless
+=== RUN   TestRegressionPoolRollback/true
+    review_regression_test.go:179: retainOld=true error=replace slot 1: injected ado failure runtime slot1 protocol=vless
+--- PASS: TestRegressionPoolRollback (0.97s)
+    --- PASS: TestRegressionPoolRollback/false (0.48s)
+    --- PASS: TestRegressionPoolRollback/true (0.49s)
+=== RUN   TestRegressionRestoreRefusesDuplicateMultiplicityDrift
+=== RUN   TestRegressionRestoreRefusesDuplicateMultiplicityDrift/1
+=== RUN   TestRegressionRestoreRefusesDuplicateMultiplicityDrift/2
+=== RUN   TestRegressionRestoreRefusesDuplicateMultiplicityDrift/3
+--- PASS: TestRegressionRestoreRefusesDuplicateMultiplicityDrift (0.01s)
+    --- PASS: TestRegressionRestoreRefusesDuplicateMultiplicityDrift/1 (0.00s)
+    --- PASS: TestRegressionRestoreRefusesDuplicateMultiplicityDrift/2 (0.01s)
+    --- PASS: TestRegressionRestoreRefusesDuplicateMultiplicityDrift/3 (0.00s)
+=== RUN   TestManagedRoutingNeverRandomlySelectsEmptySlots
+--- PASS: TestManagedRoutingNeverRandomlySelectsEmptySlots (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/xray	5.022s
+?   	github.com/jarymor-ux/kee-route-manager/internal/tunnel	[no test files]
+=== RUN   TestCredentialsAndSessions
+--- PASS: TestCredentialsAndSessions (0.47s)
+=== RUN   TestVerificationRejectsUnboundedInputsAndCost
+--- PASS: TestVerificationRejectsUnboundedInputsAndCost (0.00s)
+=== RUN   TestLimiterPrunesStaleKeysAndHasGlobalLimit
+--- PASS: TestLimiterPrunesStaleKeysAndHasGlobalLimit (0.00s)
+=== RUN   TestAggregateLimiterKeepsGlobalBudget
+--- PASS: TestAggregateLimiterKeepsGlobalBudget (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/auth	2.247s
+=== RUN   TestRegressionProxyClientLoginBudgets
+2026/10/02 21:15:13 access request_id=6c8100cce54b7412370808a958125ed5 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=2ddca7beb9ca2cc0a4b16d6fc23c5b4a method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=6338988753ceb5e17a093b23b59864d9 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=a4826c951160de7d799333c047148367 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=9f1530ad4a451d4bd9b65760f1b79753 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=529608b27d71db306568dc51431e8c1b method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=6be8c57e8605deeccacbfa8417324094 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=228467ddc1c121e2d0e9d831cd47c3a1 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=4a4c6c6e4844226cb4be01cf88a94b3a method=POST path="/api/v1/auth/login" status=200 duration_ms=155
+2026/10/02 21:15:13 access request_id=27aef0c22be81475bcafa18bf6dfab14 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=d12bb08806637ddabea62652c60c008c method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=0c668b609e21921e82c042cbd9f21b16 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=390a19f6f58cf12f4d5f270ad0a89cd0 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=85b76377bf45835e61957809f5f9f56a method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=53f67313c5552d1b09df2a5c8b3ee884 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=26399abcbcfce9797024e062a9d0d782 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=b7a2b233dcdcf0fb9a8a33becb83a1b8 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:15:13 access request_id=4a4482e3ad2d85096e88e2d701a43c95 method=POST path="/api/v1/auth/login" status=429 duration_ms=0
+--- PASS: TestRegressionProxyClientLoginBudgets (0.34s)
+=== RUN   TestHealthReadinessAndRequestID
+--- PASS: TestHealthReadinessAndRequestID (0.00s)
+=== RUN   TestBenchmarkReturnsReservedID
+2026/10/02 21:15:13 access request_id=960175c5f54a37dcb916dc24039b04ce method=POST path="/api/v1/actions/benchmark" status=202 duration_ms=0
+2026/10/02 21:15:13 access request_id=4368dec9c9f44e884f689825cf2a15f2 method=POST path="/api/v1/actions/benchmark" status=409 duration_ms=0
+--- PASS: TestBenchmarkReturnsReservedID (0.00s)
+=== RUN   TestSystemLogsContractAndErrorHiding
+--- PASS: TestSystemLogsContractAndErrorHiding (0.00s)
+=== RUN   TestRejectTrailingBody
+--- PASS: TestRejectTrailingBody (0.00s)
+=== RUN   TestStatusRedactsSensitiveNodeLabels
+2026/10/02 21:15:13 access request_id=85be1c4750673e8f7e74c2240004d89a method=GET path="/api/v1/status" status=200 duration_ms=0
+2026/10/02 21:15:13 access request_id=1cc881a232e43f41742953719fa9f99d method=GET path="/api/v1/nodes" status=200 duration_ms=0
+2026/10/02 21:15:13 access request_id=112278d0a380de1a780b51a6bda6cd8b method=GET path="/api/v1/status" status=401 duration_ms=0
+2026/10/02 21:15:13 access request_id=ccc79e4f52e601be42c645d02fe1ad80 method=GET path="/api/v1/status" status=200 duration_ms=0
+--- PASS: TestStatusRedactsSensitiveNodeLabels (0.04s)
+=== RUN   TestStatusRedactsSubscriptionPathSecrets
+2026/10/02 21:15:13 access request_id=782fa1bf967554ba002a1f6beadbec75 method=GET path="/api/v1/status" status=200 duration_ms=0
+2026/10/02 21:15:13 access request_id=193599aaef3a40b344b8c3c49db4f3cb method=GET path="/api/v1/status" status=401 duration_ms=0
+--- PASS: TestStatusRedactsSubscriptionPathSecrets (0.00s)
+=== RUN   TestEnsureTLS
+--- PASS: TestEnsureTLS (0.01s)
+=== RUN   TestUIProxyRewritesOriginAndReferer
+2026/10/02 21:15:13 WARNING: UI upstream TLS certificate verification is disabled
+--- PASS: TestUIProxyRewritesOriginAndReferer (0.00s)
+=== RUN   TestEmbeddedAssetContract
+=== RUN   TestEmbeddedAssetContract//
+=== RUN   TestEmbeddedAssetContract//assets/app.css
+=== RUN   TestEmbeddedAssetContract//assets/app.js
+=== RUN   TestEmbeddedAssetContract//sw.js
+=== RUN   TestEmbeddedAssetContract//manifest.webmanifest
+--- PASS: TestEmbeddedAssetContract (0.00s)
+    --- PASS: TestEmbeddedAssetContract// (0.00s)
+    --- PASS: TestEmbeddedAssetContract//assets/app.css (0.00s)
+    --- PASS: TestEmbeddedAssetContract//assets/app.js (0.00s)
+    --- PASS: TestEmbeddedAssetContract//sw.js (0.00s)
+    --- PASS: TestEmbeddedAssetContract//manifest.webmanifest (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	1.328s
+=== RUN   TestReadyVerifiesStaticControllerAndTrust
+--- PASS: TestReadyVerifiesStaticControllerAndTrust (0.01s)
+=== RUN   TestReadyRejectsDegradedController
+--- PASS: TestReadyRejectsDegradedController (0.00s)
+=== RUN   TestProxyTrustAndPin
+2026/10/02 21:15:13 http: TLS handshake error from 127.0.0.1:58135: remote error: tls: bad certificate
+--- PASS: TestProxyTrustAndPin (0.01s)
+=== RUN   TestProxyRejectsForeignOriginBeforeRewrite
+--- PASS: TestProxyRejectsForeignOriginBeforeRewrite (0.00s)
+=== RUN   TestTLSMinimumAndInvalidCA
+--- PASS: TestTLSMinimumAndInvalidCA (0.00s)
+=== RUN   TestServiceWorkerAssets
+--- PASS: TestServiceWorkerAssets (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web/ui	1.586s
+=== RUN   TestManagedFirewallUsesSingleReplaceTransactionAndBypass
+--- PASS: TestManagedFirewallUsesSingleReplaceTransactionAndBypass (1.64s)
+=== RUN   TestFirewallRefusesUnownedTableAndPolicyConflict
+=== RUN   TestFirewallRefusesUnownedTableAndPolicyConflict/table
+=== RUN   TestFirewallRefusesUnownedTableAndPolicyConflict/conflict
+--- PASS: TestFirewallRefusesUnownedTableAndPolicyConflict (1.04s)
+    --- PASS: TestFirewallRefusesUnownedTableAndPolicyConflict/table (0.23s)
+    --- PASS: TestFirewallRefusesUnownedTableAndPolicyConflict/conflict (0.81s)
+=== RUN   TestKeeneticAdvertisesNoUntestedBypass
+--- PASS: TestKeeneticAdvertisesNoUntestedBypass (0.00s)
+=== RUN   TestRealNftManagedFirewallLifecycle
+    firewall_real_test.go:15: opt-in isolated NET_ADMIN namespace required
+--- SKIP: TestRealNftManagedFirewallLifecycle (0.00s)
+=== RUN   TestRealNftPolicySelectorDriftPreserved
+    firewall_real_test.go:80: opt-in isolated NET_ADMIN namespace required
+--- SKIP: TestRealNftPolicySelectorDriftPreserved (0.00s)
+=== RUN   TestRenderManagedFirewallIsIPv4ScopedAndDeterministic
+--- PASS: TestRenderManagedFirewallIsIPv4ScopedAndDeterministic (0.00s)
+=== RUN   TestRegressionWANDisconnected
+=== RUN   TestRegressionWANDisconnected/true
+    keenetic_regression_test.go:44: connected=true returned_WAN=0x68bfdda6388 uptime=1234 error=<nil>
+=== RUN   TestRegressionWANDisconnected/false
+    keenetic_regression_test.go:44: connected=false returned_WAN=0x68bfdda6456 uptime=1234 error=<nil>
+--- PASS: TestRegressionWANDisconnected (0.00s)
+    --- PASS: TestRegressionWANDisconnected/true (0.00s)
+    --- PASS: TestRegressionWANDisconnected/false (0.00s)
+=== RUN   TestRegressionPolicyCancelledRollback
+=== RUN   TestRegressionPolicyCancelledRollback/success
+    keenetic_regression_test.go:94: mode=success error=<nil> command_log=
+        no ip hotspot host 00:11:22:33:44:55 conform
+        ip hotspot host 00:11:22:33:44:55 policy Policy1
+        system configuration save
+=== RUN   TestRegressionPolicyCancelledRollback/verification_failure
+    keenetic_regression_test.go:94: mode=verification_failure error=router did not apply policy safely command_log=
+        no ip hotspot host 00:11:22:33:44:55 conform
+        ip hotspot host 00:11:22:33:44:55 policy Policy1
+        ip hotspot host 00:11:22:33:44:55 policy Policy2
+        ip hotspot host 00:11:22:33:44:55 permit
+        ip hotspot host 00:11:22:33:44:55 conform
+        system configuration save
+=== RUN   TestRegressionPolicyCancelledRollback/cancel
+    keenetic_regression_test.go:94: mode=cancel error=Get "http://127.0.0.1:79/rci/ip/hotspot": context canceled command_log=
+        no ip hotspot host 00:11:22:33:44:55 conform
+        ip hotspot host 00:11:22:33:44:55 policy Policy1
+        ip hotspot host 00:11:22:33:44:55 policy Policy2
+        ip hotspot host 00:11:22:33:44:55 permit
+        ip hotspot host 00:11:22:33:44:55 conform
+        system configuration save
+--- PASS: TestRegressionPolicyCancelledRollback (1.34s)
+    --- PASS: TestRegressionPolicyCancelledRollback/success (0.65s)
+    --- PASS: TestRegressionPolicyCancelledRollback/verification_failure (0.34s)
+    --- PASS: TestRegressionPolicyCancelledRollback/cancel (0.34s)
+=== RUN   TestPolicyRollbackFailureAndVerificationAreReported
+=== RUN   TestPolicyRollbackFailureAndVerificationAreReported/command_failure
+=== RUN   TestPolicyRollbackFailureAndVerificationAreReported/restore_drift
+=== RUN   TestPolicyRollbackFailureAndVerificationAreReported/deadline
+--- PASS: TestPolicyRollbackFailureAndVerificationAreReported (1.94s)
+    --- PASS: TestPolicyRollbackFailureAndVerificationAreReported/command_failure (0.45s)
+    --- PASS: TestPolicyRollbackFailureAndVerificationAreReported/restore_drift (0.32s)
+    --- PASS: TestPolicyRollbackFailureAndVerificationAreReported/deadline (1.17s)
+=== RUN   TestWANMetricsRejectUnsafeConnectedInterfaceControl
+--- PASS: TestWANMetricsRejectUnsafeConnectedInterfaceControl (0.00s)
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/source_host/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/source_host/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/remove
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/ensure
+=== RUN   TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/remove
+--- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects (26.73s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/ensure (0.52s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/remove (0.87s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/ensure (0.99s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/remove (0.83s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/ensure (0.85s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/remove (1.02s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/ensure (1.14s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/remove (0.68s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/ensure (0.53s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/remove (0.77s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source_host/ensure (0.85s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source_host/remove (0.86s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/ensure (0.84s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/remove (0.84s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/ensure (0.82s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/remove (0.81s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/ensure (1.15s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/remove (0.82s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/ensure (0.83s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/remove (1.00s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/ensure (0.87s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/remove (5.50s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/ensure (1.59s)
+    --- PASS: TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/remove (1.77s)
+=== RUN   TestPolicyRuleIdentityNormalizationControl
+--- PASS: TestPolicyRuleIdentityNormalizationControl (1.87s)
+=== RUN   TestLegacyOwnershipWithAbsentRuleCanMigrateControl
+--- PASS: TestLegacyOwnershipWithAbsentRuleCanMigrateControl (2.26s)
+=== RUN   TestPolicyIdentityLargeNumbersControl
+--- PASS: TestPolicyIdentityLargeNumbersControl (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/platform	38.806s
+=== RUN   TestFetcherCacheBackoffAndRecovery
+--- PASS: TestFetcherCacheBackoffAndRecovery (0.02s)
+=== RUN   TestAllProvidersOutageHourUsesEmergencyCacheAndBackoff
+--- PASS: TestAllProvidersOutageHourUsesEmergencyCacheAndBackoff (0.02s)
+=== RUN   TestRetryBackoffWithoutUsableCache
+=== RUN   TestRetryBackoffWithoutUsableCache/missing
+=== RUN   TestRetryBackoffWithoutUsableCache/malformed
+=== RUN   TestRetryBackoffWithoutUsableCache/healthy
+--- PASS: TestRetryBackoffWithoutUsableCache (0.04s)
+    --- PASS: TestRetryBackoffWithoutUsableCache/missing (0.01s)
+    --- PASS: TestRetryBackoffWithoutUsableCache/malformed (0.01s)
+    --- PASS: TestRetryBackoffWithoutUsableCache/healthy (0.02s)
+=== RUN   TestSubscriptionPathSecretsAreRedacted
+--- PASS: TestSubscriptionPathSecretsAreRedacted (0.01s)
+=== RUN   TestFileSourcesRequireRegularFilesAndCancellation
+--- PASS: TestFileSourcesRequireRegularFilesAndCancellation (0.01s)
+=== RUN   TestSubscriptionReadCancellation
+--- PASS: TestSubscriptionReadCancellation (0.04s)
+=== RUN   TestPayloadPreservesALPNCommas
+=== RUN   TestPayloadPreservesALPNCommas/plain
+=== RUN   TestPayloadPreservesALPNCommas/base64
+=== RUN   TestPayloadPreservesALPNCommas/encoded_comma
+--- PASS: TestPayloadPreservesALPNCommas (0.00s)
+    --- PASS: TestPayloadPreservesALPNCommas/plain (0.00s)
+    --- PASS: TestPayloadPreservesALPNCommas/base64 (0.00s)
+    --- PASS: TestPayloadPreservesALPNCommas/encoded_comma (0.00s)
+=== RUN   TestParsePlainAndBase64
+--- PASS: TestParsePlainAndBase64 (0.00s)
+=== RUN   TestDeduplicateAcrossSources
+--- PASS: TestDeduplicateAcrossSources (0.00s)
+=== RUN   TestUnsupportedRejected
+--- PASS: TestUnsupportedRejected (0.00s)
+=== RUN   TestFairMergePreservesSmallProviderAndAllSources
+--- PASS: TestFairMergePreservesSmallProviderAndAllSources (0.00s)
+=== RUN   TestFetcherRedactsSubscriptionErrors
+--- PASS: TestFetcherRedactsSubscriptionErrors (0.00s)
+=== RUN   FuzzSubscriptionPayload
+=== RUN   FuzzSubscriptionPayload/seed#0
+=== RUN   FuzzSubscriptionPayload/seed#1
+=== RUN   FuzzSubscriptionPayload/seed#2
+=== RUN   FuzzSubscriptionPayload/seed#3
+--- PASS: FuzzSubscriptionPayload (0.00s)
+    --- PASS: FuzzSubscriptionPayload/seed#0 (0.00s)
+    --- PASS: FuzzSubscriptionPayload/seed#1 (0.00s)
+    --- PASS: FuzzSubscriptionPayload/seed#2 (0.00s)
+    --- PASS: FuzzSubscriptionPayload/seed#3 (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/subscription	2.692s
+=== RUN   TestRedaction
+--- PASS: TestRedaction (0.00s)
+=== RUN   TestHeadersCopy
+--- PASS: TestHeadersCopy (0.00s)
+=== RUN   TestURLPathsArePrivate
+--- PASS: TestURLPathsArePrivate (0.00s)
+=== RUN   FuzzRedaction
+=== RUN   FuzzRedaction/seed#0
+=== RUN   FuzzRedaction/seed#1
+=== RUN   FuzzRedaction/seed#2
+=== RUN   FuzzRedaction/seed#3
+=== RUN   FuzzRedaction/seed#4
+--- PASS: FuzzRedaction (0.00s)
+    --- PASS: FuzzRedaction/seed#0 (0.00s)
+    --- PASS: FuzzRedaction/seed#1 (0.00s)
+    --- PASS: FuzzRedaction/seed#2 (0.00s)
+    --- PASS: FuzzRedaction/seed#3 (0.00s)
+    --- PASS: FuzzRedaction/seed#4 (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/redact	2.186s

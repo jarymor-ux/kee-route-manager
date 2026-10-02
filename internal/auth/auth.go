@@ -225,7 +225,12 @@ type Limiter struct {
 func NewLimiter(max int, window time.Duration) *Limiter {
 	return &Limiter{window: window, max: max, attempts: map[string][]time.Time{}}
 }
-func (l *Limiter) Allow(key string) bool {
+func (l *Limiter) Allow(key string) bool { return l.allow(key, false) }
+
+// AllowAggregate retains the global budget for a shared local proxy transport.
+// Client quotas are enforced at the UI edge using its actual socket peer.
+func (l *Limiter) AllowAggregate() bool { return l.allow("", true) }
+func (l *Limiter) allow(key string, aggregate bool) bool {
 	now := time.Now()
 	cut := now.Add(-l.window)
 	l.mu.Lock()
@@ -245,6 +250,10 @@ func (l *Limiter) Allow(key string) bool {
 	l.global = keptGlobal
 	if l.max < 1 || l.window <= 0 || len(l.global) >= l.max*8 {
 		return false
+	}
+	if aggregate {
+		l.global = append(l.global, now)
+		return true
 	}
 	old := l.attempts[key]
 	kept := old[:0]

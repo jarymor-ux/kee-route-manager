@@ -19,6 +19,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/web/ui"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -220,7 +221,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := auth.RemoteIP(r)
-	if !s.limiter.Allow(ip) {
+	allowed := false
+	if peer := net.ParseIP(ip); peer != nil && peer.IsLoopback() {
+		allowed = s.limiter.AllowAggregate()
+	} else {
+		allowed = s.limiter.Allow(ip)
+	}
+	if !allowed {
 		jsonError(w, 429, "too many attempts")
 		return
 	}
@@ -267,6 +274,9 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ auth.Session) 
 	}
 	v.State.LastHealthMessage = redact.Text(v.State.LastHealthMessage)
 	v.State.LastSwitchReason = redact.Text(v.State.LastSwitchReason)
+	for i := range v.State.Pool {
+		v.State.Pool[i].Label = redact.Text(v.State.Pool[i].Label)
+	}
 	for k, x := range v.State.Sources {
 		x.Name = redact.Text(x.Name)
 		x.LastError = redact.Text(x.LastError)
@@ -277,6 +287,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, _ auth.Session) 
 		v.State.Measurements[k] = x
 	}
 	v.State.LastBenchmark.Error = redact.Text(v.State.LastBenchmark.Error)
+	v.State.LastBenchmark.WinnerLabel = redact.Text(v.State.LastBenchmark.WinnerLabel)
 	for i := range v.State.LastBenchmark.Results {
 		v.State.LastBenchmark.Results[i].Error = redact.Text(v.State.LastBenchmark.Results[i].Error)
 	}

@@ -1,0 +1,17 @@
+Controller configuration is valid
+{
+  "direct_mode": false,
+  "role": "controller",
+  "status": "ok",
+  "time": "2026-10-02T18:19:56.503879212Z",
+  "version": "1.0.0-rc.2",
+  "xray_running": true
+}
+
+{
+  "accepted": true,
+  "operation_id": "op-789cd3597bcb1187"
+}
+
+UI configuration is valid
+Linux subprocess smoke passed: owner lock, alternate state lock, read-only status, cached readiness, CLI benchmark, TLS-init, UI isolation, assets, CA proxy, CSRF origin.

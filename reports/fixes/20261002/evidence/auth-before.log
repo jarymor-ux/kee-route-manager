@@ -1,0 +1,16 @@
+=== RUN   TestRegressionProxyClientLoginBudgets
+2026/10/02 21:06:58 access request_id=b7fb0bdabfe62183bfe8637921ec9bde method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=3a3657fe620958e443f3663bff7d9881 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=6de1a38b38e0eb02b861125a4212b4e6 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=f06458ebf93bab750235251be564cf83 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=aed96c70c6d02ddd1d58a909dcbbc33e method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=95a6b57d57ddb47bfd1dc50ec5ab571b method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=625ef9c06e741a16ef737e098757ce21 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=e36f4162890fd2476a6e66db4870ae3c method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:06:58 access request_id=1a9940dc2ef1147cf29f87ac3f49d997 method=POST path="/api/v1/auth/login" status=429 duration_ms=0
+2026/10/02 21:06:58 access request_id=3a4c83d06efccbd7c377507f8afd7f3d method=POST path="/api/v1/auth/login" status=429 duration_ms=0
+    auth_proxy_regression_test.go:59: unrelated victim locked out: 429
+--- FAIL: TestRegressionProxyClientLoginBudgets (0.19s)
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/web	0.586s
+FAIL

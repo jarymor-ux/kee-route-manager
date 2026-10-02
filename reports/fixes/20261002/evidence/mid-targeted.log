@@ -1,0 +1,16 @@
+--- FAIL: TestRegressionDuplicateRestore (0.80s)
+    --- FAIL: TestRegressionDuplicateRestore/true (0.40s)
+        review_regression_test.go:82: pre-restore configured=true drift=""
+        review_regression_test.go:91: duplicate=true restored first outbound=vless-reality
+        review_regression_test.go:98: restore changed original rule sequence
+    --- FAIL: TestRegressionDuplicateRestore/false (0.40s)
+        review_regression_test.go:82: pre-restore configured=true drift=""
+        review_regression_test.go:91: duplicate=false restored first outbound=vless-reality
+        review_regression_test.go:98: restore changed original rule sequence
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/xray	3.663s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	8.947s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/auth	0.956s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	1.135s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web/ui	1.515s
+FAIL

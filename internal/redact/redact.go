@@ -25,6 +25,9 @@ func URL(raw string) string {
 		return "<redacted-node-uri>"
 	}
 	u.User = nil
+	// Subscription providers can place bearer credentials in opaque or escaped paths.
+	u.Path = ""
+	u.RawPath = ""
 	u.RawQuery = ""
 	u.ForceQuery = false
 	u.Fragment = ""

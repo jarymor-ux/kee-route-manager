@@ -1,0 +1,10 @@
+--- FAIL: TestActionEventRoundTripWithLargeDiagnostics (1.16s)
+    --- FAIL: TestActionEventRoundTripWithLargeDiagnostics/1049600 (0.83s)
+        transactions_regression_test.go:171: action error bytes=1049734
+        transactions_regression_test.go:176: durable event file bytes=1050078
+        transactions_regression_test.go:180: persisted diagnostic must reopen: bufio.Scanner: token too long
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/core	5.804s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/xray	3.130s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/store	1.562s
+FAIL

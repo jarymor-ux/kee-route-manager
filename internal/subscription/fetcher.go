@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -117,7 +118,6 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 			return xs, st, nil
 		}
 	}
-	st.LastAttemptAt = now
 	if !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
 		if xs, c, e := f.load(s.ID); e == nil {
 			st.UsingCache = true
@@ -130,7 +130,12 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 			}
 			return xs, st, fmt.Errorf("backoff until %s", old.NextRetryAt.Format(time.RFC3339))
 		}
+		st.Status = "unavailable"
+		st.UsingCache = false
+		st.NodeCount = 0
+		return nil, st, fmt.Errorf("backoff until %s", old.NextRetryAt.Format(time.RFC3339))
 	}
+	st.LastAttemptAt = now
 	body, err := f.download(ctx, s)
 	if err == nil {
 		var xs []model.Node
@@ -190,17 +195,30 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	return nil, st, err
 }
 func (f *Fetcher) download(ctx context.Context, s config.Source) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, f.cfg.RequestTimeout.Duration)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(s.URL)
 	if err != nil {
 		return nil, err
 	}
 	if u.Scheme == "file" {
-		fd, err := os.Open(u.Path)
+		// Nonblocking open prevents a replaced path/FIFO from blocking before fstat.
+		fd, err := os.OpenFile(u.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, err
 		}
 		defer fd.Close()
-		return limited(fd, int64(f.cfg.MaxResponseBytes))
+		info, err := fd.Stat()
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, errors.New("subscription source must be a regular file")
+		}
+		return limited(ctx, fd, int64(f.cfg.MaxResponseBytes))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
 	if err != nil {
@@ -221,10 +239,27 @@ func (f *Fetcher) download(ctx context.Context, s config.Source) ([]byte, error)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return limited(resp.Body, int64(f.cfg.MaxResponseBytes))
+	return limited(ctx, resp.Body, int64(f.cfg.MaxResponseBytes))
 }
-func limited(r io.Reader, n int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, n+1))
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.r.Read(p)
+	if canceled := r.ctx.Err(); canceled != nil {
+		return n, canceled
+	}
+	return n, err
+}
+
+func limited(ctx context.Context, r io.Reader, n int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(contextReader{ctx, r}, n+1))
 	if err != nil {
 		return nil, err
 	}

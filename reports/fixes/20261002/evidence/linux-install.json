@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "docker",
+    "run",
+    "--rm",
+    "--network",
+    "none",
+    "--mount",
+    "type=bind,source=/var/folders/x9/wr7234px6r9963gf_n47p1pm0000gn/T/krm-fix-linux-s38_tom2/source,target=/checkout,readonly",
+    "--entrypoint",
+    "bash",
+    "sha256:521fa0c1ab8c6f27a1c2194e1ba79d96b1914d760b9c61ffd0a0bc4e47814e14",
+    "-c",
+    "cp -a /checkout /tmp/source && cd /tmp/source && ./scripts/test-install.sh"
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:19:47.311133+00:00",
+  "exit": 0,
+  "elapsed_seconds": 16.636,
+  "output": "linux-install.log"
+}

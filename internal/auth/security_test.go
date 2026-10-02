@@ -37,3 +37,19 @@ func TestLimiterPrunesStaleKeysAndHasGlobalLimit(t *testing.T) {
 		t.Fatal("global flood accepted")
 	}
 }
+
+func TestAggregateLimiterKeepsGlobalBudget(t *testing.T) {
+	l := NewLimiter(8, time.Minute)
+	for i := 0; i < 64; i++ {
+		if !l.AllowAggregate() {
+			t.Fatalf("shared transport exhausted per-client quota at %d", i)
+		}
+	}
+	if l.AllowAggregate() || l.Allow("fresh-client") {
+		t.Fatal("aggregate limit bypassed")
+	}
+	l.Reset("shared-transport")
+	if l.AllowAggregate() {
+		t.Fatal("successful login reset aggregate flood budget")
+	}
+}

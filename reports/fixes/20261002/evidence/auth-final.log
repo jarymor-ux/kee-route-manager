@@ -1,0 +1,92 @@
+=== RUN   TestRegressionProxyClientLoginBudgets
+2026/10/02 21:24:35 access request_id=642b908ff80efb390f826281b2cd50f9 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=045c545758e8449848a67a692b2dc9d3 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=2ee5450365fb26bae034d88e8ee8a1b8 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=01eb9205c58aa6196b77039ad51c374c method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=b136f1eb75ce1d95b564d4699d499eb8 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=793a4babf539bad8be1def058359a965 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=92bff182f7a3ec94b272a1cbcbc0dde7 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:35 access request_id=2c6782f31dc5aee846a31a172aec7a6d method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:38 access request_id=e95ed260cd1d2edf8cfa22c802c91e27 method=POST path="/api/v1/auth/login" status=200 duration_ms=2841
+2026/10/02 21:24:41 access request_id=71e9d7c7e350717c5c2de017ef3f8dad method=POST path="/api/v1/auth/login" status=200 duration_ms=2792
+2026/10/02 21:24:43 access request_id=09e1839b149bdc090a2f9f3c460db5aa method=POST path="/api/v1/auth/login" status=200 duration_ms=2708
+2026/10/02 21:24:46 access request_id=9a5c5ac4dc48bbb17dd6545c61719f47 method=POST path="/api/v1/auth/login" status=200 duration_ms=2696
+2026/10/02 21:24:49 access request_id=40996a3881bce37bd6216cfb1b630b46 method=POST path="/api/v1/auth/login" status=200 duration_ms=2686
+2026/10/02 21:24:51 access request_id=0c611bf0fdae315cbd5a68b531c9a2e2 method=POST path="/api/v1/auth/login" status=200 duration_ms=2695
+2026/10/02 21:24:54 access request_id=f03c848a36617f412197026f2642428d method=POST path="/api/v1/auth/login" status=200 duration_ms=2712
+2026/10/02 21:24:57 access request_id=696f260fb1e64a4e11c7f39a91fbfc6e method=POST path="/api/v1/auth/login" status=200 duration_ms=2704
+2026/10/02 21:25:00 access request_id=965e35aa271757ac476bb795feb58948 method=POST path="/api/v1/auth/login" status=200 duration_ms=2730
+2026/10/02 21:25:00 access request_id=9d07c0d0c31897a62df0457ebb96cd83 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=12ae24a6fe85b7864b74a60ce6d653e4 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=6547dcef706351c387b08ef7d74fdaf7 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=189c1fb8c0c60e0a25634be3ce58dbe3 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=359c602523891fae9af1ba5e53fc4abd method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=39ece9a063c8b92493917c8698bdac68 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=17b3d83427cc4a4f20ca741322af9937 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=3e3896f7835741c4384d9005aed7fe97 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:25:00 access request_id=4445d3c1a12eb32e1462895f09450cc3 method=POST path="/api/v1/auth/login" status=429 duration_ms=0
+--- PASS: TestRegressionProxyClientLoginBudgets (27.41s)
+=== RUN   TestHealthReadinessAndRequestID
+--- PASS: TestHealthReadinessAndRequestID (0.00s)
+=== RUN   TestBenchmarkReturnsReservedID
+2026/10/02 21:25:00 access request_id=46775906ad9f32a47b419fe3848ffd90 method=POST path="/api/v1/actions/benchmark" status=202 duration_ms=0
+2026/10/02 21:25:00 access request_id=3d6294cd74406c302162dd00dd4c3cb6 method=POST path="/api/v1/actions/benchmark" status=409 duration_ms=0
+--- PASS: TestBenchmarkReturnsReservedID (0.00s)
+=== RUN   TestSystemLogsContractAndErrorHiding
+--- PASS: TestSystemLogsContractAndErrorHiding (0.00s)
+=== RUN   TestRejectTrailingBody
+--- PASS: TestRejectTrailingBody (0.00s)
+=== RUN   TestStatusRedactsSensitiveNodeLabels
+2026/10/02 21:25:00 access request_id=351da6c9c7a38dc46729130735ce4985 method=GET path="/api/v1/status" status=200 duration_ms=0
+2026/10/02 21:25:00 access request_id=19dfd53216b94e2adcd8bf91c505615a method=GET path="/api/v1/nodes" status=200 duration_ms=0
+2026/10/02 21:25:00 access request_id=8a554a3cd8232afcd775a1f37d64782d method=GET path="/api/v1/status" status=401 duration_ms=0
+2026/10/02 21:25:00 access request_id=18053dca2f2dceb91e15d4ab619f5559 method=GET path="/api/v1/status" status=200 duration_ms=0
+--- PASS: TestStatusRedactsSensitiveNodeLabels (0.04s)
+=== RUN   TestStatusRedactsSubscriptionPathSecrets
+2026/10/02 21:25:00 access request_id=be86d411525f0d802bc122d5f5a4fbff method=GET path="/api/v1/status" status=200 duration_ms=0
+2026/10/02 21:25:00 access request_id=0948db763f0121b4bc62c201c6bda56d method=GET path="/api/v1/status" status=401 duration_ms=0
+--- PASS: TestStatusRedactsSubscriptionPathSecrets (0.00s)
+=== RUN   TestEnsureTLS
+--- PASS: TestEnsureTLS (0.01s)
+=== RUN   TestUIProxyRewritesOriginAndReferer
+2026/10/02 21:25:00 WARNING: UI upstream TLS certificate verification is disabled
+--- PASS: TestUIProxyRewritesOriginAndReferer (0.01s)
+=== RUN   TestEmbeddedAssetContract
+=== RUN   TestEmbeddedAssetContract//
+=== RUN   TestEmbeddedAssetContract//assets/app.css
+=== RUN   TestEmbeddedAssetContract//assets/app.js
+=== RUN   TestEmbeddedAssetContract//sw.js
+=== RUN   TestEmbeddedAssetContract//manifest.webmanifest
+--- PASS: TestEmbeddedAssetContract (0.01s)
+    --- PASS: TestEmbeddedAssetContract// (0.01s)
+    --- PASS: TestEmbeddedAssetContract//assets/app.css (0.00s)
+    --- PASS: TestEmbeddedAssetContract//assets/app.js (0.00s)
+    --- PASS: TestEmbeddedAssetContract//sw.js (0.00s)
+    --- PASS: TestEmbeddedAssetContract//manifest.webmanifest (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	29.225s
+=== RUN   TestReadyVerifiesStaticControllerAndTrust
+--- PASS: TestReadyVerifiesStaticControllerAndTrust (0.01s)
+=== RUN   TestReadyRejectsDegradedController
+--- PASS: TestReadyRejectsDegradedController (0.00s)
+=== RUN   TestProxyTrustAndPin
+2026/10/02 21:24:33 http: TLS handshake error from 127.0.0.1:59855: remote error: tls: bad certificate
+--- PASS: TestProxyTrustAndPin (0.02s)
+=== RUN   TestProxyRejectsForeignOriginBeforeRewrite
+--- PASS: TestProxyRejectsForeignOriginBeforeRewrite (0.00s)
+=== RUN   TestTLSMinimumAndInvalidCA
+--- PASS: TestTLSMinimumAndInvalidCA (0.00s)
+=== RUN   TestServiceWorkerAssets
+--- PASS: TestServiceWorkerAssets (0.01s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web/ui	2.130s
+=== RUN   TestCredentialsAndSessions
+--- PASS: TestCredentialsAndSessions (8.55s)
+=== RUN   TestVerificationRejectsUnboundedInputsAndCost
+--- PASS: TestVerificationRejectsUnboundedInputsAndCost (0.00s)
+=== RUN   TestLimiterPrunesStaleKeysAndHasGlobalLimit
+--- PASS: TestLimiterPrunesStaleKeysAndHasGlobalLimit (0.00s)
+=== RUN   TestAggregateLimiterKeepsGlobalBudget
+--- PASS: TestAggregateLimiterKeepsGlobalBudget (0.00s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/auth	9.939s

@@ -45,12 +45,35 @@ func ParsePayload(data []byte, source string) ([]model.Node, error) {
 	return best, nil
 }
 func parseLines(text, source string) []model.Node {
-	fields := strings.FieldsFunc(strings.ReplaceAll(text, "\r", "\n"), func(r rune) bool { return r == '\n' || r == '\t' || r == ' ' || r == ',' })
+	fields := strings.Fields(text)
 	out := []model.Node{}
-	for _, v := range fields {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(v)), "vless://") {
-			if n, err := ParseVLESS(strings.TrimSpace(v), source); err == nil {
-				out = append(out, n)
+	for i, field := range fields {
+		if strings.HasSuffix(field, ",") && i+1 < len(fields) && strings.HasPrefix(strings.ToLower(fields[i+1]), "vless://") {
+			field = strings.TrimSuffix(field, ",")
+		}
+		// Delimiter offsets must stay byte-aligned with the original URI. Unicode
+		// lowercasing can change byte lengths in otherwise valid node labels.
+		lowerBytes := []byte(field)
+		for j, ch := range lowerBytes {
+			if ch >= 'A' && ch <= 'Z' {
+				lowerBytes[j] = ch + ('a' - 'A')
+			}
+		}
+		lower := string(lowerBytes)
+		for field != "" {
+			v := field
+			isVLESS := strings.HasPrefix(lower, "vless://")
+			// A comma can separate complete URIs, but also belongs to ALPN values.
+			if boundary := strings.Index(lower, ",vless://"); boundary >= 0 {
+				v, field = field[:boundary], field[boundary+1:]
+				lower = lower[boundary+1:]
+			} else {
+				field = ""
+			}
+			if isVLESS {
+				if n, err := ParseVLESS(v, source); err == nil {
+					out = append(out, n)
+				}
 			}
 		}
 	}

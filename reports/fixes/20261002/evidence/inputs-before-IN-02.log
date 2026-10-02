@@ -1,0 +1,15 @@
+=== RUN   TestPayloadPreservesALPNCommas
+=== RUN   TestPayloadPreservesALPNCommas/base64
+    input_regression_test.go:90: nodes=0 err=no supported VLESS Reality TCP or VLESS WS/TLS nodes
+=== RUN   TestPayloadPreservesALPNCommas/encoded_comma
+=== RUN   TestPayloadPreservesALPNCommas/plain
+    input_regression_test.go:90: nodes=0 err=no supported VLESS Reality TCP or VLESS WS/TLS nodes
+=== NAME  TestPayloadPreservesALPNCommas
+    input_regression_test.go:100: comma-separated URI list: nodes=1 err=<nil>
+--- FAIL: TestPayloadPreservesALPNCommas (0.00s)
+    --- FAIL: TestPayloadPreservesALPNCommas/base64 (0.00s)
+    --- PASS: TestPayloadPreservesALPNCommas/encoded_comma (0.00s)
+    --- FAIL: TestPayloadPreservesALPNCommas/plain (0.00s)
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/subscription	0.391s
+FAIL

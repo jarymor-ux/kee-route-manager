@@ -1,0 +1,62 @@
+=== RUN   TestProvenReplayRefusesOperatorChanges
+=== RUN   TestProvenReplayRefusesOperatorChanges/base_target
+=== RUN   TestProvenReplayRefusesOperatorChanges/managed_hash
+=== RUN   TestProvenReplayRefusesOperatorChanges/managed_missing
+=== RUN   TestProvenReplayRefusesOperatorChanges/base_unrelated
+--- PASS: TestProvenReplayRefusesOperatorChanges (1.66s)
+    --- PASS: TestPro    transactions_regression_test.go:216: xray API did not become ready
+=== RUN   TestProvenReplayRefusesOperatorChanges/base_unrelated
+ASS: TestProvenReplayRefusesOperatorChanges/managed_missing (0.42s)
+    --- PASS: TestProvenReplayRefusesOperatorChanges/base_unrelated (0.41s)
+=== RUN   TestReplayAcceptsEveryPartialFileWrite
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/pool/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/select/cut5
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut0
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut1
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut2
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut3
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut4
+=== RUN   TestReplayAcceptsEveryPartialFileWrite/restore/cut5
+--- PASS: TestReplayAcceptsEveryPartialFileWrite (15.35s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut0 (0.51s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut1 (0.53s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut2 (0.54s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut3 (0.54s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut4 (0.51s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/bootstrap/cut5 (0.51s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut0 (0.75s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut1 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut2 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut3 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut4 (0.73s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/pool/cut5 (0.71s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut0 (0.75s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut1 (0.71s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut2 (0.73s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut3 (0.73s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut4 (0.74s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/select/cut5 (0.73s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut0 (0.58s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut1 (0.58s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut2 (0.55s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut3 (0.57s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut4 (0.59s)
+    --- PASS: TestReplayAcceptsEveryPartialFileWrite/restore/cut5 (0.58s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	17.398s

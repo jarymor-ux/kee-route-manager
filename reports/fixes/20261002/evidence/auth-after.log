@@ -1,0 +1,22 @@
+=== RUN   TestRegressionProxyClientLoginBudgets
+2026/10/02 21:07:36 access request_id=17fac5f98cb1e696866de8601bef0dbf method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=71c26403817c496418b9b91de36f6dff method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=adb935e1cd57e68fab805677587715a4 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=bf7a4d8a9def96d10c6f0d7b39672a09 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=46fd3dd6da37d631be1a3138e8773580 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=305c13aab0d8f650c77b26bd4ed11530 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=50a223ac227b021740f2e1089c2fce6f method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=6c10f8699a8178952cafc7bb8968ab13 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=b1db1b61e7efbad96158096024a353fe method=POST path="/api/v1/auth/login" status=200 duration_ms=150
+2026/10/02 21:07:36 access request_id=ffaf887e613d6687e75eeb8c8fc6025a method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=b6bae61ba39d816a43fa4f680675d88d method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=d7c735fcb70711dccfe2977bd5ae3cdd method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=77cfb602ce5667b9e2d2d1169979879d method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=6763841f14f7abda2b0a93d3e7412481 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=ef0f033c04982303c008b7004bd12f7b method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=b47c3de7c94b567d6cd29ed97b6242fe method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=d500e718edce7b7e3851936c29275981 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:07:36 access request_id=569516c04422a2ec7b80ea3793f48888 method=POST path="/api/v1/auth/login" status=429 duration_ms=0
+--- PASS: TestRegressionProxyClientLoginBudgets (0.33s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	0.717s

@@ -1,0 +1,37 @@
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-manager	[no test files]
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-manager-ui	[no test files]
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-managerctl	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-managerd	1.057s
+?   	github.com/jarymor-ux/kee-route-manager/cmd/krm-release-tool	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/auth	1.214s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/bench	2.049s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/config	1.380s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/control	4.088s
+?   	github.com/jarymor-ux/kee-route-manager/internal/control/cli	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/control/client	2.858s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	37.253s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/daemonlock	4.375s
+?   	github.com/jarymor-ux/kee-route-manager/internal/event	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/logging	3.177s
+?   	github.com/jarymor-ux/kee-route-manager/internal/model	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/operation	5.149s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/platform	39.863s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/redact	4.764s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/store	5.810s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/subscription	5.150s
+?   	github.com/jarymor-ux/kee-route-manager/internal/tunnel	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/update	5.236s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	6.627s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web/ui	4.573s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/xray	8.577s
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 28.947s
+
+OK
+Source, tests, syntax, embedded assets, templates and adversarial bootstrap checks passed.
+Verified signatures, sizes, digests and required manifest assets (21 files).
+Signed RC2 artifacts: /tmp/krm-release.dpZWRT/output/dist
+Verified signatures, sizes, digests and required manifest assets (21 files).
+manifest mismatch kee-route-manager-ui-linux-amd64
+Signed release fixture and tamper rejection passed.

@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "./scripts/fuzz-smoke.sh"
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:28:41.617399+00:00",
+  "exit": 0,
+  "elapsed_seconds": 26.304,
+  "output": "fuzz-verified.log"
+}

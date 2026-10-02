@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/logging"
 	"io/fs"
@@ -226,6 +227,14 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) { jsonError(w, 502, "upstream unavailable") }
 	files := StaticHandler()
+	loginLimiter := auth.NewLimiter(8, 15*time.Minute)
+	proxy.ModifyResponse = func(response *http.Response) error {
+		r := response.Request
+		if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login" && response.StatusCode == http.StatusOK {
+			loginLimiter.Reset(auth.RemoteIP(r))
+		}
+		return nil
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" {
@@ -236,6 +245,12 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 			}
 			if err != nil || u.Scheme != scheme || !strings.EqualFold(u.Host, r.Host) {
 				jsonError(w, 403, "origin rejected")
+				return
+			}
+		}
+		if r.URL.Path == "/api/v1/auth/login" && r.Method == http.MethodPost {
+			if !loginLimiter.Allow(auth.RemoteIP(r)) {
+				jsonError(w, http.StatusTooManyRequests, "too many attempts")
 				return
 			}
 		}

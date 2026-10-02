@@ -163,18 +163,41 @@ func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) err
 		order = append(order, active)
 	}
 	applied := []int{}
+	// Capture exact persisted definitions before any runtime mutation. Next nodes
+	// may legitimately omit an evicted node, and rebuilding loses custom fields.
+	previousBytes, e := os.ReadFile(filepath.Join(m.cfg.Xray.ManagedDir, "04_90_kee_route_manager_outbounds.json"))
+	if e != nil {
+		return e
+	}
+	var previousConfig struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if e = json.Unmarshal(previousBytes, &previousConfig); e != nil {
+		return e
+	}
 	oldOut := map[int]map[string]any{}
 	for _, i := range order {
 		if old[i].NodeID == next[i].NodeID {
 			continue
 		}
 		tag := fmt.Sprintf("%s%d", m.cfg.Xray.SlotTagPrefix, i)
-		oldOut[i] = blackholeOutbound(tag)
-		if n, ok := nodes[old[i].NodeID]; ok {
-			if previous, buildErr := Outbound(n, tag); buildErr == nil {
-				oldOut[i] = previous
+		for _, out := range previousConfig.Outbounds {
+			if stringValue(out["tag"]) == tag {
+				if oldOut[i] != nil {
+					return fmt.Errorf("duplicate previous outbound %s", tag)
+				}
+				oldOut[i] = out
 			}
 		}
+		if oldOut[i] == nil {
+			return fmt.Errorf("previous outbound %s unavailable; refusing pool mutation", tag)
+		}
+	}
+	for _, i := range order {
+		if old[i].NodeID == next[i].NodeID {
+			continue
+		}
+		tag := fmt.Sprintf("%s%d", m.cfg.Xray.SlotTagPrefix, i)
 		var out map[string]any
 		if n, ok := nodes[next[i].NodeID]; ok {
 			out, e = Outbound(n, tag)
@@ -847,29 +870,64 @@ func (m *Manager) reverseBaseRoute(originalPath, currentPath string) error {
 	if !ok {
 		return fmt.Errorf("current routing missing")
 	}
-	originals := map[string]map[string]any{}
+	originals := map[string][]map[string]any{}
 	origRules, ok := origRouting["rules"].([]any)
 	if !ok {
 		return fmt.Errorf("original routing rules missing")
 	}
+	wanted, replacements := map[string]bool{}, map[string]bool{}
+	for _, tag := range m.cfg.Xray.Route.InboundTags {
+		wanted[tag] = true
+	}
+	for _, tag := range m.cfg.Xray.Route.ReplaceOutboundTags {
+		replacements[tag] = true
+	}
 	for _, raw := range origRules {
 		rule, ok := raw.(map[string]any)
-		if ok {
-			originals[routeIdentity(rule)] = rule
+		if ok && replacements[stringValue(rule["outboundTag"])] && overlap(rule["inboundTag"], wanted) {
+			key := routeIdentity(rule)
+			originals[key] = append(originals[key], rule)
 		}
 	}
 	curRules, ok := curRouting["rules"].([]any)
 	if !ok {
 		return fmt.Errorf("current routing rules missing")
 	}
+	counts := map[string]int{}
+	for _, raw := range curRules {
+		if rule, ok := raw.(map[string]any); ok {
+			key := routeIdentity(rule)
+			if len(originals[key]) > 0 {
+				counts[key]++
+			}
+		}
+	}
+	for key, rules := range originals {
+		if counts[key] != len(rules) {
+			return fmt.Errorf("adopted routing rule multiplicity changed; refusing destructive restore")
+		}
+	}
 	for _, raw := range curRules {
 		rule, ok := raw.(map[string]any)
-		if !ok || stringValue(rule["balancerTag"]) != m.cfg.Xray.BalancerTag {
+		if !ok {
 			continue
 		}
-		previous, ok := originals[routeIdentity(rule)]
-		if !ok {
-			return fmt.Errorf("adopted routing rule has changed; refusing destructive restore")
+		key := routeIdentity(rule)
+		previousRules := originals[key]
+		adopted := stringValue(rule["balancerTag"]) == m.cfg.Xray.BalancerTag
+		if len(previousRules) == 0 {
+			if adopted {
+				return fmt.Errorf("adopted routing rule has changed; refusing destructive restore")
+			}
+			continue
+		}
+		previous := previousRules[0]
+		originals[key] = previousRules[1:]
+		if !adopted {
+			if stringValue(rule["outboundTag"]) != stringValue(previous["outboundTag"]) || stringValue(rule["balancerTag"]) != stringValue(previous["balancerTag"]) {
+				return fmt.Errorf("adopted routing target drift detected; refusing destructive restore")
+			}
+			continue // This occurrence was already restored before an interruption.
 		}
 		delete(rule, "balancerTag")
 		delete(rule, "outboundTag")

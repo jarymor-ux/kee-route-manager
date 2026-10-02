@@ -1,0 +1,22 @@
+=== RUN   TestRegressionProxyClientLoginBudgets
+2026/10/02 21:24:10 access request_id=628852b60d15139ba4ee2d577025db2d method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=106d8d2a1a63770e20c6298d2d56ab17 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=7b5d7c1f66fb29622a7dbfe0b9eeabf4 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=60012593b2cd5b71daa2c7f0f3295d8f method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=b26bd07e797682df14c70a09822e7302 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=dd28922a4bdd5bcf42bd484c575facac method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=d8df3d788e86d449f26d1b548d4d0975 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=03cbfc660f63c4439d0fa42ffd4e42c3 method=POST path="/api/v1/auth/login" status=400 duration_ms=0
+2026/10/02 21:24:10 access request_id=9c8c706aa17b065d04e59d5a5eb3b57a method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=7785c98e46190f87a53ba8da7cabd5d2 method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=3ec981d2730bd059b5d787835273727c method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=1a0bcd4343958d87e34b3a4073fe877f method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=af322cb5f62d4c757c7650d95defd76f method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=219564795d1d7d0fe5ac2dcdda7686b7 method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=8cbcded93289c5a1bf3841f31e27beb7 method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+2026/10/02 21:24:11 access request_id=d4e2ec6e5860be75d026f3248357afe7 method=POST path="/api/v1/auth/login" status=200 duration_ms=145
+    auth_proxy_regression_test.go:64: successful client quota not reset at 7: 429
+--- FAIL: TestRegressionProxyClientLoginBudgets (1.36s)
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/web	2.018s
+FAIL

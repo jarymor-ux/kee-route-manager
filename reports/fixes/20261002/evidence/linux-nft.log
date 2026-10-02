@@ -1,0 +1,6 @@
+=== RUN   TestRealNftManagedFirewallLifecycle
+--- PASS: TestRealNftManagedFirewallLifecycle (0.22s)
+=== RUN   TestRealNftPolicySelectorDriftPreserved
+--- PASS: TestRealNftPolicySelectorDriftPreserved (0.05s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/platform	0.264s

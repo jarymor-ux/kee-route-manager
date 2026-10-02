@@ -132,23 +132,7 @@ func (s *Store) load() error {
 		return err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 4096), 1<<20)
-	for sc.Scan() {
-		var e event.Event
-		if json.Unmarshal(sc.Bytes(), &e) == nil {
-			e.Message = redact.Text(e.Message)
-			e.Fields = redactFields(e.Fields)
-			s.events = append(s.events, e)
-			if e.Sequence > s.seq {
-				s.seq = e.Sequence
-			}
-			if len(s.events) > maxEvents {
-				s.events = s.events[len(s.events)-maxEvents:]
-			}
-		}
-	}
-	if err := sc.Err(); err != nil {
+	if err := s.loadEvents(f); err != nil {
 		return err
 	}
 	if info, err := os.Stat(s.eventsPath()); err == nil && info.Size() > maxEventLogSize {
@@ -274,7 +258,7 @@ func (s *Store) Append(e event.Event) (event.Event, error) {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
-	b, err := json.Marshal(e)
+	e, b, err := boundedEvent(e)
 	if err != nil {
 		return e, err
 	}
@@ -338,7 +322,7 @@ func (s *Store) compactEventsLocked() error {
 	}
 	writer := bufio.NewWriterSize(tmp, 64<<10)
 	for _, e := range s.events {
-		b, marshalErr := json.Marshal(e)
+		_, b, marshalErr := boundedEvent(e)
 		if marshalErr != nil {
 			tmp.Close()
 			return marshalErr

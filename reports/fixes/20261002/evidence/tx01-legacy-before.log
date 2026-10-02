@@ -1,0 +1,6 @@
+=== RUN   TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity
+    transactions_regression_test.go:468: ambiguous legacy initial replay must require operator reconciliation
+--- FAIL: TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity (0.39s)
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/core	0.765s
+FAIL

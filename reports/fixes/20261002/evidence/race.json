@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "go",
+    "test",
+    "-race",
+    "-count=1",
+    "./..."
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:18:57.298898+00:00",
+  "exit": 0,
+  "elapsed_seconds": 59.41,
+  "output": "race.log"
+}

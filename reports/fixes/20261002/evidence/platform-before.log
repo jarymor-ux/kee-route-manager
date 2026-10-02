@@ -1,0 +1,58 @@
+--- FAIL: TestRegressionWANDisconnected (0.00s)
+    --- FAIL: TestRegressionWANDisconnected/false (0.00s)
+        keenetic_regression_test.go:33: connected=false returned_WAN=<nil> uptime=0 error=invalid interface id
+        keenetic_regression_test.go:34: disconnected WAN discarded fresh metrics: {CPUPercent:<nil> RAMPercent:<nil> RAMUsedMB:0 RAMTotalMB:0 TemperatureC:<nil> UptimeSeconds:0 WANConnected:<nil> WANName: WANDescription: WANIP: RXBytes:0 TXBytes:0 RXMbps:0 TXMbps:0 Connections:0 Ports:[] UpdatedAt:0001-01-01 00:00:00 +0000 UTC Stale:false Error:} invalid interface id
+--- FAIL: TestRegressionPolicyCancelledRollback (2.43s)
+    --- FAIL: TestRegressionPolicyCancelledRollback/cancel (0.63s)
+        keenetic_regression_test.go:60: mode=cancel error=Get "http://127.0.0.1:79/rci/ip/hotspot": context canceled command_log=
+            no ip hotspot host 00:11:22:33:44:55 conform
+            ip hotspot host 00:11:22:33:44:55 policy Policy1
+        keenetic_regression_test.go:65: canceled policy mutation was not restored
+--- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects (10.58s)
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/ensure (1.21s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/source/remove (0.37s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/ensure (0.39s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/mask/remove (0.42s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/ensure (0.45s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/invert/remove (0.48s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/iif/remove (0.43s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/oif/remove (0.42s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/priority/remove (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/suppress/remove (0.43s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/legacy/remove (0.42s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/destination/remove (0.43s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/ensure (0.44s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/unexpected/remove (0.41s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/ensure (0.73s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+    --- FAIL: TestPolicyRuleIdentityDriftRefusedBeforeEffects/duplicate/remove (0.47s)
+        policy_identity_regression_test.go:44: drifted rule accepted
+FAIL
+FAIL	github.com/jarymor-ux/kee-route-manager/internal/platform	14.122s
+FAIL

@@ -17,3 +17,7 @@ Xray managed_dir/routing file must stay inside absolute config_dir; API/probe/he
 Update: `enabled: false` recommended in RC2; `auto_apply` must be false. `github_repository: jarymor-ux/kee-route-manager` can discover highest RC/stable matching prerelease channel from up to 100 recent releases. Selected signed manifest version must match tag, URLs HTTPS; `/releases/latest` rejected. Manual versioned URLs remain supported when repository discovery omitted.
 
 Validate offline with `kee-route-managerctl validate --config PATH`. Validation does not prove Xray/network/hardware readiness; follow [installation](AGENT_INSTALL.md).
+
+Local `file://` subscription sources must be regular files. The fetcher opens without blocking on FIFO producers, validates the opened descriptor and checks cancellation during bounded reads. Manual refresh still honors source retry backoff even when no cache exists.
+
+Managed Linux/OpenWrt policy rules use explicit priority `10000`, an exact mark with full mask, and unrestricted source/destination selectors. KRM refuses conflicting priorities, selector drift and duplicate rules before reconciliation or cleanup. Legacy ownership records without a verified priority do not authorize adopting or deleting an existing rule; inspect and reconcile those resources explicitly before migrating.

@@ -1,0 +1,32 @@
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-manager	[no test files]
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-manager-ui	[no test files]
+?   	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-managerctl	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/cmd/kee-route-managerd	(cached)
+?   	github.com/jarymor-ux/kee-route-manager/cmd/krm-release-tool	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/auth	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/bench	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/config	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/control	0.658s
+?   	github.com/jarymor-ux/kee-route-manager/internal/control/cli	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/control/client	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/daemonlock	(cached)
+?   	github.com/jarymor-ux/kee-route-manager/internal/event	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/logging	(cached)
+?   	github.com/jarymor-ux/kee-route-manager/internal/model	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/operation	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/platform	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/redact	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/store	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/subscription	0.998s
+?   	github.com/jarymor-ux/kee-route-manager/internal/tunnel	[no test files]
+ok  	github.com/jarymor-ux/kee-route-manager/internal/update	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web	0.668s
+ok  	github.com/jarymor-ux/kee-route-manager/internal/web/ui	(cached)
+ok  	github.com/jarymor-ux/kee-route-manager/internal/xray	(cached)
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 25.583s
+
+OK
+Source, tests, syntax, embedded assets, templates and adversarial bootstrap checks passed.

@@ -28,11 +28,11 @@ esac
 	ip := `#!/bin/sh
 printf '%s\n' "$*" >> "$KRM_TEST_ROOT/ip.log"
 case "$*" in
- '-j rule show') if [ -f "$KRM_TEST_ROOT/conflict" ]; then printf '[{"table":100,"fwmark":123}]\n'; elif [ -f "$KRM_TEST_ROOT/policy" ]; then printf '[{"table":100,"fwmark":255}]\n'; else printf '[]\n'; fi ;;
+ '-j rule show') if [ -f "$KRM_TEST_ROOT/conflict" ]; then printf '[{"table":100,"fwmark":123}]\n'; elif [ -f "$KRM_TEST_ROOT/policy" ]; then printf '[{"priority":10000,"src":"all","table":100,"fwmark":255}]\n'; else printf '[]\n'; fi ;;
  '-j route show table 100') if [ -f "$KRM_TEST_ROOT/route" ]; then printf '[{"type":"local","dst":"default","dev":"lo"}]\n'; else printf '[]\n'; fi ;;
- 'rule add fwmark 255 table 100') touch "$KRM_TEST_ROOT/policy" ;;
+ 'rule add priority 10000 from all to all fwmark 255/0xffffffff table 100') touch "$KRM_TEST_ROOT/policy" ;;
  'route replace local 0.0.0.0/0 dev lo table 100') touch "$KRM_TEST_ROOT/route" ;;
- 'rule del fwmark 255 table 100') rm -f "$KRM_TEST_ROOT/policy" ;;
+ 'rule del priority 10000 from all to all fwmark 255/0xffffffff table 100') rm -f "$KRM_TEST_ROOT/policy" ;;
  'route del local 0.0.0.0/0 dev lo table 100') rm -f "$KRM_TEST_ROOT/route" ;;
  *) exit 2 ;;
 esac

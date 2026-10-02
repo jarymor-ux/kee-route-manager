@@ -268,7 +268,7 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	// Health failover may have changed the active slot while the long benchmark was
 	// running. Re-read state under the routing mutation lock and retain that node.
 	state := m.store.State()
-	selected = retainActiveNode(selected, state.ActiveNodeID, allNodes, m.cfg.Pool.Size)
+	// Choose an authorized replacement before active retention can fill a single slot.
 	if state.ActiveNodeID != "" {
 		if previous, ok := state.Measurements[state.ActiveNodeID]; ok {
 			if _, measuredNow := measurements[state.ActiveNodeID]; !measuredNow {
@@ -321,6 +321,21 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 				desired = winner
 				reason = "better node found"
 			}
+		}
+	}
+
+	// Keep the active route unless the decision above authorizes its replacement.
+	// Larger pools still retain the old active node as a fallback.
+	desiredNode := ""
+	if desired >= 0 {
+		desiredNode = newSlots[desired].NodeID
+	}
+	if m.cfg.Pool.Size > 1 || desiredNode == "" {
+		selected = retainActiveNode(selected, state.ActiveNodeID, allNodes, m.cfg.Pool.Size)
+		newSlots = assignSlots(state.Pool, selected, measurements, m.cfg.Xray.SlotTagPrefix, m.cfg.Pool.Size)
+		winner = firstHealthy(newSlots)
+		if desiredNode != "" {
+			desired = slotIndexForNode(newSlots, desiredNode)
 		}
 	}
 
@@ -714,7 +729,18 @@ func (m *Manager) emergencyFailover(ctx context.Context, state model.State, targ
 	emergencyCtx, cancel := context.WithTimeout(ctx, m.cfg.Failover.OverallDeadline.Duration)
 	defer cancel()
 	ctx = emergencyCtx
-	if slot, ok := m.emergencyCandidate(ctx, state, targets, false); ok {
+	// Confirm WAN in parallel, leaving part of the overall budget for the route
+	// transaction. A hanging fallback must not consume the confirmation budget.
+	wanResult := make(chan bool, 1)
+	go func() {
+		prober := bench.NewProber(m.cfg.Failover.ProbeTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes))
+		defer prober.Close()
+		_, _, checks := prober.CheckMajority(ctx, nil, targets)
+		wanResult <- bench.Quorum(targets, checks, m.cfg.Failover.Quorum)
+	}()
+	fallbackCtx, stopFallback := context.WithTimeout(ctx, m.cfg.Failover.OverallDeadline.Duration*3/4)
+	defer stopFallback()
+	if slot, ok := m.emergencyCandidate(fallbackCtx, state, targets, false); ok {
 		if err := m.commitRoute(ctx, vpnState(state, slot, "emergency failover"), m.store.Nodes(), "select"); err == nil {
 			m.log("warning", "failover.vpn", "switched to confirmed fallback VPN", "", nil)
 			m.queueBenchmark("emergency")
@@ -726,10 +752,15 @@ func (m *Manager) emergencyFailover(ctx context.Context, state model.State, targ
 	}
 	// Confirm ordinary WAN independently; endpoint/WAN outages cannot authorize a
 	// VPN-to-direct switch even when every slot probe has failed.
-	prober := bench.NewProber(m.cfg.Failover.ProbeTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes))
-	defer prober.Close()
-	_, _, wan := prober.CheckMajority(ctx, nil, targets)
-	if !bench.Quorum(targets, wan, m.cfg.Failover.Quorum) {
+	select {
+	case healthy := <-wanResult:
+		if !healthy {
+			return
+		}
+	case <-ctx.Done():
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	next := directState(state, "all VPN paths unavailable; WAN quorum confirmed")
@@ -741,7 +772,20 @@ func (m *Manager) emergencyFailover(ctx context.Context, state model.State, targ
 	m.queueBenchmark("emergency")
 }
 func (m *Manager) checkRecovery(ctx context.Context, state model.State, targets []config.Target) {
-	slot, ok := m.emergencyCandidate(ctx, state, targets, true)
+	m.mu.RLock()
+	candidate := m.recoveryNode
+	m.mu.RUnlock()
+	probeState := state
+	if candidate != "" {
+		// Consecutive success belongs to one path, independent of race ordering.
+		probeState.Pool = nil
+		for _, slot := range state.Pool {
+			if slot.NodeID == candidate {
+				probeState.Pool = append(probeState.Pool, slot)
+			}
+		}
+	}
+	slot, ok := m.emergencyCandidate(ctx, probeState, targets, true)
 	m.mu.Lock()
 	if !ok {
 		m.recoveryNode = ""

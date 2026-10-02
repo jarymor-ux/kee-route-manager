@@ -1,0 +1,34 @@
+=== RUN   TestTransactionReplayPreservesOperatorChanges
+=== RUN   TestTransactionReplayPreservesOperatorChanges/base_target/pending_false
+    transactions_regression_test.go:116: before replay: pending=false drift="adopted routing target drift detected" hash_changed=false
+    transactions_regression_test.go:140: NEGATIVE: startup refused and preserved edit: managed tunnel routing drift detected: adopted routing target drift detected
+=== RUN   TestTransactionReplayPreservesOperatorChanges/base_target/pending_true
+    transactions_regression_test.go:116: before replay: pending=true drift="adopted routing target drift detected" hash_changed=false
+=== RUN   TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_false
+    transactions_regression_test.go:116: before replay: pending=false drift="" hash_changed=true
+    transactions_regression_test.go:140: NEGATIVE: startup refused and preserved edit: managed tunnel configuration drift detected during startup
+=== RUN   TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_true
+    transactions_regression_test.go:116: before replay: pending=true drift="" hash_changed=true
+--- PASS: TestTransactionReplayPreservesOperatorChanges (1.81s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/base_target/pending_false (0.58s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/base_target/pending_true (0.40s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_false (0.41s)
+    --- PASS: TestTransactionReplayPreservesOperatorChanges/managed_hash/pending_true (0.42s)
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics/65536
+    transactions_regression_test.go:171: action error bytes=65669
+    transactions_regression_test.go:176: durable event file bytes=66014
+=== RUN   TestActionEventRoundTripWithLargeDiagnostics/1049600
+    transactions_regression_test.go:171: action error bytes=1049735
+    transactions_regression_test.go:176: durable event file bytes=1048742
+--- PASS: TestActionEventRoundTripWithLargeDiagnostics (1.21s)
+    --- PASS: TestActionEventRoundTripWithLargeDiagnostics/65536 (0.35s)
+    --- PASS: TestActionEventRoundTripWithLargeDiagnostics/1049600 (0.86s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/core	3.716s
+=== RUN   TestLegacyOversizedEventDoesNotBlockStateRecovery
+--- PASS: TestLegacyOversizedEventDoesNotBlockStateRecovery (0.02s)
+=== RUN   TestEventSerializedBoundIncludesFieldsAndEscaping
+--- PASS: TestEventSerializedBoundIncludesFieldsAndEscaping (0.71s)
+PASS
+ok  	github.com/jarymor-ux/kee-route-manager/internal/store	1.746s

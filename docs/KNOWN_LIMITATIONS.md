@@ -15,3 +15,5 @@
 - SPDX inventory describes shipped files and project license/toolchain version; it is not a complete file-level transitive Go standard-library SBOM.
 
 Xray loopback TCP API is unauthenticated by Xray design. Process locks serialize KRM owners, but do not prevent another local process calling Xray directly. On multiuser Linux, local users must be trusted or the administrator must restrict that API port by OS/firewall policy; do not expose it off-host. KRM socket permissions do not authenticate Xray gRPC.
+
+Pending legacy journals without per-file replay identities cannot safely authorize ambiguous interrupted writes. Detected drift, or a missing baseline identity on a persistent backend, requires operator reconciliation; KRM retains the journal and edited files. New journals allow only the recorded before/after identity of each owned file, including partially applied writes. Unrelated routing edits made after intent was recorded are preserved by refusing replay until reviewed. Regular-file subscription cancellation cannot interrupt a kernel-blocked filesystem operation (for example a stalled network filesystem).

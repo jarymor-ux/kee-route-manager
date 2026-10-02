@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "./scripts/check.sh"
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:25:03.633536+00:00",
+  "exit": 0,
+  "elapsed_seconds": 29.176,
+  "output": "check-verified.log"
+}

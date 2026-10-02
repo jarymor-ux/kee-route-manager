@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,7 +86,7 @@ func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 			break
 		}
 	}
-	name := fmt.Sprint(wan["id"])
+	name := stringValue(wan["id"])
 	if name != "" && !regexp.MustCompile(`^[A-Za-z0-9_/.-]+$`).MatchString(name) {
 		return Metrics{}, fmt.Errorf("invalid interface id")
 	}
@@ -248,60 +249,86 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if choice == "xkeen" && !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
 		return fmt.Errorf("XKeen policy unavailable")
 	}
-	command := func(text string) error {
-		_, e := k.r.Run(ctx, []string{k.cfg.Platform.Keenetic.NDMCBinary, "-c", text})
-		return e
+	command := func(c context.Context, text string) error {
+		_, err := k.r.Run(c, []string{k.cfg.Platform.Keenetic.NDMCBinary, "-c", text})
+		return err
 	}
-	rollback := func() {
+	findHost := func(cfg map[string]any) map[string]any {
+		for _, raw := range array(cfg["host"]) {
+			if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
+				return v
+			}
+		}
+		return nil
+	}
+	rollback := func(cause error) error {
+		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
+		timeout := k.r.Timeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer cancel()
+		var errs []error
+		run := func(text string) {
+			if err := command(recovery, text); err != nil {
+				errs = append(errs, err)
+			}
+		}
 		old := stringValue(before["policy"])
 		if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(old) {
-			_ = command("ip hotspot host " + mac + " policy " + old)
+			run("ip hotspot host " + mac + " policy " + old)
 		} else {
-			_ = command("no ip hotspot host " + mac + " policy")
+			run("no ip hotspot host " + mac + " policy")
 		}
 		if access := stringValue(before["access"]); access == "permit" || access == "deny" {
-			_ = command("ip hotspot host " + mac + " " + access)
+			run("ip hotspot host " + mac + " " + access)
 		}
 		if truth(before["conform"]) {
-			_ = command("ip hotspot host " + mac + " conform")
+			run("ip hotspot host " + mac + " conform")
+		} else {
+			run("no ip hotspot host " + mac + " conform")
 		}
-		_ = command("system configuration save")
+		run("system configuration save")
+		restoredCfg, err := k.rci(recovery, "ip/hotspot")
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			restored := findHost(restoredCfg)
+			if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != old || stringValue(restored["access"]) != stringValue(before["access"]) {
+				errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
+			}
+		}
+		if err := errors.Join(errs...); err != nil {
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+		}
+		return cause
 	}
-	if e = command("no ip hotspot host " + mac + " conform"); e != nil {
-		return e
+	if e = command(ctx, "no ip hotspot host "+mac+" conform"); e != nil {
+		return rollback(e)
 	}
 	if choice == "xkeen" {
-		e = command("ip hotspot host " + mac + " policy " + pid)
+		e = command(ctx, "ip hotspot host "+mac+" policy "+pid)
 	} else {
-		e = command("no ip hotspot host " + mac + " policy")
+		e = command(ctx, "no ip hotspot host "+mac+" policy")
 	}
 	if e != nil {
-		rollback()
-		return e
+		return rollback(e)
 	}
 	afterCfg, e := k.rci(ctx, "ip/hotspot")
 	if e != nil {
-		rollback()
-		return e
+		return rollback(e)
 	}
-	var after map[string]any
-	for _, raw := range array(afterCfg["host"]) {
-		if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
-			after = v
-			break
-		}
-	}
+	after := findHost(afterCfg)
 	expected := ""
 	if choice == "xkeen" {
 		expected = pid
 	}
 	if after == nil || truth(after["conform"]) || stringValue(after["policy"]) != expected || stringValue(after["access"]) != stringValue(before["access"]) {
-		rollback()
-		return fmt.Errorf("router did not apply policy safely")
+		return rollback(fmt.Errorf("router did not apply policy safely"))
 	}
-	if e = command("system configuration save"); e != nil {
-		rollback()
-		return e
+	if e = command(ctx, "system configuration save"); e != nil {
+		return rollback(e)
 	}
 	return nil
 }

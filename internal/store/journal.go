@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/tunnel"
 	"os"
 )
 
@@ -19,13 +20,14 @@ const (
 )
 
 type Transaction struct {
-	Schema  int          `json:"schema"`
-	ID      string       `json:"id"`
-	Stage   string       `json:"stage"`
-	Kind    string       `json:"kind"`
-	Before  model.State  `json:"before"`
-	Desired model.State  `json:"desired"`
-	Nodes   []model.Node `json:"nodes"`
+	Schema  int                `json:"schema"`
+	ID      string             `json:"id"`
+	Stage   string             `json:"stage"`
+	Kind    string             `json:"kind"`
+	Before  model.State        `json:"before"`
+	Desired model.State        `json:"desired"`
+	Nodes   []model.Node       `json:"nodes"`
+	Replay  tunnel.ReplayProof `json:"replay,omitempty"`
 }
 
 // Journal is a single-owner write-ahead record; the daemon process lock and route

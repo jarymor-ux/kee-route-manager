@@ -1,0 +1,60 @@
+Controller configuration is valid
+UI configuration is valid
+connect to controller (is kee-route-managerd running?): Get "http://daemon/healthz": lstat /run/kee-route-manager/control.sock: no such file or directory
+{
+  "direct_mode": false,
+  "role": "controller",
+  "status": "safe_degraded",
+  "time": "2026-10-02T18:19:58.436508713Z",
+  "version": "1.0.0-rc.2",
+  "xray_running": false
+}
+
+UI and controller are ready
+Installed mode=local-ui. Check readiness, initial benchmark, HTTPS login and router recovery using docs/AGENT_INSTALL.md.
+{
+  "direct_mode": false,
+  "role": "controller",
+  "status": "safe_degraded",
+  "time": "2026-10-02T18:19:58.451472088Z",
+  "version": "1.0.0-rc.2",
+  "xray_running": false
+}
+
+Controller configuration is valid
+UI configuration is valid
+ERROR: existing controller installation detected; use documented backup/uninstall/rollback procedure
+{
+  "ok": true
+}
+
+Services removed. Private config/state retained unless --purge was used. Before reinstall, back up then move retained config directory aside. See docs/AGENT_INSTALL.md.
+Controller configuration is valid
+UI configuration is valid
+connect to controller (is kee-route-managerd running?): Get "http://daemon/healthz": lstat /run/kee-route-manager/control.sock: no such file or directory
+{
+  "direct_mode": false,
+  "role": "controller",
+  "status": "safe_degraded",
+  "time": "2026-10-02T18:20:02.82668334Z",
+  "version": "1.0.0-rc.2",
+  "xray_running": false
+}
+
+UI and controller are ready
+Installed mode=local-ui. Check readiness, initial benchmark, HTTPS login and router recovery using docs/AGENT_INSTALL.md.
+{
+  "direct_mode": false,
+  "role": "controller",
+  "status": "safe_degraded",
+  "time": "2026-10-02T18:20:02.84022209Z",
+  "version": "1.0.0-rc.2",
+  "xray_running": false
+}
+
+{
+  "ok": true
+}
+
+Services removed. Private config/state retained unless --purge was used. Before reinstall, back up then move retained config directory aside. See docs/AGENT_INSTALL.md.
+Installer lifecycle passed: local-ui install, trusted HTTPS assets, overwrite refusal, restore/uninstall/purge, reinstall. Service manager is a fake; real systemd/hardware remains pending.

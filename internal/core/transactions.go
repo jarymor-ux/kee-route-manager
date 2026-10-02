@@ -41,6 +41,13 @@ func (m *Manager) commitRoute(ctx context.Context, next model.State, nodes []mod
 		return fmt.Errorf("managed tunnel configuration drift detected; review changes before routing mutation")
 	}
 	tx := store.Transaction{ID: fmt.Sprintf("route-%d", time.Now().UnixNano()), Kind: kind, Before: m.store.State(), Desired: next, Nodes: nodes}
+	if guard, ok := m.xray.(tunnel.ReplayGuard); ok {
+		desired := tunnel.DesiredPool{Previous: before.Pool, Slots: next.Pool, Nodes: nodeMap(nodes), ActiveSlot: next.ActiveSlot, Selection: m.selection(next)}
+		tx.Replay, err = guard.PrepareReplay(ctx, desired, kind == "restore")
+		if err != nil {
+			return err
+		}
+	}
 	if err := m.store.PrepareTransaction(tx); err != nil {
 		return err
 	}
@@ -140,8 +147,30 @@ func (m *Manager) reconcileStartup(ctx context.Context) error {
 		return err
 	}
 	if pending != nil {
-		if _, err = m.xray.ActualState(ctx); err != nil {
-			return err
+		if pending.Replay != nil {
+			guard, ok := m.xray.(tunnel.ReplayGuard)
+			if !ok {
+				return fmt.Errorf("tunnel backend cannot validate pending replay proof")
+			}
+			if err = guard.ValidateReplay(ctx, pending.Replay); err != nil {
+				return err
+			}
+		} else {
+			// Legacy journals have no per-file proof. Refuse observed drift rather than
+			// guessing that an operator edit was an interrupted managed write.
+			if _, persistent := m.xray.(tunnel.ReplayGuard); persistent && pending.Before.XrayConfigHash == "" {
+				return fmt.Errorf("legacy journal lacks verifiable tunnel identity; operator reconciliation required")
+			}
+			actual, observeErr := m.xray.ActualState(ctx)
+			if observeErr != nil {
+				return observeErr
+			}
+			if actual.Drift != "" {
+				return fmt.Errorf("managed tunnel routing drift detected before journal replay: %s", actual.Drift)
+			}
+			if pending.Before.XrayConfigHash != "" && (!actual.Configured || pending.Before.XrayConfigHash != actual.ConfigHash) {
+				return fmt.Errorf("managed tunnel configuration drift detected before legacy journal replay")
+			}
 		}
 		if _, err = m.platform.DirectBypassActive(ctx); err != nil {
 			return err

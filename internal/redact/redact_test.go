@@ -24,3 +24,26 @@ func TestHeadersCopy(t *testing.T) {
 		t.Fatal("headers not sanitized as independent copy")
 	}
 }
+
+func TestURLPathsArePrivate(t *testing.T) {
+	for _, path := range []string{"/sub/SYNTHETIC_PATH_TOKEN", "/sub/%53YNTHETIC_PATH_TOKEN", "/sub/a%2Fb%3Fc"} {
+		raw := "https://user:password@provider.example" + path + "?token=SYNTHETIC_QUERY_TOKEN#secret"
+		if got := URL(raw); got != "https://provider.example" {
+			t.Errorf("URL path retained: %q", got)
+		}
+		input := "Get \"" + raw + "\": certificate verification failed"
+		for _, got := range []string{Text(input), Diagnostics(input)} {
+			for _, secret := range []string{"SYNTHETIC_PATH_TOKEN", "%53YNTHETIC_PATH_TOKEN", "a%2Fb%3Fc", "SYNTHETIC_QUERY_TOKEN", "user:password"} {
+				if strings.Contains(got, secret) {
+					t.Errorf("URL secret retained: %q", got)
+				}
+			}
+			if !strings.Contains(got, "certificate verification failed") {
+				t.Errorf("useful failure category removed: %q", got)
+			}
+		}
+	}
+	if got := Text("ordinary provider unavailable"); got != "ordinary provider unavailable" {
+		t.Errorf("ordinary text changed: %q", got)
+	}
+}

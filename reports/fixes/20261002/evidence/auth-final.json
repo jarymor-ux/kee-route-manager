@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "go",
+    "test",
+    "-race",
+    "-count=1",
+    "-v",
+    "./internal/web",
+    "./internal/web/ui",
+    "./internal/auth"
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:24:31.306400+00:00",
+  "exit": 0,
+  "elapsed_seconds": 29.847,
+  "output": "auth-final.log"
+}

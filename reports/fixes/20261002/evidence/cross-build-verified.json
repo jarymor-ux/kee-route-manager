@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "./scripts/cross-build.sh"
+  ],
+  "cwd": "/Users/ostape/kee-route-manager",
+  "started_at": "2026-10-02T18:28:41.614216+00:00",
+  "exit": 0,
+  "elapsed_seconds": 7.527,
+  "output": "cross-build-verified.log"
+}
