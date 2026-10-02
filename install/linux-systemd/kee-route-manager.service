@@ -1,0 +1,25 @@
+[Unit]
+Description=Kee Route Manager
+After=network-online.target xray.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/kee-route-manager serve --config /etc/kee-route-manager/config.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+LimitNOFILE=8192
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/etc/kee-route-manager /var/lib/kee-route-manager /var/cache/kee-route-manager /var/log /run/kee-route-manager /etc/xray /usr/local/sbin/kee-route-manager
+
+[Install]
+WantedBy=multi-user.target

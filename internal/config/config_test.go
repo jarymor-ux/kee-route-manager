@@ -1,0 +1,108 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const validYAML = `schema_version: 1
+instance:
+  name: Test
+  role: controller
+paths:
+  state_dir: state
+  cache_dir: cache
+  log_file: logs/krm.log
+  run_dir: run
+web:
+  enabled: true
+  listen: "127.0.0.1:9443"
+  credentials_file: credentials.json
+  session_ttl: 1h
+  tls:
+    enabled: false
+    auto_generate: false
+    cert_file: tls.crt
+    key_file: tls.key
+platform:
+  kind: linux-systemd
+xray:
+  binary: /bin/true
+  config_dir: /tmp/xray
+  managed_dir: /tmp/xray
+  base_routing_file: /tmp/xray/route.json
+  api_address: "127.0.0.1:10085"
+subscriptions:
+  sources:
+    - id: provider_a
+      name: Provider A
+      url: "file:///tmp/sub.txt"
+      enabled: true
+targets:
+  - id: score_target
+    name: Score
+    url: "https://example.com/"
+    role: score
+    weight: 1
+    policy: 2xx3xx
+    max_response_bytes: 64KiB
+  - id: health_target
+    name: Health
+    url: "https://example.com/"
+    role: health
+    weight: 1
+    policy: 2xx3xx
+    max_response_bytes: 64KiB
+benchmark:
+  speed:
+    enabled: false
+update:
+  enabled: false
+`
+
+func TestLoadYAMLSubsetAndDefaults(t *testing.T) {
+	d := t.TempDir()
+	p := filepath.Join(d, "config.yaml")
+	if e := os.WriteFile(p, []byte(validYAML), 0600); e != nil {
+		t.Fatal(e)
+	}
+	c, e := Load(p)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if c.Pool.Size != 5 {
+		t.Fatalf("pool default=%d", c.Pool.Size)
+	}
+	if c.Paths.StateDir != filepath.Join(d, "state") {
+		t.Fatalf("relative path not resolved: %s", c.Paths.StateDir)
+	}
+	if len(c.Subscriptions.Sources) != 1 || c.Subscriptions.Sources[0].ID != "provider_a" {
+		t.Fatalf("source parse failed")
+	}
+}
+func TestUnknownFieldRejected(t *testing.T) {
+	d := t.TempDir()
+	p := filepath.Join(d, "config.yaml")
+	s := strings.Replace(validYAML, "schema_version: 1", "schema_version: 1\nunknown_root: true", 1)
+	_ = os.WriteFile(p, []byte(s), 0600)
+	if _, e := Load(p); e == nil {
+		t.Fatal("expected unknown field error")
+	}
+}
+func TestByteSizeAndDuration(t *testing.T) {
+	v, e := ParseByteSize("1.5MiB")
+	if e != nil || v != 1572864 {
+		t.Fatalf("got %d %v", v, e)
+	}
+	if _, e = ParseByteSize("wat"); e == nil {
+		t.Fatal("expected error")
+	}
+}
+func TestDuplicateKeyRejected(t *testing.T) {
+	_, e := parseYAMLSubset([]byte("a: 1\na: 2\n"))
+	if e == nil {
+		t.Fatal("expected duplicate key error")
+	}
+}

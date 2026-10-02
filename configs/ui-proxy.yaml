@@ -1,0 +1,24 @@
+schema_version: 1
+instance:
+  name: Kee Route Manager UI
+  role: ui-proxy
+paths:
+  state_dir: /var/lib/kee-route-manager-ui
+  cache_dir: /var/cache/kee-route-manager-ui
+  log_file: /var/log/kee-route-manager-ui.log
+  run_dir: /run/kee-route-manager-ui
+web:
+  enabled: true
+  listen: "0.0.0.0:9444"
+  credentials_file: /etc/kee-route-manager-ui/unused.json
+  session_ttl: 24h
+  tls:
+    enabled: true
+    auto_generate: true
+    cert_file: /etc/kee-route-manager-ui/tls.crt
+    key_file: /etc/kee-route-manager-ui/tls.key
+    hosts: []
+ui_proxy:
+  upstream: "https://192.168.1.1:9443"
+  insecure_tls: true
+  request_timeout: 30s

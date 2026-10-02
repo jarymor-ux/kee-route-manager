@@ -1,0 +1,124 @@
+schema_version: 1
+instance:
+  name: Kee Route Manager
+  role: controller
+paths:
+  state_dir: /var/lib/kee-route-manager
+  cache_dir: /var/cache/kee-route-manager
+  log_file: /var/log/kee-route-manager.log
+  run_dir: /var/run/kee-route-manager
+web:
+  enabled: true
+  listen: "0.0.0.0:9443"
+  credentials_file: /etc/kee-route-manager/credentials.json
+  session_ttl: 24h
+  tls:
+    enabled: true
+    auto_generate: true
+    cert_file: /etc/kee-route-manager/tls.crt
+    key_file: /etc/kee-route-manager/tls.key
+    hosts: []
+platform:
+  kind: linux-systemd
+  command_timeout: 30s
+  linux:
+    xray_service: xray
+    allow_reboot: false
+    firewall_mode: existing
+    lan_interfaces: [br0]
+    tcp_redirect_port: 12345
+    udp_tproxy_port: 12345
+    mark: 1
+    route_table: 100
+    bypass_cidrs: [0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4]
+xray:
+  binary: /usr/bin/xray
+  asset_dir: /usr/share/xray
+  config_dir: /etc/xray/configs
+  managed_dir: /etc/xray/configs
+  base_routing_file: /etc/xray/configs/05_routing.json
+  api_address: "127.0.0.1:10085"
+  api_tag: krm-api
+  balancer_tag: krm-main
+  slot_tag_prefix: krm-slot-
+  managed_direct_tag: krm-direct
+  probe_port_start: 19000
+  health_proxy_port: 18999
+  dynamic_api: true
+  route:
+    inbound_tags: [redirect, tproxy]
+    replace_outbound_tags: [vless-reality]
+subscriptions:
+  max_sources: 20
+  max_nodes: 500
+  cache_ttl: 168h
+  refresh_interval: 30m
+  request_timeout: 20s
+  max_response_bytes: 4MiB
+  sources:
+    - id: primary
+      name: Primary subscription
+      url: "https://subscription.example.invalid/replace-me"
+      enabled: true
+      headers: {}
+targets:
+  - id: score_primary
+    name: Score target
+    url: "https://score-target.example.invalid/replace-me"
+    role: score
+    weight: 1
+    policy: 2xx3xx
+    max_response_bytes: 64KiB
+  - id: health_primary
+    name: Health target
+    url: "https://health-target.example.invalid/replace-me"
+    role: health
+    weight: 1
+    policy: 2xx3xx
+    max_response_bytes: 64KiB
+health:
+  interval: 15s
+  failure_threshold: 2
+  recovery_threshold: 2
+  request_timeout: 8s
+  max_response_bytes: 64KiB
+  hot_pool_freshness: 5m
+  provider_retry_backoff: [15s, 30s, 1m, 2m, 5m, 10m]
+pool:
+  size: 5
+  provider_diversity:
+    enabled: false
+    max_per_provider: 1
+benchmark:
+  full_interval: 6h
+  batch_size: 20
+  latency_workers: 8
+  requests_per_weight: 2
+  finalists: 6
+  min_improvement_percent: 15
+  switch_cooldown: 10m
+  stability_before_upgrade: 10m
+  temporary_proxy_port_start: 20000
+  temporary_startup_timeout: 10s
+  speed:
+    enabled: false
+    url_template: "https://speed-target.example.invalid/download?bytes={bytes}"
+    warmup_bytes: 8MiB
+    min_sample_bytes: 64MiB
+    max_sample_bytes: 512MiB
+    target_duration: 6s
+    repetitions: 3
+update:
+  enabled: true
+  channel: rc
+  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/latest/download/manifest-rc.json"
+  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/latest/download/manifest-rc.json.sig"
+  public_key: "3vyElDXWgOF42iL7bWpj75B7/3DI0vakzOgqg+fzv84"
+  check_interval: 24h
+  auto_apply: false
+  health_grace_period: 30s
+  allow_downgrade: false
+ui_proxy:
+  upstream: "https://127.0.0.1:9443"
+  insecure_tls: false
+  request_timeout: 30s
