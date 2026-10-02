@@ -32,7 +32,7 @@ In particular: no A/B launcher, no Keenetic platform bypass, no unmanaged interc
 - [PR #3](https://github.com/jarymor-ux/kee-route-manager/pull/3)
 - [RC2 release](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v1.0.0-rc.2)
 - [All asset SHA-256 hashes](https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/SHA256SUMS), authenticated by the separately attached `SHA256SUMS.sig`
-- `manifest.json` / `manifest.sig`: signed version, sizes, digests and exact URLs
+- `manifest-rc.json` / `manifest-rc.json.sig`: signed version, sizes, digests and exact URLs
 - `release-public.key`: RC2 trust key; private signer remains outside Git. RC1 tag, trust key embedded in its assets and release assets are unchanged.
 
 The release includes 16 component binaries for amd64/arm64/armv7/mipsle, three platform bootstraps, the installer payload and SPDX inventory. Source `AGENTS.md` and [AGENT_INSTALL.md](AGENT_INSTALL.md) let an agent start from the repository URL. Release notes record the final source commit, CI evidence and actual binary sizes; publication is conditional on those gates.
