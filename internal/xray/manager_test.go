@@ -13,6 +13,7 @@ import (
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/tunnel"
 )
 
 type recordingRunner struct {
@@ -81,7 +82,7 @@ func TestBootstrapInstallsManagedConfigAndSelectsInitialSlot(t *testing.T) {
 	runner := &recordingRunner{}
 	platform := &fakePlatform{}
 	manager := NewManager(c, runner, platform)
-	if err := manager.Bootstrap(context.Background(), slots, map[string]model.Node{node.ID: node}, slots[0].Tag); err != nil {
+	if err := manager.Bootstrap(context.Background(), tunnel.DesiredPool{Slots: slots, Nodes: map[string]model.Node{node.ID: node}, Selection: tunnel.Selection{Tag: slots[0].Tag}}); err != nil {
 		t.Fatal(err)
 	}
 	if platform.restarts != 1 {
@@ -108,6 +109,31 @@ func TestBootstrapInstallsManagedConfigAndSelectsInitialSlot(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(stateDir, "xray-original", "meta.json")); err != nil {
 		t.Fatalf("original snapshot missing: %v", err)
 	}
+
+	// User additions and edits after adoption must survive reverse restore.
+	var current map[string]any
+	if err = json.Unmarshal(patched, &current); err != nil {
+		t.Fatal(err)
+	}
+	routing := current["routing"].(map[string]any)
+	routing["domainStrategy"] = "IPIfNonMatch"
+	routing["rules"] = append(routing["rules"].([]any), map[string]any{"type": "field", "domain": []string{"example.org"}, "outboundTag": "user-direct"})
+	if err = os.WriteFile(baseRoute, pretty(current), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = manager.RestoreOriginal(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := os.ReadFile(baseRoute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(restored), "user-direct") || !strings.Contains(string(restored), "IPIfNonMatch") || strings.Contains(string(restored), `"balancerTag": "krm-main"`) {
+		t.Fatalf("restore clobbered user routing edits: %s", restored)
+	}
+	if err = manager.Bootstrap(context.Background(), tunnel.DesiredPool{Slots: slots, Nodes: map[string]model.Node{node.ID: node}, Selection: tunnel.Selection{Tag: slots[0].Tag}}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestWaitReadyHonorsContext(t *testing.T) {
@@ -118,5 +144,31 @@ func TestWaitReadyHonorsContext(t *testing.T) {
 	defer cancel()
 	if err := manager.WaitReady(ctx, time.Second); err == nil {
 		t.Fatal("expected readiness error")
+	}
+}
+
+func TestRestoreNeverConfiguredInstallationIsIdempotent(t *testing.T) {
+	c := config.Default()
+	root := t.TempDir()
+	c.Paths.StateDir = root
+	c.Xray.ManagedDir = filepath.Join(root, "configs")
+	c.Xray.ConfigDir = c.Xray.ManagedDir
+	c.Xray.BaseRoutingFile = filepath.Join(c.Xray.ConfigDir, "routing.json")
+	p := &fakePlatform{}
+	m := NewManager(c, &recordingRunner{}, p)
+	if err := m.RestoreOriginal(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if p.restarts != 0 {
+		t.Fatal("untouched Xray unnecessarily restarted")
+	}
+	if err := os.MkdirAll(c.Xray.ManagedDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(c.Xray.ManagedDir, "04_90_kee_route_manager_outbounds.json"), []byte(`{"outbounds":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RestoreOriginal(context.Background()); err == nil {
+		t.Fatal("partial managed installation was silently ignored")
 	}
 }

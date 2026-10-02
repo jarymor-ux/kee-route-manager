@@ -60,7 +60,7 @@ func TestManagedBalancerDoesNotSelectDirectByDefault(t *testing.T) {
 	if err := json.Unmarshal(managed.Routing, &routing); err != nil {
 		t.Fatal(err)
 	}
-	if len(routing.Routing.Balancers) != 1 || len(routing.Routing.Balancers[0].Selector) != 1 || routing.Routing.Balancers[0].Selector[0] != c.Xray.SlotTagPrefix {
+	if len(routing.Routing.Balancers) != 1 || len(routing.Routing.Balancers[0].Selector) != 1 || routing.Routing.Balancers[0].Selector[0] != selectionTag {
 		t.Fatalf("unexpected selectors: %#v", routing.Routing.Balancers)
 	}
 	var outbounds struct {
