@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="color-scheme" content="dark light">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/assets/app.css">
+  <title>Kee Route Manager</title>
+</head>
+<body>
+<div id="login" class="modal hidden">
+  <form id="login-form" class="dialog" autocomplete="on">
+    <div class="brand-mark">KRM</div>
+    <h1>Kee Route Manager</h1>
+    <p>Вход в локальную панель управления</p>
+    <label>Логин<input id="username" name="username" autocomplete="username" required></label>
+    <label>Пароль<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+    <div id="login-error" class="error"></div>
+    <button type="submit" class="primary">Войти</button>
+  </form>
+</div>
+<header>
+  <div class="brand"><span class="brand-mark small">KRM</span><div><strong>Kee Route Manager</strong><span id="version">—</span></div></div>
+  <div class="header-status"><span id="status-dot" class="dot muted"></span><span id="status-text">Подключение…</span></div>
+  <button id="logout" class="ghost compact" title="Выйти">Выйти</button>
+</header>
+<nav id="tabs">
+  <button data-tab="overview" class="active">Обзор</button>
+  <button data-tab="nodes">Узлы</button>
+  <button data-tab="router">Роутер</button>
+  <button data-tab="events">События</button>
+</nav>
+<main>
+<section id="tab-overview" class="tab active">
+  <div class="grid hero-grid">
+    <article class="card hero"><div class="eyebrow">Текущий маршрут</div><div id="route-mode" class="hero-value">—</div><div id="active-node" class="sub">—</div><div class="row"><button id="benchmark" class="primary">Запустить тест</button><button id="direct" class="danger-outline">Прямой маршрут</button></div></article>
+    <article class="card"><div class="eyebrow">Состояние VPN</div><div id="health" class="metric">—</div><div id="health-detail" class="sub">—</div></article>
+    <article class="card"><div class="eyebrow">Операция</div><div id="operation" class="metric small-metric">Нет</div><div id="operation-detail" class="sub">—</div><div class="progress"><i id="operation-progress"></i></div></article>
+  </div>
+  <h2>Горячий пул</h2><div id="pool" class="pool-grid"></div>
+  <h2>Источники</h2><div id="sources" class="grid sources-grid"></div>
+</section>
+<section id="tab-nodes" class="tab">
+  <div class="section-head"><div><h2>Все узлы</h2><p>Общий дедуплицированный пул подписок</p></div><input id="node-search" placeholder="Поиск по имени или источнику"></div>
+  <div class="table-wrap"><table><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость</th><th>Score</th><th>Состояние</th></tr></thead><tbody id="nodes-body"></tbody></table></div>
+</section>
+<section id="tab-router" class="tab">
+  <div class="grid metrics-grid">
+    <article class="card"><div class="eyebrow">CPU</div><div id="cpu" class="metric">—</div></article>
+    <article class="card"><div class="eyebrow">RAM</div><div id="ram" class="metric">—</div></article>
+    <article class="card"><div class="eyebrow">WAN</div><div id="wan" class="metric small-metric">—</div><div id="wan-detail" class="sub">—</div></article>
+    <article class="card"><div class="eyebrow">Трафик</div><div id="traffic" class="metric small-metric">—</div></article>
+    <article class="card"><div class="eyebrow">Температура</div><div id="temperature" class="metric">—</div></article>
+    <article class="card"><div class="eyebrow">Аптайм</div><div id="uptime" class="metric small-metric">—</div></article>
+  </div>
+  <div class="section-head"><div><h2>Клиенты</h2><p id="clients-freshness">—</p></div><div class="row"><button id="restart-xray" class="ghost">Перезапустить Xray</button><button id="reboot" class="danger-outline">Перезагрузить устройство</button></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Устройство</th><th>IP / MAC</th><th>Связь</th><th>Политика</th><th>Действия</th></tr></thead><tbody id="clients-body"></tbody></table></div>
+  <div class="section-head tools-head"><div><h2>Инструменты</h2><p>Диагностика, системный журнал и обновление</p></div><div class="row tool-buttons"><button id="system-logs" class="ghost">Системный журнал</button><button id="diagnostics" class="ghost">Диагностика</button><button id="update-check" class="ghost">Проверить обновление</button><button id="update-apply" class="primary hidden">Установить обновление</button></div></div>
+  <pre id="tool-output" class="tool-output hidden"></pre>
+  <h2>Порты</h2><div id="ports" class="grid ports-grid"></div>
+</section>
+<section id="tab-events" class="tab">
+  <div class="section-head"><div><h2>События</h2><p>Локальный журнал операций и переключений</p></div><button id="refresh-events" class="ghost">Обновить</button></div>
+  <div id="events-list" class="events"></div>
+</section>
+</main>
+<div id="toast" class="toast hidden"></div>
+<script src="/assets/app.js" defer></script>
+</body></html>
