@@ -58,15 +58,24 @@ type Updater struct {
 	cfg               config.Update
 	stateDir, current string
 	client            *http.Client
+	applySupportErr   error
 }
 
 func New(c config.Update, stateDir, current string) *Updater {
-	return &Updater{c, stateDir, current, &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &Updater{cfg: c, stateDir: stateDir, current: current, client: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || !secureURL(req.URL.String()) {
 			return errors.New("unsafe update redirect")
 		}
 		return nil
 	}}}
+}
+
+// NewForConfig binds update eligibility to the controller platform. Production
+// discovery/staging must use this constructor; New remains a signed-bundle client.
+func NewForConfig(c config.Config, current string) *Updater {
+	u := New(c.Update, c.Paths.StateDir, current)
+	u.applySupportErr = c.UpdateApplySupport()
+	return u
 }
 func (u *Updater) Enabled() bool { return u.cfg.Enabled }
 func (u *Updater) Check(ctx context.Context) (CheckResult, error) {
@@ -135,7 +144,7 @@ func (u *Updater) checkSigned(ctx context.Context) (checkedRelease, error) {
 	}
 	cmp := compareVersions(m.Version, u.current)
 	available := cmp > 0 || u.cfg.AllowDowngrade && cmp != 0
-	result := CheckResult{CurrentVersion: u.current, LatestVersion: m.Version, Available: available, Manifest: m, Asset: a, Assets: assets, StageSupported: m.UpdateProtocol == 1}
+	result := CheckResult{CurrentVersion: u.current, LatestVersion: m.Version, Available: available, Manifest: m, Asset: a, Assets: assets, StageSupported: m.UpdateProtocol == 1 && u.applySupportErr == nil}
 	return checkedRelease{result: result, manifest: manifestBytes, signature: sig}, nil
 }
 

@@ -228,7 +228,7 @@ func (s *supervisor) check(ctx context.Context) (update.CheckResult, error) {
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 	current := s.record().Active
-	r, err := update.New(s.c.Update, s.c.Paths.StateDir, current).Check(ctx)
+	r, err := update.NewForConfig(s.c, current).Check(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.rec.Active != current {
@@ -297,6 +297,10 @@ func (s *supervisor) handler() http.Handler {
 			reply(w, 409, map[string]string{"error": "updates disabled"})
 			return
 		}
+		if err := s.c.UpdateApplySupport(); err != nil {
+			reply(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 		var input *struct {
 			Version string `json:"version"`
 		}
@@ -334,8 +338,12 @@ func (s *supervisor) apply(expected string) {
 	defer func() { s.mu.Lock(); s.status.Applying = false; s.mu.Unlock() }()
 	s.transition.Lock()
 	defer s.transition.Unlock()
+	if err := s.c.UpdateApplySupport(); err != nil {
+		s.setPhase("failed", err)
+		return
+	}
 	old := s.record()
-	release, err := update.New(s.c.Update, s.c.Paths.StateDir, old.Active).Stage(s.ctx)
+	release, err := update.NewForConfig(s.c, old.Active).Stage(s.ctx)
 	if err != nil {
 		s.setPhase("failed", err)
 		return

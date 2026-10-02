@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-var version = "1.1.0-rc.2"
+var version = "1.1.0-rc.3"
 var commit = "dev"
 var buildTime = "unknown"
 

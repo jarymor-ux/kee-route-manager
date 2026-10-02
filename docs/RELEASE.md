@@ -1,6 +1,6 @@
 # Signed prerelease publication
 
-The next release line is `1.1.0-rc.1`. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Releases remain experimental prereleases and are never marked latest stable. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
+The current release line is `1.1.0-rc.N`. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Releases remain experimental prereleases and are never marked latest stable. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 The CI workflow checks branch pushes and pull requests. Only a new `vMAJOR.MINOR.PATCH-rc.N` tag, or a manual workflow run on that existing tag, can publish. The publication job depends on successful checks for the same commit, requires the tag to equal `v` plus `VERSION`, and refuses commits outside `main`, moved tags and existing releases. A normal push to `main` does not publish.
 
@@ -26,7 +26,7 @@ Enable [GitHub release immutability](https://docs.github.com/en/code-security/ho
 A manual run uses the same gates and requires an existing tag:
 
 ```sh
-gh workflow run ci.yml --ref v1.1.0-rc.1 --repo jarymor-ux/kee-route-manager
+gh workflow run ci.yml --ref v1.1.0-rc.3 --repo jarymor-ux/kee-route-manager
 ```
 
 Artifact signing and immutable tags are separate controls. The workflow signs release content with Ed25519; it does not generate or validate an additional GPG/SSH Git-tag signature.

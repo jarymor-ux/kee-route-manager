@@ -30,6 +30,9 @@ var componentOrder = []string{"daemon", "ui", "ctl"}
 // display value, never an authority to download or execute a caller-chosen asset.
 // Publishing a staged directory does not activate it or stop any process.
 func (u *Updater) Stage(ctx context.Context) (StagedRelease, error) {
+	if u.applySupportErr != nil {
+		return StagedRelease{}, u.applySupportErr
+	}
 	checked, err := u.checkSigned(ctx)
 	if err != nil {
 		return StagedRelease{}, err

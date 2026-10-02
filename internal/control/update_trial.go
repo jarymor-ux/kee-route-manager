@@ -37,6 +37,9 @@ func trialReady(ctx context.Context, c config.Config, version string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := c.UpdateApplySupport(); err != nil {
+		return err
+	}
 	state, err := store.InspectReadOnly(c.Paths.StateDir, c.Paths.CacheDir, model.NewState(version, c.Xray.SlotTagPrefix, c.Pool.Size))
 	if err != nil {
 		return err
