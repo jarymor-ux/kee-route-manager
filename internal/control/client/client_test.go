@@ -21,6 +21,9 @@ func TestClientUsesDaemonSocket(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	if e = os.Chmod(path, 0600); e != nil {
+		t.Fatal(e)
+	}
 	defer listener.Close()
 	defer os.Remove(path)
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,5 +42,44 @@ func TestClientUsesDaemonSocket(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "op-daemon") {
 		t.Fatal(string(b))
+	}
+}
+
+func TestClientRejectsExposedOrSpoofedSocket(t *testing.T) {
+	d, e := os.MkdirTemp("", "krm-unsafe-")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer os.RemoveAll(d)
+	path := filepath.Join(d, "socket")
+	l, e := net.Listen("unix", path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer l.Close()
+	if e = os.Chmod(path, 0666); e != nil {
+		t.Fatal(e)
+	}
+	if e = verifySocket(path); e == nil {
+		t.Fatal("accepted exposed socket")
+	}
+	if e = os.Chmod(path, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.Chmod(d, 0755); e != nil {
+		t.Fatal(e)
+	}
+	if e = verifySocket(path); e == nil {
+		t.Fatal("accepted exposed parent")
+	}
+	if e = os.Chmod(d, 0700); e != nil {
+		t.Fatal(e)
+	}
+	_ = l.Close()
+	if e = os.WriteFile(path, []byte("fake"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e = verifySocket(path); e == nil {
+		t.Fatal("accepted regular file")
 	}
 }

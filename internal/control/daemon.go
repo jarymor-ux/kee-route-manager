@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -55,7 +56,6 @@ func Serve(ctx context.Context, c config.Config, version string) error {
 		return e
 	}
 	defer listener.Close()
-	defer os.Remove(c.API.UnixSocket)
 	p, r, e := platform.New(c)
 	if e != nil {
 		return e
@@ -105,7 +105,38 @@ func Serve(ctx context.Context, c config.Config, version string) error {
 
 // ListenUnix creates a local authorization boundary. It may only be called
 // after acquiring the daemon's state lock.
+type lockedListener struct {
+	net.Listener
+	owner    *daemonlock.Lock
+	once     sync.Once
+	closeErr error
+}
+
+func (l *lockedListener) Close() error {
+	l.once.Do(func() {
+		l.closeErr = l.Listener.Close()
+		if e := l.owner.Close(); l.closeErr == nil {
+			l.closeErr = e
+		}
+	})
+	return l.closeErr
+}
 func ListenUnix(path string) (net.Listener, error) {
+	if path == "" || !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("API unix_socket must be absolute")
+	}
+	owner, e := daemonlock.Acquire(path + ".lock")
+	if e != nil {
+		return nil, fmt.Errorf("control socket ownership: %w", e)
+	}
+	listener, e := listenUnix(path)
+	if e != nil {
+		_ = owner.Close()
+		return nil, e
+	}
+	return &lockedListener{Listener: listener, owner: owner}, nil
+}
+func listenUnix(path string) (net.Listener, error) {
 	if path == "" || !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("API unix_socket must be absolute")
 	}

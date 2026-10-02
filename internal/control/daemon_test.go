@@ -68,3 +68,31 @@ func TestSecondDaemonStopsBeforeInitialization(t *testing.T) {
 		t.Fatal("second daemon created socket directory")
 	}
 }
+
+func TestLiveSocketCannotBeReplaced(t *testing.T) {
+	d, e := os.MkdirTemp("", "krm-live-")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer os.RemoveAll(d)
+	path := filepath.Join(d, "socket")
+	l, e := ListenUnix(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer l.Close()
+	if _, e = ListenUnix(path); e == nil {
+		t.Fatal("second owner replaced live socket")
+	}
+	if _, e = os.Lstat(path); e != nil {
+		t.Fatal("second owner removed original socket")
+	}
+	if e = l.Close(); e != nil {
+		t.Fatal(e)
+	}
+	next, e := ListenUnix(path)
+	if e != nil {
+		t.Fatalf("rebind after release: %v", e)
+	}
+	defer next.Close()
+}

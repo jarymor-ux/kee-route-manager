@@ -9,6 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +22,9 @@ type Client struct {
 
 func New(socket string) *Client {
 	t := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		if e := verifySocket(socket); e != nil {
+			return nil, e
+		}
 		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", socket)
 	}, DisableCompression: true}
 	return &Client{http: &http.Client{Transport: t, Timeout: 30 * time.Second}, transport: t}
@@ -51,4 +57,25 @@ func (c *Client) Do(ctx context.Context, method, path string, body any) (json.Ra
 		return nil, fmt.Errorf("controller returned HTTP %d: %s", r.StatusCode, data)
 	}
 	return json.RawMessage(data), nil
+}
+
+func verifySocket(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("control socket path must be absolute")
+	}
+	info, e := os.Lstat(filepath.Dir(path))
+	if e != nil {
+		return e
+	}
+	if !info.IsDir() || info.Mode().Perm()&0077 != 0 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("untrusted control socket directory; run ctl as the daemon owner")
+	}
+	info, e = os.Lstat(path)
+	if e != nil {
+		return e
+	}
+	if info.Mode()&os.ModeSocket == 0 || info.Mode().Perm()&0077 != 0 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("untrusted control socket owner, type or permissions")
+	}
+	return nil
 }
