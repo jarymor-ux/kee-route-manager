@@ -11,6 +11,8 @@ let updateStatusLoading = false;
 let updateChecking = false;
 let updateSubmitting = false;
 let authenticated = false;
+let documentVersion = '';
+let versionReloadRequested = false;
 
 async function api(path, options = {}) {
   const method = options.method || 'GET';
@@ -92,8 +94,20 @@ async function session() {
 }
 
 async function loadStatus() {
+  if (!authenticated || versionReloadRequested) return;
   try {
     const data = await api('/api/v1/status');
+    if (!authenticated || versionReloadRequested) return;
+    const version = typeof data.version === 'string' ? data.version.trim() : '';
+    if (version) {
+      if (documentVersion && version !== documentVersion) {
+        versionReloadRequested = true;
+        clearInterval(pollTimer);
+        window.location.reload();
+        return;
+      }
+      documentVersion = version;
+    }
     statusData = data;
     renderStatus(data);
   } catch {
@@ -346,13 +360,14 @@ function renderUpdate() {
   $('#update-apply').disabled = !installable || busy || updateChecking || updateState?.launcher === false || updateState?.enabled === false;
   $('#update-check').disabled = busy || updateChecking;
   const phases = { downloading: 'Загрузка обновления', preparing: 'Подготовка обновления', trial: 'Проверка новой версии', activating: 'Запуск новой версии' };
+  const results = { updated: 'Обновление установлено', installed: 'Установка завершена', rolled_back: 'Восстановлена предыдущая версия' };
   let text = updateChecking ? 'Проверка обновлений…' : phases[updateState?.phase];
   if (!text && updateState?.last_error) text = `Обновление не выполнено: ${updateState.last_error}`;
   if (!text && updateState?.enabled === false) text = 'Обновления отключены';
   if (!text && pendingUpdate) text = pendingUpdate.available
     ? `Доступна версия ${pendingUpdate.latest_version}${pendingUpdate.stage_supported ? ' · установка вручную' : ' · установка через launcher недоступна'}`
     : `Установлена актуальная версия ${pendingUpdate.current_version}`;
-  if (!text && updateState?.last_result) text = updateState.last_result;
+  if (!text && updateState?.last_result) text = results[updateState.last_result] || updateState.last_result;
   if (!text && updateState?.current_version) text = `Установлена версия ${updateState.current_version}`;
   $('#update-status').textContent = text || 'Статус обновлений пока неизвестен';
 }

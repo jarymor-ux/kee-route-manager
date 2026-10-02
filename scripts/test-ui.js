@@ -91,6 +91,7 @@ function appHarness() {
   const elements = new Map();
   const requests = [];
   const intervals = new Set();
+  let reloads = 0;
   const select = (selector) => {
     if (!elements.has(selector)) {
       const classes = new Set(['hidden']);
@@ -109,6 +110,7 @@ function appHarness() {
   let confirmResult = true;
   const context = vm.createContext({
     document: { querySelector: select, querySelectorAll: () => [] }, navigator: {}, Date,
+    window: { location: { reload: () => { reloads++; } } },
     setTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
     setInterval: (fn) => { intervals.add(fn); return fn; }, confirm: () => confirmResult,
     fetch: async (url, options) => {
@@ -118,7 +120,50 @@ function appHarness() {
     },
   });
   vm.runInContext(source, context);
-  return { context, select, requests, intervals, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+  return { context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+}
+
+async function versionReloadChecks() {
+  for (const interruption of ['none', 'expired', 'logout']) {
+    const h = appHarness();
+    await new Promise(setImmediate);
+    h.run('authenticated = true');
+    const status = (version) => ({ version, state: { pool: [], sources: {} }, xray_running: true });
+    const load = async (version) => {
+      h.respond({ status: 200, ok: true, data: status(version) });
+      await h.run('loadStatus()');
+    };
+    for (const absent of [undefined, null, '', '   ', 42]) await load(absent);
+    assert.equal(h.reloads(), 0, 'missing version must not establish a reload baseline');
+    await load('1.2.0-rc.1');
+    await load('1.2.0-rc.1');
+    await load(undefined);
+    assert.equal(h.reloads(), 0, 'first version and unchanged version must not reload');
+
+    if (interruption !== 'none') {
+      if (interruption === 'expired') {
+        h.respond({ status: 401, ok: false, data: { error: 'expired' } });
+        await h.run('loadStatus()');
+      } else {
+        h.respond({ status: 200, ok: true, data: {} });
+        await h.select('#logout').onclick();
+      }
+      await load('9.9.9');
+      assert.equal(h.reloads(), 0, 'logged-out response must not reload or replace the baseline');
+      h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/session')
+        ? { csrf: 'new-session' } : url.endsWith('/update/status') ? {} : status('1.2.0-rc.1') }));
+      await h.run('session()');
+      await new Promise(setImmediate);
+      assert.equal(h.reloads(), 0, 'relogin to the same version must not reload');
+    }
+    h.run('clearInterval(pollTimer); pollTimer = setInterval(() => {}, 3000)');
+    await load('1.2.0-rc.2');
+    assert.equal(h.reloads(), 1, `new version after ${interruption} must fetch the new UI document`);
+    assert.equal(h.intervals.size, 0, 'reload must stop the polling timer');
+    await load('1.2.0-rc.2');
+    await load('1.2.0-rc.3');
+    assert.equal(h.reloads(), 1, 'pending document reload must not be requested repeatedly');
+  }
 }
 
 async function appChecks() {
@@ -183,6 +228,7 @@ async function updateChecks() {
   assert.equal(h.select('#update-apply').classList.contains('hidden'), false);
   assert.equal(h.select('#update-apply').disabled, false);
   assert(h.select('#update-status').textContent.includes('1.2.0'));
+
   assert(!h.requests.some((r) => r.url.endsWith('/update/check') || r.url.endsWith('/update/apply')), 'background status must never check or apply');
 
   h.confirm(false);
@@ -218,6 +264,12 @@ async function updateChecks() {
   await h.run('loadUpdateStatus()');
   assert.equal(h.select('#update-apply').classList.contains('hidden'), true, 'completed update must clear the old available release');
   assert(h.select('#update-status').textContent.includes('1.2.0'));
+
+  for (const [result, label] of [['updated', 'Обновление установлено'], ['installed', 'Установка завершена'], ['rolled_back', 'Восстановлена предыдущая версия']]) {
+    h.respond({ status: 200, ok: true, data: { ...state, check: undefined, last_result: result } });
+    await h.run('loadUpdateStatus()');
+    assert.equal(h.select('#update-status').textContent, label, 'launcher result must have a Russian label');
+  }
 
   let finishStatus;
   h.respond(() => new Promise((resolve) => { finishStatus = resolve; }));
@@ -278,6 +330,7 @@ async function serviceWorkerChecks() {
 
 async function main() {
   await appChecks();
+  await versionReloadChecks();
   await updateChecks();
   await serviceWorkerChecks();
   statusChecks();

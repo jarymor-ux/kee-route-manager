@@ -1,6 +1,6 @@
 # Known limitations
 
-- Published RC2 has a confirmed Xray multi-file routing defect: later routing sections replace its balancer and API rules. Current source fixes the merge and has a real-Xray lifecycle regression, but published assets are immutable. A separately signed corrected build is required for deployment.
+- Published v1.0.0-rc.2 has a confirmed Xray multi-file routing defect: later routing sections replace its balancer and API rules. Current source fixes the merge and has a real-Xray lifecycle regression, but published assets are immutable. A separately signed corrected build is required for deployment.
 
 - All platforms remain experimental. A corrected private build has passed installation, local UI authentication and VPN health checks on one Keenetic router; one selected LAN client was confirmed working by the owner; reboot, power-loss and exhaustive LAN-client acceptance remain separate hardware checks.
 - Keenetic independent platform direct bypass is unsupported; a dead Xray does not automatically become working direct there. Existing unmanaged interception on any platform cannot be safely bypassed by KRM.
