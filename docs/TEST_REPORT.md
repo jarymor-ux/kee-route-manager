@@ -9,7 +9,7 @@ Date: 2026-10-02. Software verification only; real router acceptance is a separa
 | `scripts/check.sh` | Passed: Go tests/vet/formatting, shell and JavaScript syntax, embedded assets, example validation, adversarial bootstrap |
 | `go test -race ./...` | Passed locally; Linux CI repeats this gate |
 | `staticcheck ./...` | Passed with Go-1.27-compatible pinned development version |
-| `govulncheck ./...` | No vulnerabilities found with v1.1.4 at verification time |
+| `govulncheck ./...` | No vulnerabilities found; CI pins v1.8.0 for Go 1.27 SSA support |
 | ShellCheck | Passed for installers, init scripts and test/build scripts |
 | Fuzz smoke | Five parsers/boundaries, two seconds each; passed |
 | Linux runtime subprocess integration | Passed in Docker: real daemon/UI/ctl, duplicate ownership rejection, socket0600, cached reads without file/process mutation, synchronous benchmark ID, trusted TLS, foreign-Origin rejection, static assets HTTP200 |
