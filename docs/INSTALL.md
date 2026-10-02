@@ -18,20 +18,58 @@ Requirements:
 - Xray confdir at `/opt/etc/xray/configs`;
 - ARM64, ARMv7, MIPSLE or AMD64 release binary.
 
-From an unpacked release bundle:
+### One-command installation
+
+Run as `root` from an interactive SSH session:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+The bootstrap script:
+
+1. detects `amd64`, `arm64`, `armv7` or `mipsle`;
+2. downloads the matching binary and `SHA256SUMS` from the latest GitHub Release;
+3. verifies the binary SHA-256 before executing it;
+4. downloads the Keenetic installer, init script and configuration template;
+5. starts the normal interactive installer through `/dev/tty`;
+6. removes all temporary bootstrap files on exit.
+
+No repository clone or release archive is required. The installer still asks for the subscription, score and health URLs, optional speed-test URL, web username and web password.
+
+If `curl` is unavailable but `wget` exists:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+Pin a specific release when reproducibility is required:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
+```
+
+The bootstrap can also be downloaded and inspected before execution:
+
+```sh
+curl -fsSLo /tmp/krm-bootstrap.sh https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh
+sh /tmp/krm-bootstrap.sh
+```
+
+### Installation from an unpacked bundle
 
 ```sh
 sh install/keenetic/install.sh
 ```
 
-The script:
+Both installation paths:
 
-1. checks dependencies and architecture;
-2. detects the routing fragment;
-3. asks for URLs and web credentials;
-4. validates the generated configuration;
-5. installs an Entware init script;
-6. starts KRM.
+1. check dependencies and architecture;
+2. detect the routing fragment;
+3. ask for URLs and web credentials;
+4. validate the generated configuration;
+5. install an Entware init script;
+6. start KRM.
 
 Open:
 

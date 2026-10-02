@@ -13,6 +13,7 @@ fi
 go test ./...
 go vet ./...
 
+sh -n install/keenetic/bootstrap.sh
 sh -n install/keenetic/install.sh
 sh -n install/keenetic/S99kee-route-manager
 sh -n install/keenetic/uninstall.sh

@@ -73,15 +73,33 @@ web/                         исходники frontend
 
 ## Установка
 
-Прочитайте [docs/INSTALL.md](docs/INSTALL.md). Установщики работают интерактивно, поскольку в KRM намеренно нет встроенных адресов подписок и целей для проверки доступности, оценки и измерения скорости.
+Для интерактивной установки на Keenetic одной командой выполните её от `root` через SSH:
 
-Типичная установка на Keenetic из распакованного релизного архива:
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+Bootstrap-скрипт определит архитектуру процессора, скачает бинарник последнего релиза и `SHA256SUMS`, проверит бинарник, загрузит файлы установщика Keenetic и запустит обычную интерактивную настройку. Клонировать репозиторий или заранее скачивать релизный архив не требуется.
+
+Если доступен только `wget`:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+Для установки конкретной версии вместо `latest`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
+```
+
+Установка из распакованного релизного архива по-прежнему поддерживается:
 
 ```sh
 sh install/keenetic/install.sh
 ```
 
-Установщик не выполняет скрытую миграцию `blanc-auto`. Для RC1 поддерживается только чистая установка.
+Требования и порядок восстановления описаны в [docs/INSTALL.md](docs/INSTALL.md). Установщик не выполняет скрытую миграцию `blanc-auto`; для RC1 поддерживается только чистая установка.
 
 ## Локальная разработка
 

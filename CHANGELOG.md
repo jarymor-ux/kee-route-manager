@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added a one-command Keenetic bootstrap installer with architecture detection and release SHA-256 verification.
+
 ## 1.0.0-rc.1 — 2026-10-02
 
 - Replaced shell/Python split with one dependency-free Go controller.

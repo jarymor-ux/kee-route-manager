@@ -73,15 +73,33 @@ web/                         frontend source
 
 ## Installation
 
-Read [docs/INSTALL.md](docs/INSTALL.md). The installers are interactive because KRM deliberately has no built-in subscription, health, score or speed-test endpoint.
+For an interactive one-command installation on Keenetic, run as `root` over SSH:
 
-Typical Keenetic installation from an unpacked release bundle:
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+The bootstrap detects the CPU architecture, downloads the latest release binary and `SHA256SUMS`, verifies the binary, fetches the Keenetic installer files, and starts the same interactive setup. No repository clone or release archive is required.
+
+If only `wget` is available:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+To install a specific release instead of `latest`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
+```
+
+Installation from an unpacked release bundle remains supported:
 
 ```sh
 sh install/keenetic/install.sh
 ```
 
-The installer refuses to silently migrate `blanc-auto`. RC1 is clean-install only.
+Read [docs/INSTALL.md](docs/INSTALL.md) for requirements and recovery guidance. The installer refuses to silently migrate `blanc-auto`; RC1 is clean-install only.
 
 ## Local development
 

@@ -73,15 +73,33 @@ web/                         前端源码
 
 ## 安装
 
-请阅读 [docs/INSTALL.md](docs/INSTALL.md)。安装程序采用交互式方式，因为 KRM 不内置订阅地址，也不内置健康检查、评分或测速目标。
+通过 SSH 以 `root` 身份执行以下一条命令，即可在 Keenetic 上进行交互式安装：
 
-从解压后的发布包在 Keenetic 上安装：
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+引导脚本会检测 CPU 架构，下载最新版本的二进制文件和 `SHA256SUMS`，校验二进制文件，然后获取 Keenetic 安装文件并启动正常的交互式配置。无需克隆仓库或预先下载发布压缩包。
+
+如果系统只有 `wget`：
+
+```sh
+wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+```
+
+如需安装指定版本而不是 `latest`：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
+```
+
+仍然可以从已解压的发布包安装：
 
 ```sh
 sh install/keenetic/install.sh
 ```
 
-安装程序不会静默迁移 `blanc-auto`。RC1 仅支持全新安装。
+要求和恢复说明请参阅 [docs/INSTALL.md](docs/INSTALL.md)。安装程序不会静默迁移 `blanc-auto`；RC1 仅支持全新安装。
 
 ## 本地开发
 
