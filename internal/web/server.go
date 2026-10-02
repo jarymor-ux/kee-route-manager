@@ -176,7 +176,7 @@ func (s *Server) protect(fn func(http.ResponseWriter, *http.Request, auth.Sessio
 				jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 				return
 			}
-			if subtleEqual(r.Header.Get("X-KRM-CSRF"), session.CSRF) == false {
+			if !subtleEqual(r.Header.Get("X-KRM-CSRF"), session.CSRF) {
 				jsonError(w, http.StatusForbidden, "invalid CSRF token")
 				return
 			}

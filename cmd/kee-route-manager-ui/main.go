@@ -26,11 +26,11 @@ func main() {
 		fmt.Printf("kee-route-manager-ui %s (%s, %s, %s/%s)\n", version, commit, buildTime, runtime.GOOS, runtime.GOARCH)
 		return
 	}
-	if args[0] != "serve" && args[0] != "validate" {
-		log.Fatal("usage: kee-route-manager-ui <serve|validate|version> [--config PATH]")
+	if args[0] != "serve" && args[0] != "validate" && args[0] != "ready" {
+		log.Fatal("usage: kee-route-manager-ui <serve|validate|ready|version> [--config PATH]")
 	}
 	f := flag.NewFlagSet(args[0], flag.ExitOnError)
-	p := f.String("config", "/etc/kee-route-manager/ui.yaml", "configuration path")
+	p := f.String("config", "/etc/kee-route-manager-ui/config.yaml", "configuration path")
 	_ = f.Parse(args[1:])
 	if f.NArg() != 0 {
 		log.Fatal("unexpected arguments")
@@ -48,6 +48,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if args[0] == "ready" {
+		if e = ui.Ready(ctx, c); e != nil {
+			log.Fatal(e)
+		}
+		fmt.Println("UI and controller are ready")
+		return
+	}
 	if e = ui.Serve(ctx, c); e != nil {
 		log.Fatal(e)
 	}
