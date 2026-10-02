@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"github.com/jarymor-ux/kee-route-manager/internal/tunnel"
 	"io"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -258,13 +260,29 @@ func (m *Manager) validateCandidate(ctx context.Context, v Managed) error {
 	return m.validateDir(ctx, tmp)
 }
 func (m *Manager) validateDir(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, m.cfg.Xray.Binary, "run", "-test", "-confdir", dir)
+	timeout := m.cfg.Platform.CommandTimeout.Duration
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	validationCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(validationCtx, m.cfg.Xray.Binary, "run", "-test", "-confdir", dir)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = time.Second
 	if m.cfg.Xray.AssetDir != "" {
 		cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.cfg.Xray.AssetDir, "xray.location.asset="+m.cfg.Xray.AssetDir)
 	}
-	out, e := cmd.CombinedOutput()
-	if e != nil {
-		return fmt.Errorf("xray validation: %w: %s", e, strings.TrimSpace(string(out)))
+	out := &commandOutput{}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("xray validation: %w: %s", err, redact.Text(strings.TrimSpace(out.String())))
 	}
 	return nil
 }
