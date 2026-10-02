@@ -1,0 +1,27 @@
+name: Source bundle
+
+on:
+  push:
+    branches: [work/rc2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source archive
+        run: |
+          mkdir -p /tmp/krm-source
+          rsync -a --exclude='.git' ./ /tmp/krm-source/
+          cd /tmp
+          zip -qr krm-source.zip krm-source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: krm-source
+          path: /tmp/krm-source.zip
+          if-no-files-found: error
+          retention-days: 1
