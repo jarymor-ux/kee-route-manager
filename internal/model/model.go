@@ -82,6 +82,9 @@ type State struct {
 	ActiveNodeID        string                 `json:"active_node_id,omitempty"`
 	ActiveSince         time.Time              `json:"active_since,omitempty"`
 	DirectMode          bool                   `json:"direct_mode"`
+	PlatformBypass      bool                   `json:"platform_bypass"`
+	HealthState         string                 `json:"health_state,omitempty"`
+	MonitoringDegraded  bool                   `json:"monitoring_degraded"`
 	ConsecutiveFailures int                    `json:"consecutive_failures"`
 	ConsecutiveSuccess  int                    `json:"consecutive_success"`
 	LastHealthAt        time.Time              `json:"last_health_at,omitempty"`
@@ -99,7 +102,7 @@ type State struct {
 
 func NewState(version, prefix string, size int) State {
 	now := time.Now().UTC()
-	s := State{SchemaVersion: 1, Version: version, UpdatedAt: now, StartedAt: now, ActiveSlot: -1, Measurements: map[string]Measurement{}, Sources: map[string]SourceState{}}
+	s := State{SchemaVersion: 1, Version: version, UpdatedAt: now, StartedAt: now, ActiveSlot: -1, HealthState: "initializing", Measurements: map[string]Measurement{}, Sources: map[string]SourceState{}}
 	for i := 0; i < size; i++ {
 		s.Pool = append(s.Pool, Slot{Index: i, Tag: prefix + itoa(i)})
 	}

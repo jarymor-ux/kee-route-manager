@@ -26,8 +26,12 @@ func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.
 	outs := []any{map[string]any{"tag": cfg.Xray.ManagedDirectTag, "protocol": "freedom", "settings": map[string]any{}}}
 	rules := []any{map[string]any{"type": "field", "inboundTag": []string{"krm-health"}, "balancerTag": cfg.Xray.BalancerTag}}
 	byIndex := map[int]model.Slot{}
+	selectors := []string{}
 	for _, s := range slots {
 		byIndex[s.Index] = s
+		if s.NodeID != "" {
+			selectors = append(selectors, s.Tag)
+		}
 	}
 	for i := 0; i < cfg.Pool.Size; i++ {
 		ins = append(ins, httpInbound(fmt.Sprintf("krm-probe-%d", i), cfg.Xray.ProbePortStart+i))
@@ -44,7 +48,10 @@ func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.
 		}
 		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{fmt.Sprintf("krm-probe-%d", i)}, "outboundTag": tag})
 	}
-	routing := map[string]any{"routing": map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{cfg.Xray.SlotTagPrefix}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}}
+	if len(selectors) == 0 {
+		return Managed{}, fmt.Errorf("hot pool has no selectable VPN outbounds")
+	}
+	routing := map[string]any{"routing": map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": selectors, "strategy": map[string]any{"type": "random"}}}, "rules": rules}}
 	return Managed{pretty(api), pretty(map[string]any{"inbounds": ins}), pretty(map[string]any{"outbounds": outs}), pretty(routing)}, nil
 }
 func Outbound(n model.Node, tag string) (map[string]any, error) {

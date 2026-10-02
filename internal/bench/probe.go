@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -67,22 +68,30 @@ func (p *Prober) Probe(ctx context.Context, proxy *url.URL, t config.Target) Pro
 	return r
 }
 func (p *Prober) CheckMajority(ctx context.Context, proxy *url.URL, targets []config.Target) (int, int, []ProbeResult) {
+	results := make([]ProbeResult, len(targets))
+	var wg sync.WaitGroup
+	for i, target := range targets {
+		i, target := i, target
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = p.Probe(ctx, proxy, target)
+		}()
+	}
+	wg.Wait()
 	passed := 0
-	rs := []ProbeResult{}
-	for _, t := range targets {
-		r := p.Probe(ctx, proxy, t)
-		rs = append(rs, r)
-		if r.Success {
+	for _, result := range results {
+		if result.Success {
 			passed++
 		}
 	}
-	return passed, len(targets), rs
+	return passed, len(targets), results
 }
 func Majority(passed, total int) bool { return total > 0 && passed*2 > total }
 func (p *Prober) client(proxy *url.URL) *http.Client {
 	tr := &http.Transport{DialContext: (&net.Dialer{Timeout: 4 * time.Second, KeepAlive: 15 * time.Second}).DialContext, Proxy: http.ProxyURL(proxy), ForceAttemptHTTP2: true, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: p.Timeout, MaxIdleConns: 10, MaxIdleConnsPerHost: 2, IdleConnTimeout: 15 * time.Second}
 	if proxy == nil {
-		tr.Proxy = http.ProxyFromEnvironment
+		tr.Proxy = nil
 	}
 	return &http.Client{Transport: tr, Timeout: p.Timeout + 2*time.Second}
 }

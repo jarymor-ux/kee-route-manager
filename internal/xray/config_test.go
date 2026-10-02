@@ -7,7 +7,6 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -46,7 +45,9 @@ func TestPatchBaseRoute(t *testing.T) {
 func TestManagedBalancerDoesNotSelectDirectByDefault(t *testing.T) {
 	c := config.Default()
 	c.Pool.Size = 2
-	managed, err := BuildManaged(c, nil, nil)
+	node := testNode()
+	slots := []model.Slot{{Index: 0, Tag: c.Xray.SlotTagPrefix + "0", NodeID: node.ID}}
+	managed, err := BuildManaged(c, slots, map[string]model.Node{node.ID: node})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestManagedBalancerDoesNotSelectDirectByDefault(t *testing.T) {
 	if err := json.Unmarshal(managed.Routing, &routing); err != nil {
 		t.Fatal(err)
 	}
-	if len(routing.Routing.Balancers) != 1 || len(routing.Routing.Balancers[0].Selector) != 1 || routing.Routing.Balancers[0].Selector[0] != c.Xray.SlotTagPrefix {
+	if len(routing.Routing.Balancers) != 1 || len(routing.Routing.Balancers[0].Selector) != 1 || routing.Routing.Balancers[0].Selector[0] != c.Xray.SlotTagPrefix+"0" {
 		t.Fatalf("unexpected selectors: %#v", routing.Routing.Balancers)
 	}
 	var outbounds struct {
@@ -73,7 +74,10 @@ func TestManagedBalancerDoesNotSelectDirectByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, outbound := range outbounds.Outbounds {
-		if strings.HasPrefix(outbound.Tag, c.Xray.SlotTagPrefix) && outbound.Protocol != "blackhole" {
+		if outbound.Tag == c.Xray.ManagedDirectTag {
+			continue
+		}
+		if outbound.Tag == c.Xray.SlotTagPrefix+"1" && outbound.Protocol != "blackhole" {
 			t.Fatalf("empty slot %s must be blackhole, got %s", outbound.Tag, outbound.Protocol)
 		}
 	}

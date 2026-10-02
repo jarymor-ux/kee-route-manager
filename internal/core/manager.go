@@ -38,6 +38,9 @@ type Manager struct {
 	clients         []platform.Client
 	clientsUpdated  time.Time
 	clientsError    string
+	xrayRunning     bool
+	xrayUpdated     time.Time
+	xrayError       string
 	recoveryNode    string
 	recoveryCount   int
 	benchmarkQueued bool
@@ -64,6 +67,7 @@ func New(c config.Config, version string, st *store.Store, ops *operation.Coordi
 }
 func (m *Manager) Start(parent context.Context) {
 	m.ctx, m.cancel = context.WithCancel(parent)
+	m.pollXray()
 	if m.store.State().XrayConfigured {
 		if err := m.platform.EnsureFirewall(m.ctx); err != nil {
 			m.log("error", "firewall.ensure_failed", err.Error(), "", nil)
@@ -93,8 +97,11 @@ func (m *Manager) Stop() {
 	m.wg.Wait()
 	_ = m.store.Flush()
 }
-func (m *Manager) Status(ctx context.Context) Status {
-	return Status{m.version, m.store.State(), m.ops.Current(), m.platform.Capabilities(), m.platform.Kind(), m.platform.XrayRunning(ctx), time.Now().UTC()}
+func (m *Manager) Status(context.Context) Status {
+	m.mu.RLock()
+	running := m.xrayRunning
+	m.mu.RUnlock()
+	return Status{m.version, m.store.State(), m.ops.Current(), m.platform.Capabilities(), m.platform.Kind(), running, time.Now().UTC()}
 }
 func (m *Manager) State() model.State                           { return m.store.State() }
 func (m *Manager) Events(after uint64, limit int) []event.Event { return m.store.Events(after, limit) }
@@ -206,6 +213,11 @@ func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 		measurements[result.NodeID] = result
 	}
 	selected := m.selectPool(fetched.Nodes, results)
+	if len(selected) == 0 {
+		err = fmt.Errorf("benchmark found no healthy VPN nodes; current routing was retained")
+		finish(err)
+		return err
+	}
 
 	_ = h.Update("apply", 0, m.cfg.Pool.Size, "applying hot pool")
 	m.routeMu.Lock()
@@ -253,7 +265,7 @@ func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 	reason := ""
 	if winner >= 0 {
 		switch {
-		case state.DirectMode || state.ActiveNodeID == "" || mode == "startup" || mode == "manual" || mode == "emergency":
+		case state.DirectMode || state.ActiveNodeID == "" || mode == "startup" || mode == "manual":
 			desired = winner
 			reason = "benchmark " + mode
 		default:
@@ -274,13 +286,6 @@ func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 	direct := false
 	finalSlot := -1
 	switch {
-	case winner < 0:
-		if err = m.xray.Direct(ctx); err != nil {
-			finish(err)
-			return err
-		}
-		direct = true
-		reason = "no healthy VPN nodes"
 	case desired >= 0:
 		if err = m.xray.Switch(ctx, newSlots[desired].Tag); err != nil {
 			finish(err)
@@ -337,6 +342,9 @@ func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 		} else {
 			previousNode := s.ActiveNodeID
 			s.DirectMode = false
+			s.PlatformBypass = false
+			s.HealthState = "healthy"
+			s.MonitoringDegraded = false
 			s.ActiveSlot = newSlots[finalSlot].Index
 			s.ActiveNodeID = newSlots[finalSlot].NodeID
 			if previousNode != s.ActiveNodeID || s.ActiveSince.IsZero() {
@@ -425,10 +433,13 @@ func (m *Manager) platformLoop() {
 	defer m.wg.Done()
 	metrics := time.NewTicker(5 * time.Second)
 	clients := time.NewTicker(20 * time.Second)
+	xrayStatus := time.NewTicker(3 * time.Second)
 	defer metrics.Stop()
 	defer clients.Stop()
+	defer xrayStatus.Stop()
 	m.pollMetrics()
 	m.pollClients()
+	m.pollXray()
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -437,6 +448,8 @@ func (m *Manager) platformLoop() {
 			m.pollMetrics()
 		case <-clients.C:
 			m.pollClients()
+		case <-xrayStatus.C:
+			m.pollXray()
 		}
 	}
 }
@@ -456,6 +469,21 @@ func (m *Manager) pollMetrics() {
 	}
 	m.metrics = v
 }
+func (m *Manager) pollXray() {
+	ctx, cancel := context.WithTimeout(m.ctxOrBackground(), 3*time.Second)
+	defer cancel()
+	running := m.platform.XrayRunning(ctx)
+	m.mu.Lock()
+	m.xrayRunning = running
+	m.xrayUpdated = time.Now().UTC()
+	if running {
+		m.xrayError = ""
+	} else {
+		m.xrayError = "Xray is not running"
+	}
+	m.mu.Unlock()
+}
+
 func (m *Manager) pollClients() {
 	if !m.platform.Capabilities().Clients {
 		return
@@ -481,9 +509,13 @@ func (m *Manager) checkHealth(ctx context.Context) {
 	if !state.XrayConfigured {
 		return
 	}
+	if !m.platform.XrayRunning(ctx) {
+		_ = m.enterDirect(ctx, "Xray unavailable")
+		return
+	}
 	if err := m.reconcileSelection(ctx, state); err != nil {
 		m.log("error", "xray.selection_reconcile_failed", err.Error(), "", nil)
-		_ = m.store.Update(func(s *model.State) error { s.XrayLastError = err.Error(); return nil })
+		_ = m.enterDirect(ctx, "Xray API unavailable")
 		return
 	}
 	targets := m.cfg.TargetsByRole("health")
@@ -491,42 +523,80 @@ func (m *Manager) checkHealth(ctx context.Context) {
 		m.checkRecovery(ctx, state, targets)
 		return
 	}
+	prober := bench.NewProber(m.cfg.Health.RequestTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes))
 	proxy, _ := url.Parse(m.xray.HealthProxy())
-	passed, total, results := bench.NewProber(m.cfg.Health.RequestTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes)).CheckMajority(ctx, proxy, targets)
-	healthy := bench.Majority(passed, total)
-	msg := fmt.Sprintf("%d/%d health targets", passed, total)
-	if !healthy && len(results) > 0 {
-		msg = results[0].Error
-	}
+	vpnPassed, vpnTotal, vpnResults, directPassed, directTotal := comparePaths(ctx, prober, proxy, targets)
+	vpnHealthy := bench.Majority(vpnPassed, vpnTotal)
+	directHealthy := bench.Majority(directPassed, directTotal)
 	now := time.Now().UTC()
-	updateHealth := func(s *model.State) error {
-		s.LastHealthAt = now
-		s.LastHealthMessage = msg
-		if healthy {
+	if vpnHealthy {
+		_ = m.store.UpdateVolatile(func(s *model.State) error {
+			s.LastHealthAt = now
+			s.LastHealthMessage = fmt.Sprintf("%d/%d VPN health targets", vpnPassed, vpnTotal)
+			s.HealthState = "healthy"
+			s.MonitoringDegraded = false
 			s.ConsecutiveFailures = 0
 			s.ConsecutiveSuccess++
-		} else {
-			s.ConsecutiveFailures++
-			s.ConsecutiveSuccess = 0
+			return nil
+		})
+		return
+	}
+	if !directHealthy {
+		message := "health targets unavailable through both VPN and direct paths"
+		if len(vpnResults) > 0 && vpnResults[0].Error != "" {
+			message = vpnResults[0].Error
 		}
+		_ = m.store.Update(func(s *model.State) error {
+			s.LastHealthAt = now
+			s.LastHealthMessage = message
+			s.HealthState = "monitoring_degraded"
+			s.MonitoringDegraded = true
+			s.ConsecutiveFailures = 0
+			s.ConsecutiveSuccess = 0
+			return nil
+		})
+		m.log("warning", "health.inconclusive", message, "", nil)
+		return
+	}
+	message := fmt.Sprintf("VPN path failed %d/%d; direct path passed %d/%d", vpnPassed, vpnTotal, directPassed, directTotal)
+	_ = m.store.Update(func(s *model.State) error {
+		s.LastHealthAt = now
+		s.LastHealthMessage = message
+		s.HealthState = "vpn_failed"
+		s.MonitoringDegraded = false
+		s.ConsecutiveFailures++
+		s.ConsecutiveSuccess = 0
 		return nil
-	}
-	if healthy {
-		_ = m.store.UpdateVolatile(updateHealth)
-	} else {
-		_ = m.store.Update(updateHealth)
-	}
+	})
 	state = m.store.State()
-	if healthy {
-		return
+	if state.ConsecutiveFailures >= m.cfg.Health.FailureThreshold {
+		m.emergencyFailover(ctx, state, targets)
 	}
-	if state.ConsecutiveFailures < m.cfg.Health.FailureThreshold {
-		return
-	}
-	m.emergencyFailover(ctx, state, targets)
 }
+
+func comparePaths(ctx context.Context, prober *bench.Prober, proxy *url.URL, targets []config.Target) (int, int, []bench.ProbeResult, int, int) {
+	type result struct {
+		passed int
+		total  int
+		items  []bench.ProbeResult
+	}
+	vpnCh := make(chan result, 1)
+	directCh := make(chan result, 1)
+	go func() {
+		p, t, items := prober.CheckMajority(ctx, proxy, targets)
+		vpnCh <- result{p, t, items}
+	}()
+	go func() {
+		p, t, items := prober.CheckMajority(ctx, nil, targets)
+		directCh <- result{p, t, items}
+	}()
+	vpn := <-vpnCh
+	direct := <-directCh
+	return vpn.passed, vpn.total, vpn.items, direct.passed, direct.total
+}
+
 func (m *Manager) emergencyFailover(ctx context.Context, state model.State, targets []config.Target) {
-	prober := bench.NewProber(m.cfg.Health.RequestTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes))
+	prober := bench.NewProber(minDuration(m.cfg.Health.RequestTimeout.Duration, 3*time.Second), int64(m.cfg.Health.MaxResponseBytes))
 	order := append([]model.Slot(nil), state.Pool...)
 	sort.SliceStable(order, func(i, j int) bool {
 		ai, aj := order[i].LastVerifiedAt, order[j].LastVerifiedAt
@@ -535,58 +605,124 @@ func (m *Manager) emergencyFailover(ctx context.Context, state model.State, targ
 		}
 		return ai.After(aj)
 	})
-	for _, s := range order {
-		if s.NodeID == "" || s.Index == state.ActiveSlot {
+	type candidate struct {
+		slot model.Slot
+		ok   bool
+	}
+	results := make(chan candidate, len(order))
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	count := 0
+	for _, slot := range order {
+		if slot.NodeID == "" || slot.Index == state.ActiveSlot {
 			continue
 		}
-		proxy, _ := url.Parse(m.xray.SlotProxy(s.Index))
-		passed, total, _ := prober.CheckMajority(ctx, proxy, targets)
-		if bench.Majority(passed, total) {
-			if err := m.xray.Switch(ctx, s.Tag); err == nil {
-				now := time.Now().UTC()
-				_ = m.store.Update(func(st *model.State) error {
-					st.ActiveSlot = s.Index
-					st.ActiveNodeID = s.NodeID
-					st.ActiveSince = now
-					st.DirectMode = false
-					st.ConsecutiveFailures = 0
-					st.LastSwitchAt = now
-					st.LastSwitchReason = "emergency failover"
-					return nil
-				})
-				m.log("warning", "failover.vpn", "switched to fallback VPN node", "", map[string]any{"node": s.Label})
-				m.queueBenchmark("emergency")
-				return
-			}
+		count++
+		go func(slot model.Slot) {
+			proxy, _ := url.Parse(m.xray.SlotProxy(slot.Index))
+			passed, total, _ := prober.CheckMajority(probeCtx, proxy, targets)
+			results <- candidate{slot: slot, ok: bench.Majority(passed, total)}
+		}(slot)
+	}
+	working := map[int]model.Slot{}
+	for i := 0; i < count; i++ {
+		result := <-results
+		if result.ok {
+			working[result.slot.Index] = result.slot
 		}
 	}
-	if err := m.xray.Direct(ctx); err == nil {
-		now := time.Now().UTC()
+	for _, slot := range order {
+		if _, ok := working[slot.Index]; !ok {
+			continue
+		}
+		if err := m.xray.Switch(ctx, slot.Tag); err == nil {
+			now := time.Now().UTC()
+			_ = m.store.Update(func(st *model.State) error {
+				st.ActiveSlot = slot.Index
+				st.ActiveNodeID = slot.NodeID
+				st.ActiveSince = now
+				st.DirectMode = false
+				st.PlatformBypass = false
+				st.HealthState = "healthy"
+				st.MonitoringDegraded = false
+				st.ConsecutiveFailures = 0
+				st.LastSwitchAt = now
+				st.LastSwitchReason = "emergency failover"
+				return nil
+			})
+			m.log("warning", "failover.vpn", "switched to fallback VPN node", "", map[string]any{"node": slot.Label})
+			m.queueBenchmark("emergency")
+			return
+		}
+	}
+	_ = m.enterDirect(ctx, "all VPN nodes unavailable")
+}
+
+func (m *Manager) enterDirect(ctx context.Context, reason string) error {
+	now := time.Now().UTC()
+	if m.platform.XrayRunning(ctx) {
+		if err := m.xray.Direct(ctx); err == nil {
+			_ = m.store.Update(func(st *model.State) error {
+				st.DirectMode = true
+				st.PlatformBypass = false
+				st.HealthState = "direct"
+				st.ActiveSlot = -1
+				st.ActiveNodeID = ""
+				st.LastSwitchAt = now
+				st.LastSwitchReason = reason
+				return nil
+			})
+			m.log("error", "failover.direct", reason+"; traffic is direct through Xray", "", nil)
+			return nil
+		}
+	}
+	if err := m.platform.EnterDirectBypass(ctx); err != nil {
 		_ = m.store.Update(func(st *model.State) error {
-			st.DirectMode = true
-			st.ActiveSlot = -1
-			st.ActiveNodeID = ""
-			st.LastSwitchAt = now
-			st.LastSwitchReason = "all VPN nodes unavailable"
+			st.XrayLastError = errors.Join(fmt.Errorf(reason), err).Error()
+			st.HealthState = "failed"
 			return nil
 		})
-		m.log("error", "failover.direct", "all VPN nodes unavailable; traffic is direct", "", nil)
-		m.queueBenchmark("emergency")
+		return err
 	}
+	_ = m.store.Update(func(st *model.State) error {
+		st.DirectMode = true
+		st.PlatformBypass = true
+		st.HealthState = "direct_bypass"
+		st.ActiveSlot = -1
+		st.ActiveNodeID = ""
+		st.LastSwitchAt = now
+		st.LastSwitchReason = reason
+		return nil
+	})
+	m.log("error", "failover.platform_direct", reason+"; interception was bypassed", "", nil)
+	return nil
 }
+
 func (m *Manager) checkRecovery(ctx context.Context, state model.State, targets []config.Target) {
+	if state.PlatformBypass {
+		if err := m.platform.LeaveDirectBypass(ctx); err != nil {
+			return
+		}
+		if err := m.xray.WaitReady(ctx, 20*time.Second); err != nil {
+			_ = m.platform.EnterDirectBypass(context.Background())
+			return
+		}
+		_ = m.xray.Direct(ctx)
+		_ = m.store.Update(func(st *model.State) error { st.PlatformBypass = false; return nil })
+		state = m.store.State()
+	}
 	prober := bench.NewProber(m.cfg.Health.RequestTimeout.Duration, int64(m.cfg.Health.MaxResponseBytes))
 	candidate := ""
 	index := -1
-	for _, s := range state.Pool {
-		if s.NodeID == "" {
+	for _, slot := range state.Pool {
+		if slot.NodeID == "" {
 			continue
 		}
-		proxy, _ := url.Parse(m.xray.SlotProxy(s.Index))
+		proxy, _ := url.Parse(m.xray.SlotProxy(slot.Index))
 		passed, total, _ := prober.CheckMajority(ctx, proxy, targets)
 		if bench.Majority(passed, total) {
-			candidate = s.NodeID
-			index = s.Index
+			candidate = slot.NodeID
+			index = slot.Index
 			break
 		}
 	}
@@ -615,6 +751,9 @@ func (m *Manager) checkRecovery(ctx context.Context, state model.State, targets 
 	now := time.Now().UTC()
 	_ = m.store.Update(func(st *model.State) error {
 		st.DirectMode = false
+		st.PlatformBypass = false
+		st.HealthState = "healthy"
+		st.MonitoringDegraded = false
 		st.ActiveSlot = index
 		st.ActiveNodeID = slot.NodeID
 		st.ActiveSince = now
@@ -631,6 +770,14 @@ func (m *Manager) checkRecovery(ctx context.Context, state model.State, targets 
 	m.log("info", "recovery.vpn", "VPN connectivity recovered", "", map[string]any{"node": slot.Label})
 	m.queueBenchmark("recovery")
 }
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a <= 0 || a > b {
+		return b
+	}
+	return a
+}
+
 func (m *Manager) queueBenchmark(mode string) {
 	m.mu.Lock()
 	if m.benchmarkQueued {
@@ -717,12 +864,23 @@ func (m *Manager) SwitchSlot(ctx context.Context, index int) error {
 		if index < 0 || index >= len(state.Pool) || state.Pool[index].NodeID == "" {
 			return fmt.Errorf("invalid slot")
 		}
+		if state.PlatformBypass {
+			if err := m.platform.LeaveDirectBypass(c); err != nil {
+				return err
+			}
+			if err := m.xray.WaitReady(c, 20*time.Second); err != nil {
+				return err
+			}
+		}
 		if err := m.xray.Switch(c, state.Pool[index].Tag); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
 		return m.store.Update(func(s *model.State) error {
 			s.DirectMode = false
+			s.PlatformBypass = false
+			s.HealthState = "healthy"
+			s.MonitoringDegraded = false
 			s.ActiveSlot = index
 			s.ActiveNodeID = s.Pool[index].NodeID
 			s.ActiveSince = now
@@ -736,18 +894,7 @@ func (m *Manager) SwitchDirect(ctx context.Context) error {
 	return m.RunAction(ctx, "switch-direct", "web", func(c context.Context) error {
 		m.routeMu.Lock()
 		defer m.routeMu.Unlock()
-		if err := m.xray.Direct(c); err != nil {
-			return err
-		}
-		now := time.Now().UTC()
-		return m.store.Update(func(s *model.State) error {
-			s.DirectMode = true
-			s.ActiveSlot = -1
-			s.ActiveNodeID = ""
-			s.LastSwitchAt = now
-			s.LastSwitchReason = "manual direct"
-			return nil
-		})
+		return m.enterDirect(c, "manual direct")
 	})
 }
 func (m *Manager) log(level, kind, message, op string, fields map[string]any) {

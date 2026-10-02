@@ -225,13 +225,14 @@ func (e *Engine) speed(ctx context.Context, proxy *url.URL) (float64, error) {
 }
 func (e *Engine) download(ctx context.Context, proxy *url.URL, size int64) (float64, time.Duration, error) {
 	u := strings.ReplaceAll(e.cfg.Benchmark.Speed.URLTemplate, "{bytes}", fmt.Sprint(size))
-	tr := &http.Transport{Proxy: http.ProxyURL(proxy), TLSHandshakeTimeout: 10 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1}
+	tr := &http.Transport{Proxy: http.ProxyURL(proxy), DisableCompression: true, TLSHandshakeTimeout: 10 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1}
 	client := &http.Client{Transport: tr, Timeout: e.cfg.Benchmark.Speed.TargetDuration.Duration*4 + 20*time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return 0, 0, err
 	}
 	req.Header.Set("User-Agent", "Kee-Route-Manager/1.0")
+	req.Header.Set("Accept-Encoding", "identity")
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

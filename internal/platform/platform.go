@@ -84,6 +84,9 @@ type Adapter interface {
 	Diagnostics(context.Context) (string, error)
 	EnsureFirewall(context.Context) error
 	RemoveFirewall(context.Context) error
+	EnterDirectBypass(context.Context) error
+	LeaveDirectBypass(context.Context) error
+	DirectBypassActive(context.Context) (bool, error)
 }
 
 type Runner struct {
