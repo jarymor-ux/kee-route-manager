@@ -191,6 +191,7 @@ type Benchmark struct {
 }
 type Speed struct {
 	Enabled        bool     `json:"enabled"`
+	Workers        int      `json:"workers"`
 	URLTemplate    string   `json:"url_template"`
 	WarmupBytes    ByteSize `json:"warmup_bytes"`
 	MinSampleBytes ByteSize `json:"min_sample_bytes"`
@@ -235,7 +236,7 @@ func Default() Config {
 		Subscriptions: Subscriptions{MaxNodesPerSource: 500, MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
 		Health:        Health{Interval: Dur(15 * time.Second), FailureThreshold: 2, RecoveryThreshold: 2, RequestTimeout: Dur(8 * time.Second), MaxResponseBytes: 64 << 10, HotPoolFreshness: Dur(5 * time.Minute), ProviderRetryBackoff: []Duration{Dur(15 * time.Second), Dur(30 * time.Second), Dur(time.Minute), Dur(2 * time.Minute), Dur(5 * time.Minute), Dur(10 * time.Minute)}},
 		Pool:          Pool{Size: 5},
-		Benchmark:     Benchmark{FullInterval: Dur(6 * time.Hour), BatchSize: 20, LatencyWorkers: 8, RequestsPerWeight: 2, Finalists: 6, MinImprovementPercent: 15, SwitchCooldown: Dur(10 * time.Minute), StabilityBeforeUpgrade: Dur(10 * time.Minute), TemporaryProxyPortStart: 20000, TemporaryStartupTimeout: Dur(10 * time.Second), Speed: Speed{Enabled: false, WarmupBytes: 8 << 20, MinSampleBytes: 64 << 20, MaxSampleBytes: 512 << 20, TargetDuration: Dur(6 * time.Second), Repetitions: 3}},
+		Benchmark:     Benchmark{FullInterval: Dur(6 * time.Hour), BatchSize: 20, LatencyWorkers: 8, RequestsPerWeight: 2, Finalists: 6, MinImprovementPercent: 15, SwitchCooldown: Dur(10 * time.Minute), StabilityBeforeUpgrade: Dur(10 * time.Minute), TemporaryProxyPortStart: 20000, TemporaryStartupTimeout: Dur(10 * time.Second), Speed: Speed{Enabled: false, Workers: 2, WarmupBytes: 8 << 20, MinSampleBytes: 64 << 20, MaxSampleBytes: 512 << 20, TargetDuration: Dur(6 * time.Second), Repetitions: 3}},
 		Update:        Update{Enabled: false, Channel: "rc", CheckInterval: Dur(24 * time.Hour), HealthGracePeriod: Dur(30 * time.Second)},
 		UIProxy:       UIProxy{Enabled: true, RequestTimeout: Dur(30 * time.Second)},
 	}

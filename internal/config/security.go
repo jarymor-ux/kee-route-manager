@@ -196,6 +196,9 @@ func (c Config) validateController() []error {
 	if c.Failover.Quorum < 2 || c.Failover.Quorum > 20 || c.Failover.FailureThreshold < 1 || c.Failover.FailureThreshold > 20 || c.Failover.OverallDeadline.Duration < c.Failover.ProbeTimeout.Duration {
 		add(fmt.Errorf("failover quorum/threshold/deadline invalid"))
 	}
+	if c.Benchmark.Speed.Workers < 1 || c.Benchmark.Speed.Workers > 16 {
+		add(fmt.Errorf("benchmark.speed.workers must be 1..16"))
+	}
 	// Fewer independent targets than quorum are allowed, but failover must classify
 	// monitoring as inconclusive. This permits core-only offline setup safely.
 	for name, v := range map[string]int{"subscriptions.max_sources": c.Subscriptions.MaxSources, "benchmark.latency_workers": c.Benchmark.LatencyWorkers, "benchmark.requests_per_weight": c.Benchmark.RequestsPerWeight, "benchmark.finalists": c.Benchmark.Finalists, "benchmark.speed.repetitions": c.Benchmark.Speed.Repetitions, "health.failure_threshold": c.Health.FailureThreshold, "health.recovery_threshold": c.Health.RecoveryThreshold} {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Run download benchmarks with bounded parallel node workers (`benchmark.speed.workers`, default 2, range 1..16); retain sequential warmup/repetitions per node and support isolated sampling with 1 worker. Cancellation stops the speed stage without reporting successful completion.
 - Preserve completed restore intent when recovering damaged state; release finished operations after persistence failures and report those failures.
 - Reserve the persistent Xray selection prefix and accept equivalent directory aliases for snapshot restore, rollback and journal replay without relaxing file identity checks.
 - Prevent unchanged subscriptions with retained pool nodes from repeatedly scheduling benchmarks; enforce cache TTL before normal reuse.

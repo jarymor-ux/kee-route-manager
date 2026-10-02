@@ -124,6 +124,7 @@ benchmark:
   temporary_startup_timeout: 10s
   speed:
     enabled: false
+    workers: 2
     url_template: "https://speed-target.example.invalid/download?bytes={bytes}"
     warmup_bytes: 8MiB
     min_sample_bytes: 64MiB

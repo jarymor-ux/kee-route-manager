@@ -19,9 +19,12 @@ import (
 )
 
 type Progress func(stage string, current, total int, message string)
+type batchRunner interface {
+	Start(context.Context, []model.Node) (*xray.Batch, error)
+}
 type Engine struct {
 	cfg    config.Config
-	runner *xray.BatchRunner
+	runner batchRunner
 	prober *Prober
 }
 
@@ -82,20 +85,11 @@ func (e *Engine) Run(ctx context.Context, nodes []model.Node, progress Progress)
 		if err != nil {
 			return nil, err
 		}
-		for i, n := range selected {
-			if progress != nil {
-				progress("speed", i, finalists, n.Label)
-			}
-			m := results[n.ID]
-			speed, err := e.speed(ctx, batch.Proxies[n.ID])
-			if err != nil {
-				m.Error = join(m.Error, "speed: "+redact.Text(err.Error()))
-			} else {
-				m.SpeedMbps = speed
-			}
-			results[n.ID] = m
-		}
+		e.measureSpeed(ctx, selected, batch.Proxies, results, progress)
 		batch.Stop()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 	}
 	bestLatency := math.MaxFloat64
 	bestSpeed := 0.0
@@ -139,6 +133,62 @@ func (e *Engine) Run(ctx context.Context, nodes []model.Node, progress Progress)
 	}
 	return out, nil
 }
+
+func (e *Engine) measureSpeed(ctx context.Context, nodes []model.Node, proxies map[string]*url.URL, results map[string]model.Measurement, progress Progress) {
+	workers := e.cfg.Benchmark.Speed.Workers
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(nodes) {
+		workers = len(nodes)
+	}
+	type sample struct {
+		node model.Node
+		mbps float64
+		err  error
+	}
+	jobs := make(chan model.Node, len(nodes))
+	completed := make(chan sample, len(nodes))
+	for _, node := range nodes {
+		jobs <- node
+	}
+	close(jobs)
+	if progress != nil {
+		progress("speed", 0, len(nodes), "testing download speed")
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for node := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				mbps, err := e.speed(ctx, proxies[node.ID])
+				completed <- sample{node, mbps, err}
+			}
+		}()
+	}
+	go func() { wg.Wait(); close(completed) }()
+	count := 0
+	// Only the caller merges results and reports progress; concurrent workers
+	// never write the map or call potentially non-thread-safe progress hooks.
+	for sample := range completed {
+		m := results[sample.node.ID]
+		if sample.err != nil {
+			m.Error = join(m.Error, "speed: "+redact.Text(sample.err.Error()))
+		} else {
+			m.SpeedMbps = sample.mbps
+		}
+		results[sample.node.ID] = m
+		count++
+		if progress != nil {
+			progress("speed", count, len(nodes), sample.node.Label)
+		}
+	}
+}
+
 func (e *Engine) measureBatch(ctx context.Context, nodes []model.Node, proxies map[string]*url.URL) []model.Measurement {
 	out := make([]model.Measurement, len(nodes))
 	workers := e.cfg.Benchmark.LatencyWorkers
