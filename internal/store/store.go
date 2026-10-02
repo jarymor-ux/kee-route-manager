@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
+	"strings"
 )
 
 const (
@@ -28,6 +31,8 @@ type Store struct {
 	events             []event.Event
 	seq                uint64
 	dirty              bool
+	initial            model.State
+	committedNodes     map[string]model.Node
 }
 
 func New(stateDir, cacheDir string, initial model.State) (*Store, error) {
@@ -36,7 +41,7 @@ func New(stateDir, cacheDir string, initial model.State) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{stateDir: stateDir, cacheDir: cacheDir, state: initial, nodes: map[string]model.Node{}}
+	s := &Store{stateDir: stateDir, cacheDir: cacheDir, state: initial, initial: clone(initial), nodes: map[string]model.Node{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -44,30 +49,81 @@ func New(stateDir, cacheDir string, initial model.State) (*Store, error) {
 }
 
 func (s *Store) load() error {
-	if b, err := os.ReadFile(filepath.Join(s.stateDir, "state.json")); err == nil {
-		if err := json.Unmarshal(b, &s.state); err != nil {
+	// Nodes and state are validated together before any routing mutation is allowed.
+	if b, err := os.ReadFile(filepath.Join(s.cacheDir, "nodes.json")); err == nil {
+		var xs []model.Node
+		if json.Unmarshal(b, &xs) == nil {
+			for _, x := range xs {
+				if x.ID != "" {
+					s.nodes[x.ID] = x
+				}
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var invalid bool
+	var recoveredPrevious bool
+	for _, name := range []string{"state.json", "state.previous.json"} {
+		b, err := os.ReadFile(filepath.Join(s.stateDir, name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
 			return err
 		}
+		var candidate model.State
+		candidateNodes := s.nodes
+		if name == "state.previous.json" {
+			var previous previousState
+			if err = json.Unmarshal(b, &previous); err == nil && previous.State.SchemaVersion != 0 {
+				candidate = previous.State
+				candidateNodes = map[string]model.Node{}
+				for _, n := range previous.Nodes {
+					candidateNodes[n.ID] = n
+				}
+			} else {
+				err = json.Unmarshal(b, &candidate)
+			}
+		} else {
+			err = json.Unmarshal(b, &candidate)
+		}
+		if err == nil {
+			err = s.validateWithNodes(candidate, candidateNodes)
+		}
+		if err != nil {
+			invalid = true
+			continue
+		}
+		s.state = candidate
+		s.nodes = candidateNodes
+		recoveredPrevious = name == "state.previous.json"
 		if s.state.Measurements == nil {
 			s.state.Measurements = map[string]model.Measurement{}
 		}
 		if s.state.Sources == nil {
 			s.state.Sources = map[string]model.SourceState{}
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		invalid = false
+		break
 	}
-	if b, err := os.ReadFile(filepath.Join(s.cacheDir, "nodes.json")); err == nil {
-		var xs []model.Node
-		if err := json.Unmarshal(b, &xs); err != nil {
+	if invalid {
+		s.state = clone(s.initial)
+		s.state.XrayLastError = "state copies invalid; routing reconciliation required"
+	}
+	if recoveredPrevious {
+		xs := make([]model.Node, 0, len(s.nodes))
+		for _, node := range s.nodes {
+			xs = append(xs, node)
+		}
+		if err := writeJSON(filepath.Join(s.cacheDir, "nodes.json"), xs); err != nil {
 			return err
 		}
-		for _, x := range xs {
-			s.nodes[x.ID] = x
+		if err := writeJSON(filepath.Join(s.stateDir, "state.json"), s.state); err != nil {
+			return err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
+	s.committedNodes = copyNodes(s.nodes)
 	f, err := os.Open(s.eventsPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -81,6 +137,8 @@ func (s *Store) load() error {
 	for sc.Scan() {
 		var e event.Event
 		if json.Unmarshal(sc.Bytes(), &e) == nil {
+			e.Message = redact.Text(e.Message)
+			e.Fields = redactFields(e.Fields)
 			s.events = append(s.events, e)
 			if e.Sequence > s.seq {
 				s.seq = e.Sequence
@@ -102,7 +160,9 @@ func (s *Store) load() error {
 func (s *Store) State() model.State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.state)
+	out := clone(s.state)
+	sanitizeState(&out)
+	return out
 }
 
 func (s *Store) Update(fn func(*model.State) error) error {
@@ -112,11 +172,15 @@ func (s *Store) Update(fn func(*model.State) error) error {
 	if err := fn(&v); err != nil {
 		return err
 	}
+	sanitizeState(&v)
 	if reflect.DeepEqual(v, s.state) {
 		return nil
 	}
+	if err := s.validate(v); err != nil {
+		return err
+	}
 	v.UpdatedAt = time.Now().UTC()
-	if err := writeJSON(filepath.Join(s.stateDir, "state.json"), v); err != nil {
+	if err := s.persist(v); err != nil {
 		return err
 	}
 	s.state = v
@@ -133,8 +197,12 @@ func (s *Store) UpdateVolatile(fn func(*model.State) error) error {
 	if err := fn(&v); err != nil {
 		return err
 	}
+	sanitizeState(&v)
 	if reflect.DeepEqual(v, s.state) {
 		return nil
+	}
+	if err := s.validate(v); err != nil {
+		return err
 	}
 	v.UpdatedAt = time.Now().UTC()
 	s.state = v
@@ -148,7 +216,7 @@ func (s *Store) Flush() error {
 	if !s.dirty {
 		return nil
 	}
-	if err := writeJSON(filepath.Join(s.stateDir, "state.json"), s.state); err != nil {
+	if err := s.persist(s.state); err != nil {
 		return err
 	}
 	s.dirty = false
@@ -197,6 +265,8 @@ func (s *Store) Node(id string) (model.Node, bool) {
 }
 
 func (s *Store) Append(e event.Event) (event.Event, error) {
+	e.Message = redact.Text(e.Message)
+	e.Fields = redactFields(e.Fields)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
@@ -222,6 +292,8 @@ func (s *Store) Append(e event.Event) (event.Event, error) {
 	if err != nil {
 		return e, err
 	}
+	e.Message = redact.Text(e.Message)
+	e.Fields = redactFields(e.Fields)
 	s.events = append(s.events, e)
 	if len(s.events) > maxEvents {
 		s.events = append([]event.Event(nil), s.events[len(s.events)-maxEvents:]...)
@@ -342,3 +414,142 @@ func clone(v model.State) model.State {
 func (s *Store) Path(name string) string      { return filepath.Join(s.stateDir, name) }
 func (s *Store) CachePath(name string) string { return filepath.Join(s.cacheDir, name) }
 func (s *Store) eventsPath() string           { return filepath.Join(s.stateDir, "events.jsonl") }
+
+// validate enforces the configured pool topology and rejects partial selections.
+func (s *Store) validate(v model.State) error { return s.validateWithNodes(v, s.nodes) }
+func (s *Store) validateWithNodes(v model.State, nodes map[string]model.Node) error {
+	if v.SchemaVersion != model.StateSchema {
+		return fmt.Errorf("unsupported state schema")
+	}
+	if len(v.Pool) != len(s.initial.Pool) && !(!v.XrayConfigured && len(v.Pool) == 0) {
+		return fmt.Errorf("state pool size differs from configuration")
+	}
+	if v.XrayGeneration < 0 {
+		return fmt.Errorf("negative state generation")
+	}
+	seen := map[string]bool{}
+	for i, slot := range v.Pool {
+		if slot.Index != i || slot.Tag != s.initial.Pool[i].Tag {
+			return fmt.Errorf("invalid slot topology at %d", i)
+		}
+		if slot.NodeID != "" {
+			if seen[slot.NodeID] {
+				return fmt.Errorf("duplicate pool node")
+			}
+			seen[slot.NodeID] = true
+			if _, ok := nodes[slot.NodeID]; !ok {
+				return fmt.Errorf("pool node is absent from node cache")
+			}
+		}
+	}
+	if v.ActiveSlot < -1 || v.ActiveSlot >= len(v.Pool) {
+		return fmt.Errorf("invalid active slot")
+	}
+	if v.DirectMode && (v.ActiveSlot != -1 || v.ActiveNodeID != "") {
+		return fmt.Errorf("direct state has VPN selection")
+	}
+	if v.ActiveSlot >= 0 {
+		if v.ActiveNodeID == "" || v.Pool[v.ActiveSlot].NodeID != v.ActiveNodeID {
+			return fmt.Errorf("active node differs from slot")
+		}
+	} else if v.ActiveNodeID != "" {
+		return fmt.Errorf("active node has no slot")
+	}
+	if !v.XrayConfigured && (v.ActiveSlot != -1 || v.DirectMode) {
+		return fmt.Errorf("unconfigured state has active selection")
+	}
+	for id, m := range v.Measurements {
+		if id != m.NodeID {
+			return fmt.Errorf("measurement node mismatch")
+		}
+		if _, ok := nodes[id]; !ok {
+			return fmt.Errorf("measurement node absent from cache")
+		}
+	}
+	return nil
+}
+
+type previousState struct {
+	State model.State  `json:"state"`
+	Nodes []model.Node `json:"nodes"`
+}
+
+func copyNodes(nodes map[string]model.Node) map[string]model.Node {
+	out := make(map[string]model.Node, len(nodes))
+	for id, node := range nodes {
+		out[id] = node
+	}
+	return out
+}
+func (s *Store) persist(v model.State) error {
+	if b, err := os.ReadFile(filepath.Join(s.stateDir, "state.json")); err == nil {
+		var previous model.State
+		if json.Unmarshal(b, &previous) == nil && s.validateWithNodes(previous, s.committedNodes) == nil {
+			bundle := previousState{State: previous}
+			for _, node := range s.committedNodes {
+				bundle.Nodes = append(bundle.Nodes, node)
+			}
+			sort.Slice(bundle.Nodes, func(i, j int) bool { return bundle.Nodes[i].ID < bundle.Nodes[j].ID })
+			if err = writeJSON(filepath.Join(s.stateDir, "state.previous.json"), bundle); err != nil {
+				return err
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := writeJSON(filepath.Join(s.stateDir, "state.json"), v); err != nil {
+		return err
+	}
+	s.committedNodes = copyNodes(s.nodes)
+	return nil
+}
+
+func sanitizeState(state *model.State) {
+	state.XrayLastError = redact.Text(state.XrayLastError)
+	state.LastHealthMessage = redact.Text(state.LastHealthMessage)
+	state.LastBenchmark.Error = redact.Text(state.LastBenchmark.Error)
+	for id, value := range state.Measurements {
+		value.Error = redact.Text(value.Error)
+		state.Measurements[id] = value
+	}
+	for id, value := range state.Sources {
+		value.LastError = redact.Text(value.LastError)
+		state.Sources[id] = value
+	}
+	for i := range state.LastBenchmark.Results {
+		state.LastBenchmark.Results[i].Error = redact.Text(state.LastBenchmark.Results[i].Error)
+	}
+}
+func redactFields(fields map[string]any) map[string]any {
+	if fields == nil {
+		return nil
+	}
+	out := make(map[string]any, len(fields))
+	for key, value := range fields {
+		normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+		switch normalized {
+		case "authorization", "cookie", "setcookie", "uuid", "password", "publickey", "shortid", "secret", "token":
+			out[key] = "<redacted>"
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			out[key] = redact.Text(v)
+		case map[string]any:
+			out[key] = redactFields(v)
+		case []any:
+			xs := make([]any, len(v))
+			for i, item := range v {
+				if text, ok := item.(string); ok {
+					xs[i] = redact.Text(text)
+				} else {
+					xs[i] = item
+				}
+			}
+			out[key] = xs
+		default:
+			out[key] = value
+		}
+	}
+	return out
+}

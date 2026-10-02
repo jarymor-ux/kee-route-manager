@@ -23,6 +23,8 @@ type Config struct {
 	SchemaVersion int           `json:"schema_version"`
 	Instance      Instance      `json:"instance"`
 	Paths         Paths         `json:"paths"`
+	API           API           `json:"api"`
+	Failover      Failover      `json:"failover"`
 	Web           Web           `json:"web"`
 	Platform      Platform      `json:"platform"`
 	Xray          Xray          `json:"xray"`
@@ -32,7 +34,7 @@ type Config struct {
 	Pool          Pool          `json:"pool"`
 	Benchmark     Benchmark     `json:"benchmark"`
 	Update        Update        `json:"update"`
-	UIProxy       UIProxy       `json:"ui_proxy"`
+	UIProxy       UIProxy       `json:"ui"`
 }
 type Instance struct {
 	Name string `json:"name"`
@@ -43,6 +45,19 @@ type Paths struct {
 	CacheDir string `json:"cache_dir"`
 	LogFile  string `json:"log_file"`
 	RunDir   string `json:"run_dir"`
+}
+type API struct {
+	Enabled    bool   `json:"enabled"`
+	Listen     string `json:"listen"`
+	UnixSocket string `json:"unix_socket"`
+	TLS        TLS    `json:"tls"`
+}
+type Failover struct {
+	DetectionInterval Duration `json:"detection_interval"`
+	FailureThreshold  int      `json:"failure_threshold"`
+	ProbeTimeout      Duration `json:"probe_timeout"`
+	OverallDeadline   Duration `json:"overall_deadline"`
+	Quorum            int      `json:"quorum"`
 }
 type Web struct {
 	Enabled         bool     `json:"enabled"`
@@ -119,13 +134,14 @@ type XrayRoute struct {
 	ReplaceOutboundTags []string `json:"replace_outbound_tags"`
 }
 type Subscriptions struct {
-	MaxSources       int      `json:"max_sources"`
-	MaxNodes         int      `json:"max_nodes"`
-	CacheTTL         Duration `json:"cache_ttl"`
-	RefreshInterval  Duration `json:"refresh_interval"`
-	RequestTimeout   Duration `json:"request_timeout"`
-	MaxResponseBytes ByteSize `json:"max_response_bytes"`
-	Sources          []Source `json:"sources"`
+	MaxNodesPerSource int      `json:"max_nodes_per_source"`
+	MaxSources        int      `json:"max_sources"`
+	MaxNodes          int      `json:"max_nodes"`
+	CacheTTL          Duration `json:"cache_ttl"`
+	RefreshInterval   Duration `json:"refresh_interval"`
+	RequestTimeout    Duration `json:"request_timeout"`
+	MaxResponseBytes  ByteSize `json:"max_response_bytes"`
+	Sources           []Source `json:"sources"`
 }
 type Source struct {
 	ID      string            `json:"id"`
@@ -183,6 +199,7 @@ type Speed struct {
 	Repetitions    int      `json:"repetitions"`
 }
 type Update struct {
+	GitHubRepository  string   `json:"github_repository"`
 	Enabled           bool     `json:"enabled"`
 	Channel           string   `json:"channel"`
 	ManifestURL       string   `json:"manifest_url"`
@@ -194,9 +211,12 @@ type Update struct {
 	AllowDowngrade    bool     `json:"allow_downgrade"`
 }
 type UIProxy struct {
-	Upstream       string   `json:"upstream"`
-	InsecureTLS    bool     `json:"insecure_tls"`
-	RequestTimeout Duration `json:"request_timeout"`
+	Enabled            bool     `json:"enabled"`
+	UpstreamCAFile     string   `json:"upstream_ca_file"`
+	UpstreamSPKISHA256 string   `json:"upstream_spki_sha256"`
+	Upstream           string   `json:"upstream"`
+	InsecureTLS        bool     `json:"insecure_tls"`
+	RequestTimeout     Duration `json:"request_timeout"`
 }
 
 func defaultBypassCIDRs() []string {
@@ -207,19 +227,26 @@ func Default() Config {
 	return Config{
 		SchemaVersion: 1, Instance: Instance{Name: "Kee Route Manager", Role: "controller"},
 		Paths:         Paths{StateDir: "/var/lib/kee-route-manager", CacheDir: "/var/cache/kee-route-manager", LogFile: "/var/log/kee-route-manager/krm.log", RunDir: "/run/kee-route-manager"},
-		Web:           Web{Enabled: true, Listen: "0.0.0.0:9443", CredentialsFile: "/etc/kee-route-manager/credentials.json", SessionTTL: Dur(24 * time.Hour), TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
+		API:           API{Enabled: true, Listen: "127.0.0.1:9443", TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
+		Failover:      Failover{DetectionInterval: Dur(5 * time.Second), FailureThreshold: 2, ProbeTimeout: Dur(2 * time.Second), OverallDeadline: Dur(5 * time.Second), Quorum: 2},
+		Web:           Web{Enabled: true, Listen: "0.0.0.0:9444", CredentialsFile: "/etc/kee-route-manager/credentials.json", SessionTTL: Dur(24 * time.Hour), TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
 		Platform:      Platform{Kind: "auto", CommandTimeout: Dur(30 * time.Second), Keenetic: Keenetic{RCIBaseURL: "http://127.0.0.1:79/rci/", NDMCBinary: "ndmc", XKeenBinary: "/opt/sbin/xkeen", XKeenPolicyName: "XKeen", AllowReboot: true, AllowPolicyChange: true}, OpenWrt: OpenWrt{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br-lan"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}, Linux: Linux{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br0"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}},
 		Xray:          Xray{Binary: "/usr/bin/xray", ConfigDir: "/etc/xray/configs", ManagedDir: "/etc/xray/configs", APIAddress: "127.0.0.1:10085", APITag: "krm-api", BalancerTag: "krm-main", SlotTagPrefix: "krm-slot-", ManagedDirectTag: "krm-direct", ProbePortStart: 19000, HealthProxyPort: 18999, DynamicAPI: true, Route: XrayRoute{InboundTags: []string{"redirect", "tproxy"}, ReplaceOutboundTags: []string{"vless-reality"}}},
-		Subscriptions: Subscriptions{MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
+		Subscriptions: Subscriptions{MaxNodesPerSource: 500, MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
 		Health:        Health{Interval: Dur(15 * time.Second), FailureThreshold: 2, RecoveryThreshold: 2, RequestTimeout: Dur(8 * time.Second), MaxResponseBytes: 64 << 10, HotPoolFreshness: Dur(5 * time.Minute), ProviderRetryBackoff: []Duration{Dur(15 * time.Second), Dur(30 * time.Second), Dur(time.Minute), Dur(2 * time.Minute), Dur(5 * time.Minute), Dur(10 * time.Minute)}},
 		Pool:          Pool{Size: 5},
 		Benchmark:     Benchmark{FullInterval: Dur(6 * time.Hour), BatchSize: 20, LatencyWorkers: 8, RequestsPerWeight: 2, Finalists: 6, MinImprovementPercent: 15, SwitchCooldown: Dur(10 * time.Minute), StabilityBeforeUpgrade: Dur(10 * time.Minute), TemporaryProxyPortStart: 20000, TemporaryStartupTimeout: Dur(10 * time.Second), Speed: Speed{Enabled: false, WarmupBytes: 8 << 20, MinSampleBytes: 64 << 20, MaxSampleBytes: 512 << 20, TargetDuration: Dur(6 * time.Second), Repetitions: 3}},
 		Update:        Update{Enabled: false, Channel: "rc", CheckInterval: Dur(24 * time.Hour), HealthGracePeriod: Dur(30 * time.Second)},
-		UIProxy:       UIProxy{RequestTimeout: Dur(30 * time.Second)},
+		UIProxy:       UIProxy{Enabled: true, RequestTimeout: Dur(30 * time.Second)},
 	}
 }
 
 func Load(path string) (Config, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve config path: %w", err)
+	}
+	path = absolute
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
@@ -256,6 +283,10 @@ func (c *Config) resolve(configPath string) {
 	c.Web.CredentialsFile = f(c.Web.CredentialsFile)
 	c.Web.TLS.CertFile = f(c.Web.TLS.CertFile)
 	c.Web.TLS.KeyFile = f(c.Web.TLS.KeyFile)
+	c.API.UnixSocket = f(c.API.UnixSocket)
+	c.API.TLS.CertFile = f(c.API.TLS.CertFile)
+	c.API.TLS.KeyFile = f(c.API.TLS.KeyFile)
+	c.UIProxy.UpstreamCAFile = f(c.UIProxy.UpstreamCAFile)
 	c.Xray.Binary = f(c.Xray.Binary)
 	c.Xray.AssetDir = f(c.Xray.AssetDir)
 	c.Xray.ConfigDir = f(c.Xray.ConfigDir)
@@ -263,11 +294,57 @@ func (c *Config) resolve(configPath string) {
 	c.Xray.BaseRoutingFile = f(c.Xray.BaseRoutingFile)
 }
 func (c *Config) ApplyPlatformDefaults() {
+	if c.Instance.Role == "ui-proxy" {
+		c.Instance.Role = "ui"
+	}
+
 	kind := c.Platform.Kind
 	if kind == "auto" {
 		kind = DetectPlatform()
 		c.Platform.Kind = kind
 	}
+	if c.Instance.Role == "ui" {
+		prefix := ""
+		if kind == "keenetic" {
+			prefix = "/opt"
+		}
+		defaults := Default()
+		if c.Paths.StateDir == defaults.Paths.StateDir {
+			c.Paths.StateDir = prefix + "/var/lib/kee-route-manager-ui"
+		}
+		if c.Paths.CacheDir == defaults.Paths.CacheDir {
+			c.Paths.CacheDir = prefix + "/var/cache/kee-route-manager-ui"
+		}
+		if c.Paths.RunDir == defaults.Paths.RunDir {
+			if prefix != "" {
+				c.Paths.RunDir = prefix + "/var/run/kee-route-manager-ui"
+			} else {
+				c.Paths.RunDir = "/run/kee-route-manager-ui"
+			}
+		}
+		if c.Paths.LogFile == defaults.Paths.LogFile {
+			c.Paths.LogFile = filepath.Join(c.Paths.StateDir, "ui.log")
+		}
+		if c.Web.TLS.CertFile == defaults.Web.TLS.CertFile {
+			c.Web.TLS.CertFile = filepath.Join(c.Paths.StateDir, "tls.crt")
+		}
+		if c.Web.TLS.KeyFile == defaults.Web.TLS.KeyFile {
+			c.Web.TLS.KeyFile = filepath.Join(c.Paths.StateDir, "tls.key")
+		}
+		if c.Web.CredentialsFile == defaults.Web.CredentialsFile {
+			c.Web.CredentialsFile = ""
+		}
+		return
+	}
+	if c.Platform.Kind == "keenetic" {
+		if c.API.TLS.CertFile == "/etc/kee-route-manager/tls.crt" {
+			c.API.TLS.CertFile = "/opt/etc/kee-route-manager/tls.crt"
+		}
+		if c.API.TLS.KeyFile == "/etc/kee-route-manager/tls.key" {
+			c.API.TLS.KeyFile = "/opt/etc/kee-route-manager/tls.key"
+		}
+	}
+
 	switch kind {
 	case "keenetic":
 		if c.Paths.StateDir == "/var/lib/kee-route-manager" {
@@ -330,6 +407,9 @@ func (c *Config) ApplyPlatformDefaults() {
 			c.Platform.KRMRestartCommand = []string{"systemctl", "restart", "kee-route-manager"}
 		}
 	}
+	if c.API.UnixSocket == "" {
+		c.API.UnixSocket = filepath.Join(c.Paths.RunDir, "control.sock")
+	}
 }
 func validateManagedFirewall(prefix, mode string, interfaces []string, tcpPort, udpPort, mark, table int, bypass []string) []error {
 	if mode != "managed" {
@@ -358,8 +438,8 @@ func validateManagedFirewall(prefix, mode string, interfaces []string, tcpPort, 
 	if mark < 1 || mark > 1<<30 {
 		errs = append(errs, fmt.Errorf("%s.mark must be between 1 and %d", prefix, 1<<30))
 	}
-	if table < 1 || table > 1<<30 {
-		errs = append(errs, fmt.Errorf("%s.route_table must be between 1 and %d", prefix, 1<<30))
+	if table < 1 || table > 1<<30 || table >= 253 && table <= 255 {
+		errs = append(errs, fmt.Errorf("%s.route_table must be between 1 and %d and must not use reserved tables 253..255", prefix, 1<<30))
 	}
 	if len(bypass) == 0 {
 		errs = append(errs, fmt.Errorf("%s.bypass_cidrs cannot be empty in managed mode", prefix))
@@ -388,30 +468,26 @@ func DetectPlatform() string {
 
 func (c Config) Validate() error {
 	var es []error
+	es = append(es, c.validateCommon()...)
 	if c.SchemaVersion != 1 {
 		es = append(es, fmt.Errorf("schema_version must be 1"))
 	}
-	if c.Instance.Role != "controller" && c.Instance.Role != "ui-proxy" {
-		es = append(es, fmt.Errorf("instance.role must be controller or ui-proxy"))
+	if c.Instance.Role != "controller" && c.Instance.Role != "ui-proxy" && c.Instance.Role != "ui" {
+		es = append(es, fmt.Errorf("instance.role must be controller or ui"))
 	}
 	if c.Web.Enabled {
 		if _, _, err := net.SplitHostPort(c.Web.Listen); err != nil {
 			es = append(es, fmt.Errorf("web.listen: %w", err))
 		}
-		if c.Web.CredentialsFile == "" {
-			es = append(es, fmt.Errorf("web.credentials_file is required"))
-		}
-		if c.Web.SessionTTL.Duration < 5*time.Minute {
-			es = append(es, fmt.Errorf("web.session_ttl must be at least 5m"))
-		}
 	}
-	if c.Instance.Role == "ui-proxy" {
+	if c.Instance.Role == "ui-proxy" || c.Instance.Role == "ui" {
 		u, err := url.Parse(c.UIProxy.Upstream)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			es = append(es, fmt.Errorf("ui_proxy.upstream must be a valid http(s) URL"))
 		}
 		return errors.Join(es...)
 	}
+	es = append(es, c.validateController()...)
 	if c.Platform.Kind != "keenetic" && c.Platform.Kind != "openwrt" && c.Platform.Kind != "linux-systemd" {
 		es = append(es, fmt.Errorf("unsupported platform.kind %q", c.Platform.Kind))
 	}
@@ -518,7 +594,7 @@ func (c Config) Validate() error {
 		if c.Update.Channel != "rc" && c.Update.Channel != "stable" {
 			es = append(es, fmt.Errorf("update.channel invalid"))
 		}
-		if c.Update.ManifestURL == "" || c.Update.SignatureURL == "" || c.Update.PublicKey == "" {
+		if c.Update.PublicKey == "" || c.Update.GitHubRepository == "" && (c.Update.ManifestURL == "" || c.Update.SignatureURL == "") {
 			es = append(es, fmt.Errorf("update URLs and public_key required"))
 		}
 	}
@@ -535,6 +611,7 @@ func (c Config) TargetsByRole(role string) []Target {
 }
 func (c Config) Sanitized() Config {
 	v := c
+	v.Subscriptions.Sources = append([]Source(nil), c.Subscriptions.Sources...)
 	for i := range v.Subscriptions.Sources {
 		v.Subscriptions.Sources[i].URL = "<redacted>"
 		v.Subscriptions.Sources[i].Headers = nil

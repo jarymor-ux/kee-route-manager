@@ -2,145 +2,25 @@
 
 [English](README.md) | **Русский** | [简体中文](README.zh-CN.md)
 
-**Kee Route Manager (KRM)** — локальный контроллер маршрутизации Xray для роутеров и Linux-шлюзов. Он объединяет несколько источников подписок в единый пул узлов с дедупликацией, держит настраиваемый горячий пул загруженным в Xray, переключает новые соединения на проверенный резерв без ожидания полного бенчмарка и предоставляет адаптивный Web/PWA-интерфейс.
+KRM управляет проверенным горячим пулом Xray, подписками и переключением маршрутов. **1.0.0-rc.2 — experimental prerelease. Проверка на реальном Keenetic назначена отдельным этапом и пока не выполнена.** RC1 не изменён.
 
-Текущий релиз: **1.0.0-rc.1**.
+- `kee-route-managerd` — единственный владелец state, Xray и firewall; работает без UI, HTTPS API и локальный Unix socket.
+- `kee-route-manager-ui` — отдельный процесс Web/PWA и proxy; без router-specific логики, shell и пароля администратора.
+- `kee-route-managerctl` — клиент daemon; локальная проверка конфигурации, настройка credentials и просмотр strict-JSON routing candidates.
 
-## Возможности RC1
+Все компоненты собираются для Linux amd64/arm64/armv7/mipsle. Отказ health endpoint сравнивается с WAN; при недостаточных данных маршрут сохраняется. Benchmark не включает direct. Независимый от Xray bypass реализован для managed nftables Linux/OpenWrt; **Keenetic automatic bypass при падении Xray не поддерживается**. Все платформы пока experimental.
 
-| Раздел | Поддерживается |
-|---|---|
-| Платформы | Keenetic + Entware + XKeen; OpenWrt + procd; Linux + systemd |
-| Архитектуры CPU | amd64, arm64, armv7, mipsle |
-| VPN-ядро | Xray |
-| Узлы | VLESS Reality/TCP; VLESS WebSocket/TLS |
-| Подписки | обычный список URI; список URI в Base64; до 20 источников |
-| Пул | единый дедуплицированный пул; 5 горячих узлов по умолчанию; размер настраивается |
-| Аварийное переключение | сначала проверенный резерв; прямой маршрут — только после отказа всех VPN-резервов |
-| Интерфейс | встроенный адаптивный Web/PWA; опциональный Linux UI-proxy для ПК/Raspberry Pi |
-| Аутентификация | логин и пароль задаёт пользователь; PBKDF2-SHA256; сессии и CSRF-защита |
-| Обновления | манифесты с подписью Ed25519; SHA-256 для артефактов; атомарная замена и откат |
+Небезопасная самозамена binary удалена: `update.apply` отключён до реализации A/B launcher. Проверка обновлений различает RC и stable. Production bootstrap использует одну фиксированную версию, Ed25519 и SHA256 до исполнения скачанных программ.
 
-## Как работает аварийное переключение
+Чтобы передать установку своему AI-агенту, достаточно ссылки на репозиторий: [глобальные инструкции AGENTS.md](AGENTS.md) и [полный порядок установки](docs/AGENT_INSTALL.md). Там описаны SSH, backup, подготовка config без секретов в Git, выбор routing tags, core-only, локальный/удалённый UI, TLS, readiness, удаление и rollback.
 
-```text
-источники подписок
-        │
-        ▼
-дедуплицированный пул узлов
-        │
-        ▼
-бенчмарк + история проверок
-        │
-        ▼
-горячий пул (по умолчанию: 5 outbound-ов Xray)
-        │
-        ├─ активный VPN-узел
-        ├─ проверенный резерв
-        ├─ проверенный резерв
-        ├─ проверенный резерв
-        └─ проверенный резерв
-```
-
-1. Активный маршрут по умолчанию проверяется через Xray каждые 15 секунд.
-2. После двух неудачных циклов проверки KRM опрашивает уже загруженные резервные слоты.
-3. Новые соединения переводятся на первый работающий резерв через локальный API Xray.
-4. Полный бенчмарк запускается после восстановления соединения, а не до аварийного переключения.
-5. Если ни один VPN-слот не работает, KRM намеренно переводит управляемый трафик на `direct`.
-6. В режиме прямого соединения резервные слоты продолжают проверяться. VPN восстанавливается после двух успешных проверок.
-7. Уже существующие TCP/UDP-сессии на отказавшем удалённом сервере перенести нельзя; приложения переподключаются через новый маршрут.
-
-Данные бенчмарка напрямую передаются в `io.Discard`. Загруженные данные speed-теста никогда не сохраняются на диск.
-
-## Структура репозитория
-
-```text
-cmd/kee-route-manager/       служба и CLI
-cmd/krm-release-tool/        инструменты выпуска и подписи Ed25519
-internal/auth/               учётные данные, сессии, CSRF-защита
-internal/bench/              задержка, health-check и адаптивные speed-тесты
-internal/config/             строгий поднабор YAML и валидация
-internal/core/               планировщик, пул, failover и операции
-internal/platform/           адаптеры Keenetic, OpenWrt и Linux
-internal/subscription/       загрузка, кеш, парсер и дедупликация
-internal/update/             подписанные обновления и откат
-internal/web/                HTTPS API и встроенная PWA
-internal/xray/               управляемые фрагменты, переключение через API, откат
-configs/                     шаблоны для платформ
-install/                     установщики и скрипты удаления
-web/                         исходники frontend
-```
-
-## Установка
-
-Для интерактивной установки на Keenetic одной командой выполните её от `root` через SSH:
+После подготовки приватной конфигурации:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/bootstrap-keenetic.sh
+KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-Bootstrap-скрипт определит архитектуру процессора, скачает бинарник последнего релиза и `SHA256SUMS`, проверит бинарник, загрузит файлы установщика Keenetic и запустит обычную интерактивную настройку. Клонировать репозиторий или заранее скачивать релизный архив не требуется.
+Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. Настоящая аппаратная матрица: [HARDWARE_TEST_PLAN.md](docs/HARDWARE_TEST_PLAN.md). Проверки и ограничения: [TEST_REPORT.md](docs/TEST_REPORT.md), [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Изменения: [CHANGELOG.md](CHANGELOG.md).
 
-Если доступен только `wget`:
-
-```sh
-wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
-```
-
-Для установки конкретной версии вместо `latest`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
-```
-
-Установка из распакованного релизного архива по-прежнему поддерживается:
-
-```sh
-sh install/keenetic/install.sh
-```
-
-Требования и порядок восстановления описаны в [docs/INSTALL.md](docs/INSTALL.md). Установщик не выполняет скрытую миграцию `blanc-auto`; для RC1 поддерживается только чистая установка.
-
-## Локальная разработка
-
-В KRM нет сторонних Go-зависимостей.
-
-```sh
-go test ./...
-go vet ./...
-go build ./cmd/kee-route-manager
-go build ./cmd/krm-release-tool
-```
-
-Проверка конфигурации:
-
-```sh
-./kee-route-manager validate --config configs/linux-systemd.yaml
-```
-
-Создание учётных данных без передачи пароля в аргументах процесса:
-
-```sh
-printf '%s\n' 'a-long-password' |
-  ./kee-route-manager passwd \
-    --config /etc/kee-route-manager/config.yaml \
-    --username admin \
-    --password-stdin
-```
-
-## Документация
-
-- [Архитектура](docs/ARCHITECTURE.md)
-- [Конфигурация](docs/CONFIGURATION.md)
-- [Установка](docs/INSTALL.md)
-- [Безопасность](docs/SECURITY.md)
-- [Несовместимые изменения](docs/BREAKING_CHANGES.md)
-- [Формат обновлений и релизов](docs/UPDATE_FORMAT.md)
-- [Известные ограничения](docs/KNOWN_LIMITATIONS.md)
-- [Обзор API](docs/API.md)
-- [Отчёт о тестировании](docs/TEST_REPORT.md)
-- [Процедура выпуска](docs/RELEASE.md)
-
-## Статус релиза
-
-Это release candidate. Unit-тесты, статические проверки, валидация конфигурации, проверка синтаксиса установщиков и кросс-компиляция входят в release-скрипт. Установку на целевой роутер всё ещё следует выполнять контролируемо, сохраняя доступ к способу аварийного восстановления устройства.
+Лицензия [Apache-2.0](LICENSE) выбрана владельцем.

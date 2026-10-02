@@ -1,19 +1,15 @@
-# Breaking changes from blanc-auto / blanc-display
+# RC2 breaking changes
 
-Kee Route Manager 1.0.0-rc.1 is a clean replacement, not an in-place upgrade.
+1. Separate daemon/UI/CLI binaries and processes. Legacy executable is a CLI alias and cannot run the controller.
+2. Core HTTPS API defaults to loopback; UI listens on 9444. Remote core access uses a trusted UI proxy or SSH tunnel, not a public root API listener.
+3. `api` and `ui` configuration sections replace monolithic controller web runtime; credentials remain core-side. UI upstream TLS requires normal CA verification and optional SPKI pinning.
+4. Config validation rejects zero/negative durations, resource/port/path/tag conflicts and insecure listener defaults. Two independent health hosts/quorum are required for conclusive automatic failover.
+5. Benchmark preserves a working route; it cannot enable direct when subscriptions/targets return no healthy candidate.
+6. Runtime state is validated and previous copy kept. Transactions are durable and replayed against actual runtime/files/firewall before readiness. Recovery may explicitly report degraded rather than silently trusting old JSON.
+7. Persistent concrete Xray routing selection replaces random-balancer reliance. Restore reverses only owned changes and refuses irreconcilable drift.
+8. Unsafe executable replacement removed; `update.apply` and `auto_apply` unavailable. Update discovery uses channel-aware GitHub release selection or an explicitly pinned HTTPS manifest.
+9. RC2 uses a new signing public key; RC1 trust/assets remain unchanged. Production bootstrap verifies every binary and installer from one release.
+10. Installer expects a prepared private configuration; no hardcoded legacy outbound name, no silent migration or overwrite. Credentials must be supplied safely through terminal or private file.
+11. Keenetic fail-open independent of Xray is unsupported until a verified platform mechanism and real hardware evidence exist.
 
-1. Product and commands are renamed to `kee-route-manager`.
-2. The shell runtime and Python/Qt panel are replaced by one Go service and a Web/PWA frontend.
-3. Normal control no longer uses SSH. The UI calls a local HTTPS API.
-4. Old `.conf` files, sourced shell configuration, `targets.tsv`, state files and command names are unsupported.
-5. Configuration is strict YAML under `/opt/etc/kee-route-manager` or `/etc/kee-route-manager`.
-6. Automatic migration is intentionally absent.
-7. The Xray layout changes from one fixed `vless-reality` outbound to managed hot-pool slots plus a balancer.
-8. The service takes ownership only of its four named fragments and the selected legacy routing rule.
-9. Web login/password are mandatory and created during installation.
-10. The native 480×320 Qt UI is removed. The responsive PWA supports phones, PCs and kiosks.
-11. Fail-open direct routing is an explicit system state when all VPN fallbacks fail.
-12. Subscription sources are merged and deduplicated. Provider priority does not exist in RC1.
-13. Only the existing VLESS Reality/TCP and VLESS WS/TLS formats are retained.
-14. Updates require a signed manifest; unsigned binaries cannot be applied by the updater.
-15. `blanc-auto` and KRM schedulers must not run concurrently against the same Xray configuration.
+RC1 state/config compatibility is not promised. Back up, restore original routing, uninstall, then clean-install RC2.

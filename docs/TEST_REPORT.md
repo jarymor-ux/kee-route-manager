@@ -1,58 +1,34 @@
-# Test report — 1.0.0-rc.1
+# Test report — 1.0.0-rc.2
 
-Date: 2026-10-02
+Date: 2026-10-02. Software verification only; real router acceptance is a separate owner-approved stage.
 
-## Automated verification
+## Verification
 
-| Check | Result |
-|---|---:|
-| Go unit/integration tests | 27 passed, 0 failed |
-| Go packages completed | 14 |
-| Statement coverage | 29.1% |
-| Race detector (`go test -race ./...`) | passed |
-| Static analysis (`go vet ./...`) | passed |
-| Go formatting | passed |
-| Keenetic shell syntax | passed |
-| OpenWrt shell syntax | passed |
-| Linux/UI-proxy Bash syntax | passed |
-| Web JavaScript syntax | passed |
-| Embedded web assets equal source assets | passed |
-| Strict validation of all four example YAML files | passed |
+| Gate | Result / scope |
+|---|---|
+| `scripts/check.sh` | Passed: Go tests/vet/formatting, shell and JavaScript syntax, embedded assets, example validation, adversarial bootstrap |
+| `go test -race ./...` | Passed locally; Linux CI repeats this gate |
+| `staticcheck ./...` | Passed with Go-1.27-compatible pinned development version |
+| `govulncheck ./...` | No vulnerabilities found; CI pins v1.8.0 for Go 1.27 SSA support |
+| ShellCheck | Passed for installers, init scripts and test/build scripts |
+| Fuzz smoke | Five parsers/boundaries, two seconds each; passed |
+| Linux runtime subprocess integration | Passed in Docker: real daemon/UI/ctl, duplicate ownership rejection, socket0600, cached reads without file/process mutation, synchronous benchmark ID, trusted TLS, foreign-Origin rejection, static assets HTTP200 |
+| Linux install/uninstall/reinstall | Passed in Docker: private prepared config, credentials, local UI, readiness, overwrite rejection, live restore, purge and clean reinstall |
+| Real nftables / iproute2 | Passed in Docker with explicit NET_ADMIN: atomic managed table, bypass retained during reconcile, bypass exit, remove/reinstall, foreign table preserved |
+| Cross-build | All four components for linux amd64/arm64/armv7/mipsle: 16 static binaries |
+| Signed release fixture | Passed: complete build, Ed25519 manifest and checksums, every asset digest/size, deliberate binary tamper rejection |
+| Bootstrap adversarial tests | All three platforms: invalid signatures, altered payload/checksums/size/path and signed wrong-version replay rejected before installer execution |
+| Routing journal crash tests | Subprocess SIGKILL at six durable stages; recovery checks with fake external resources passed |
+| Provider outage | One hour advanced by fake clock: quota fairness, backoff, cached emergency nodes and recovery passed |
 
-The tests cover credentials and sessions, target-majority logic, configuration parsing and rejection, active-node retention during pool refresh, persistent operation recovery, nftables rendering, atomic state/event storage, VLESS parsing and deduplication, subscription cache/backoff/recovery, signed-update verification and rollback primitives, web authentication/proxy behaviour, Xray configuration generation, routing adoption, original-config snapshots and bootstrap selection.
+Install fixture uses a service-manager shim with actual KRM processes; it does not qualify systemd/procd or Keenetic firmware. Real nftables tests use a Linux container kernel/network namespace, not a router's existing firewall topology. The unconfigured installer fixture correctly reports degraded readiness; configured Xray routing requires hardware acceptance.
 
-## Cross-compilation
+The first GitHub race run exposed test teardown that removed a temporary directory before a benchmark's final event write. The test now joins the manager before cleanup, including failure paths; targeted race repetitions cover this fix. Release publication requires green CI on the exact merged commit; evidence is available in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions) and [PR #3](https://github.com/jarymor-ux/kee-route-manager/pull/3).
 
-Static `CGO_ENABLED=0` binaries were successfully built for:
+## Hardware acceptance — pending
 
-- Linux amd64;
-- Linux arm64;
-- Linux armv7 (`GOARM=7`);
-- Linux mipsle (`GOMIPS=softfloat`).
+No actual Keenetic/OpenWrt router or production Linux gateway was used. The owner will provide router access later. [HARDWARE_TEST_PLAN.md](HARDWARE_TEST_PLAN.md) tracks clean installation, discovery/removal of the prior deployment, Xray external restart, reboot, failure scenarios, restore/reinstall and throughput/CPU/RAM.
 
-The resulting files were recognized as the expected ELF architecture and were included in the release bundle.
+Keenetic independent direct bypass is explicitly unsupported. Existing unmanaged interception cannot be independently bypassed. IPv6 leak protection is not claimed. Automatic update apply is disabled; A/B launcher/rollback tests were not executed. Real subscriptions, power loss, firmware service managers and architecture-specific resource measurements remain pending.
 
-## Security and failure-safety checks
-
-- A tampered update manifest is rejected by Ed25519 verification.
-- Update assets are checked against the SHA-256 digest and size from the signed manifest.
-- Empty hot-pool slots are `blackhole`, not direct, and the balancer does not select the direct outbound by default.
-- Direct routing is entered only by an explicit fail-open override after VPN candidates are exhausted.
-- Xray candidate configuration is validated before production files are changed.
-- Original Xray fragments are retained for uninstall/restore.
-- State, operation records and managed files use atomic temporary-file replacement.
-- Managed nftables rules are syntax-checked under a temporary table name before replacing KRM's own table.
-- Benchmark response bodies are discarded and never stored as files.
-
-## Not executed in this environment
-
-This report does **not** claim hardware validation on a real Keenetic, OpenWrt router or production Linux gateway. In particular, the following still require RC deployment tests:
-
-- XKeen/Xray restart and dynamic API behaviour on the target Keenetic firmware;
-- procd/firewall4 behaviour on a selected OpenWrt release;
-- live TProxy/redirect behaviour for the user's LAN layout;
-- real multi-provider subscriptions and hour-long provider outages;
-- throughput/CPU/RAM measurements on mipsle and armv7 devices;
-- signed self-update followed by service-manager restart on each platform.
-
-For that reason the version remains `1.0.0-rc.1`, not stable `1.0.0`.
+This is an **experimental prerelease**, not a hardware-qualified stable release. See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).

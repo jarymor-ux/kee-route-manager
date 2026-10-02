@@ -85,6 +85,7 @@ type State struct {
 	ConsecutiveFailures int                    `json:"consecutive_failures"`
 	ConsecutiveSuccess  int                    `json:"consecutive_success"`
 	LastHealthAt        time.Time              `json:"last_health_at,omitempty"`
+	LastHealthClass     string                 `json:"last_health_class,omitempty"`
 	LastHealthMessage   string                 `json:"last_health_message,omitempty"`
 	LastSwitchAt        time.Time              `json:"last_switch_at,omitempty"`
 	LastSwitchReason    string                 `json:"last_switch_reason,omitempty"`
@@ -93,6 +94,7 @@ type State struct {
 	Sources             map[string]SourceState `json:"sources"`
 	LastBenchmark       BenchmarkSummary       `json:"last_benchmark"`
 	XrayConfigured      bool                   `json:"xray_configured"`
+	XrayConfigHash      string                 `json:"xray_config_hash,omitempty"`
 	XrayGeneration      int64                  `json:"xray_generation"`
 	XrayLastError       string                 `json:"xray_last_error,omitempty"`
 }

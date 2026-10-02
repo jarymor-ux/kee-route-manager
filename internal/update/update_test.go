@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,9 +23,9 @@ func TestSignedManifest(t *testing.T) {
 	mux.HandleFunc("/sig", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(base64.RawStdEncoding.EncodeToString(ed25519.Sign(priv, manifest))))
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewTLSServer(mux)
 	defer srv.Close()
-	m := Manifest{SchemaVersion: 1, Version: "1.0.1", Channel: "rc", PublishedAt: time.Now(), MinConfigSchema: 1, Assets: []Asset{{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: srv.URL + "/asset", SHA256: "00", Size: 1}}}
+	m := Manifest{SchemaVersion: 1, Version: "1.0.1", Channel: "rc", PublishedAt: time.Now(), MinConfigSchema: 1, Assets: []Asset{{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: srv.URL + "/asset", SHA256: strings.Repeat("0", 64), Size: 1}}}
 	manifest, _ = json.Marshal(m)
 	c := config.Default().Update
 	c.Enabled = true
@@ -33,6 +34,7 @@ func TestSignedManifest(t *testing.T) {
 	c.SignatureURL = srv.URL + "/sig"
 	c.PublicKey = base64.RawStdEncoding.EncodeToString(pub)
 	u := New(c, t.TempDir(), "1.0.0-rc.1")
+	u.client = srv.Client()
 	r, e := u.Check(context.Background())
 	if e != nil {
 		t.Fatal(e)
@@ -47,7 +49,7 @@ func TestRejectsTamperedManifest(t *testing.T) {
 	original := []byte(`{"schema_version":1,"version":"1.0.1","channel":"rc","published_at":"2026-10-02T00:00:00Z","min_config_schema":1,"assets":[]}`)
 	signature := base64.RawStdEncoding.EncodeToString(ed25519.Sign(priv, original))
 	tampered := []byte(`{"schema_version":1,"version":"9.9.9","channel":"rc","published_at":"2026-10-02T00:00:00Z","min_config_schema":1,"assets":[]}`)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/sig" {
 			_, _ = w.Write([]byte(signature))
 			return
@@ -61,7 +63,9 @@ func TestRejectsTamperedManifest(t *testing.T) {
 	cfg.ManifestURL = server.URL + "/manifest"
 	cfg.SignatureURL = server.URL + "/sig"
 	cfg.PublicKey = base64.RawStdEncoding.EncodeToString(pub)
-	if _, err := New(cfg, t.TempDir(), "1.0.0-rc.1").Check(context.Background()); err == nil {
+	u := New(cfg, t.TempDir(), "1.0.0-rc.1")
+	u.client = server.Client()
+	if _, err := u.Check(context.Background()); err == nil {
 		t.Fatal("tampered manifest accepted")
 	}
 }

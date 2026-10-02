@@ -1,7 +1,6 @@
 package xray
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 )
 
 type BatchRunner struct{ cfg config.Config }
@@ -23,7 +23,7 @@ type Batch struct {
 	Proxies map[string]*url.URL
 	cmd     *exec.Cmd
 	dir     string
-	logs    *bytes.Buffer
+	logs    *commandOutput
 	once    sync.Once
 }
 
@@ -63,7 +63,7 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 	}
 	cmd := exec.CommandContext(ctx, r.cfg.Xray.Binary, "run", "-c", path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	logs := &bytes.Buffer{}
+	logs := &commandOutput{}
 	cmd.Stdout = logs
 	cmd.Stderr = logs
 	if r.cfg.Xray.AssetDir != "" {
@@ -116,7 +116,7 @@ func (b *Batch) Logs() string {
 	if b.logs == nil {
 		return ""
 	}
-	return b.logs.String()
+	return redact.Text(b.logs.String())
 }
 func freeBlock(start, count int) (int, error) {
 	if start < 1024 {

@@ -10,6 +10,8 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
 
+const selectionTag = "krm-persisted-selection"
+
 type Managed struct{ API, Inbounds, Outbounds, Routing []byte }
 
 func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.Node) (Managed, error) {
@@ -44,7 +46,8 @@ func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.
 		}
 		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{fmt.Sprintf("krm-probe-%d", i)}, "outboundTag": tag})
 	}
-	routing := map[string]any{"routing": map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{cfg.Xray.SlotTagPrefix}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}}
+	outs = append(outs, blackholeOutbound(selectionTag))
+	routing := map[string]any{"routing": map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}}
 	return Managed{pretty(api), pretty(map[string]any{"inbounds": ins}), pretty(map[string]any{"outbounds": outs}), pretty(routing)}, nil
 }
 func Outbound(n model.Node, tag string) (map[string]any, error) {

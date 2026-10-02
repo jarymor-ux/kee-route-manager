@@ -14,6 +14,7 @@ import (
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"github.com/jarymor-ux/kee-route-manager/internal/xray"
 )
 
@@ -28,6 +29,7 @@ func New(c config.Config, r *xray.BatchRunner) *Engine {
 	return &Engine{c, r, NewProber(c.Health.RequestTimeout.Duration, int64(c.Health.MaxResponseBytes))}
 }
 func (e *Engine) Run(ctx context.Context, nodes []model.Node, progress Progress) ([]model.Measurement, error) {
+	defer e.prober.Close()
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("no nodes")
 	}
@@ -87,7 +89,7 @@ func (e *Engine) Run(ctx context.Context, nodes []model.Node, progress Progress)
 			m := results[n.ID]
 			speed, err := e.speed(ctx, batch.Proxies[n.ID])
 			if err != nil {
-				m.Error = join(m.Error, "speed: "+err.Error())
+				m.Error = join(m.Error, "speed: "+redact.Text(err.Error()))
 			} else {
 				m.SpeedMbps = speed
 			}
@@ -225,13 +227,17 @@ func (e *Engine) speed(ctx context.Context, proxy *url.URL) (float64, error) {
 }
 func (e *Engine) download(ctx context.Context, proxy *url.URL, size int64) (float64, time.Duration, error) {
 	u := strings.ReplaceAll(e.cfg.Benchmark.Speed.URLTemplate, "{bytes}", fmt.Sprint(size))
-	tr := &http.Transport{Proxy: http.ProxyURL(proxy), TLSHandshakeTimeout: 10 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1}
-	client := &http.Client{Transport: tr, Timeout: e.cfg.Benchmark.Speed.TargetDuration.Duration*4 + 20*time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	shared := e.prober.client(proxy)
+	client := *shared
+	client.Timeout = e.cfg.Benchmark.Speed.TargetDuration.Duration*4 + 20*time.Second
+	sampleCtx, cancel := context.WithTimeout(ctx, e.cfg.Benchmark.Speed.TargetDuration.Duration*4+20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(sampleCtx, http.MethodGet, u, nil)
 	if err != nil {
 		return 0, 0, err
 	}
 	req.Header.Set("User-Agent", "Kee-Route-Manager/1.0")
+	req.Header.Set("Accept-Encoding", "identity")
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

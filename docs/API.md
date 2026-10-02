@@ -1,29 +1,23 @@
-# HTTP API overview
+# API and local control
 
-Base path: `/api/v1`.
+Controller network API is authenticated HTTPS on loopback, local control on private Unix socket (OS owner authorization). Both reach the same daemon manager. UI proxies `/api/` and `/healthz` and owns static routes only.
 
-The API is same-origin and JSON-only. Login creates a secure session cookie. Every mutation after login requires `X-KRM-CSRF` with the token returned by `/api/v1/session`.
+`GET /healthz` returns cached readiness/reconciliation information, including explicit degraded state; it does not run external commands. `GET /api/v1/status` is read-only. Login/session/CSRF authorization remains core-side. Responses carry request IDs; internal errors are not exposed as raw root command output.
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/auth/login` | Create session |
-| POST | `/auth/logout` | Destroy session |
-| GET | `/session` | Current user and CSRF token |
-| GET | `/status` | Runtime, operation, pool and capability summary |
-| GET | `/nodes` | Sanitized nodes and measurements |
-| GET | `/events?after=&limit=` | Incremental event journal |
-| GET | `/router/metrics` | Router/system metrics with freshness |
-| GET | `/router/clients` | Client list with freshness |
-| GET | `/router/logs?lines=` | Bounded platform logs |
-| GET | `/router/diagnostics` | Read-only connectivity diagnostics |
-| POST | `/actions/benchmark` | Start full benchmark |
-| POST | `/actions/switch` | Select hot-pool slot |
-| POST | `/actions/direct` | Enter direct mode |
-| POST | `/actions/xray-restart` | Restart Xray |
-| POST | `/actions/reboot` | Reboot gateway when enabled |
-| POST | `/actions/wake` | Keenetic WOL |
-| POST | `/actions/policy` | Keenetic client policy |
-| GET | `/update/check` | Verify signed manifest and report availability |
-| POST | `/update/apply` | Download, verify and atomically install update |
+`POST /api/v1/actions/benchmark` reserves the operation before responding202 and returns `{ "accepted": true, "operation_id": "op-..." }`. A concurrent request cannot create a second benchmark reservation. Update apply is disabled and returns an explicit unavailable response.
 
-Arbitrary shell execution is not exposed.
+CLI:
+
+```sh
+kee-route-managerctl status --config PATH
+kee-route-managerctl ready --config PATH
+kee-route-managerctl benchmark --config PATH
+kee-route-managerctl switch --slot 1 --config PATH
+kee-route-managerctl direct --config PATH
+kee-route-managerctl restore-xray --config PATH
+kee-route-managerctl update-check --config PATH
+```
+
+Offline: `validate`, `passwd --username NAME --password-stdin`, `route-candidates --file STRICT_JSON`. `passwd` must be run while no active sessions/controllers depend on changed credentials; installed controller reload requires explicit restart. No command starts another core manager. Optional `--socket PATH` selects a local control socket.
+
+System journal contract is `{ "output": "..." }` in backend and frontend. Audit diagnostics must be redacted before export. Full endpoint behavior is tested in `internal/web/server_test.go` and documented by routes in `internal/web/server.go`.

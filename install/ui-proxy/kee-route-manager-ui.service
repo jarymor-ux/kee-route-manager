@@ -1,18 +1,27 @@
 [Unit]
-Description=Kee Route Manager UI proxy
+Description=Kee Route Manager UI
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/kee-route-manager-ui ui-proxy --config /etc/kee-route-manager-ui/config.yaml
+DynamicUser=true
+StateDirectory=kee-route-manager-ui
+CacheDirectory=kee-route-manager-ui
+RuntimeDirectory=kee-route-manager-ui
+ExecStart=/usr/local/bin/kee-route-manager-ui serve --config /etc/kee-route-manager-ui/config.yaml
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/kee-route-manager-ui /var/lib/kee-route-manager-ui /var/cache/kee-route-manager-ui /run/kee-route-manager-ui
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/etc/kee-route-manager-ui
 
 [Install]
 WantedBy=multi-user.target

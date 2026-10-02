@@ -1,34 +1,49 @@
 name: CI
-
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
     tags: ['v*']
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - name: Source checks
+      - name: Checks and adversarial signed bootstrap
         run: ./scripts/check.sh
-      - name: Cross-compile supported targets
-        shell: bash
+      - name: Linux subprocess runtime integration
+        run: ./scripts/test-runtime.sh
+      - name: Race tests
+        run: go test -race ./...
+      - name: Static analysis
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/krm-build
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/krm-build/amd64 ./cmd/kee-route-manager
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/krm-build/arm64 ./cmd/kee-route-manager
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/krm-build/armv7 ./cmd/kee-route-manager
-          CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -o /tmp/krm-build/mipsle ./cmd/kee-route-manager
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          staticcheck ./...
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
+      - name: ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \) -print0 | xargs -0 shellcheck -S warning
+          shellcheck -S warning scripts/*.sh
+      - name: Fuzz smoke
+        run: ./scripts/fuzz-smoke.sh
+      - name: Cross-build all components
+        run: ./scripts/cross-build.sh
+      - name: Container installer lifecycle and real nftables
+        run: |
+          docker build -t krm-rc2-test -f scripts/test.Dockerfile .
+          docker run --rm -v "$PWD:/src:ro" krm-rc2-test ./scripts/test-install.sh
+          docker run --rm --cap-add NET_ADMIN -e KRM_TEST_REAL_NFT=1 -v "$PWD:/src:ro" krm-rc2-test go test -v ./internal/platform -run TestRealNftManagedFirewallLifecycle
+      - name: Signed release fixture and all artifact digests
+        run: ./scripts/test-release.sh

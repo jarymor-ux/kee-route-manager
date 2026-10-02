@@ -18,7 +18,7 @@ paths:
   run_dir: run
 web:
   enabled: true
-  listen: "127.0.0.1:9443"
+  listen: "127.0.0.1:9444"
   credentials_file: credentials.json
   session_ttl: 1h
   tls:

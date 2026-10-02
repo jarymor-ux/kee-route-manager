@@ -1,49 +1,11 @@
-# Signed update format
+# Signed release format
 
-## Manifest
+Manifest schema1 includes version/channel/min_config_schema and **all payload files**, not just daemon binaries. Assets carry name/component/OS/arch/GOARM/version-pinned HTTPS URL/SHA256/size. Components: daemon, ui, ctl, release-tool and file. Update checks select daemon only and authenticate signature before version/channel decisions.
 
-```json
-{
-  "schema_version": 1,
-  "version": "1.0.0-rc.1",
-  "channel": "rc",
-  "published_at": "2026-10-02T00:00:00Z",
-  "min_config_schema": 1,
-  "assets": [
-    {
-      "os": "linux",
-      "arch": "arm64",
-      "url": "https://.../kee-route-manager-linux-arm64",
-      "sha256": "...",
-      "size": 12345678
-    }
-  ]
-}
-```
+`manifest-rc.json.sig` and `SHA256SUMS.sig` are base64 Ed25519 signatures over exact file bytes. Public key is `release-public.key` (raw32-byte base64) and pinned as PEM in generated bootstrap. SHA256SUMS includes payload files and manifest/signature, excluding itself/its signature to avoid circularity.
 
-The detached signature file contains base64-encoded Ed25519 signature bytes over the exact manifest bytes, including whitespace and final newline.
+Bootstrap verifies native OpenSSL Ed25519, pinned version/channel/schema and SHA256 digests before unpacking trusted installer or executing verified binary. Every platform script/config/service and LICENSE/NOTICE are in `release-files.tar.gz` included in signed manifest. UI assets are embedded in a separately signed UI binary.
 
-## Release tooling
+GitHub discovery chooses RC prereleases or stable non-prereleases separately; signed manifest version must match selected immutable tag. No `/releases/latest` dependency. SemVer compares numeric prerelease components and ignores build metadata in precedence.
 
-Generate a key pair once:
-
-```sh
-go run ./cmd/krm-release-tool keygen \
-  --private /secure/location/release-private.key \
-  --public release-public.key
-```
-
-Generate and sign a manifest:
-
-```sh
-go run ./cmd/krm-release-tool manifest \
-  --version 1.0.0-rc.1 \
-  --channel rc \
-  --dist dist \
-  --base-url https://github.com/OWNER/REPO/releases/download/v1.0.0-rc.1 \
-  --out dist/manifest-rc.json \
-  --private /secure/location/release-private.key \
-  --signature dist/manifest-rc.json.sig
-```
-
-Never commit or upload `release-private.key` as a repository file or ordinary release asset.
+`update.apply` explicitly unavailable until a real stable A/B launcher with signed slot validation, real readiness and crash rollback is implemented. No executable self-replacement or arbitrary pending-path recovery remains.

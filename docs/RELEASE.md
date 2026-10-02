@@ -1,50 +1,20 @@
-# Release procedure
+# RC2 release procedure
 
-## Build
+RC1 tag/assets are immutable. Work occurs on `release/1.0.0-rc.2`; publish a separate **prerelease**, never mark latest stable. The owner deferred real Keenetic acceptance; keep every hardware row pending and all platforms experimental until a report exists.
 
-```bash
-export KRM_RELEASE_PRIVATE_KEY=/secure/path/kee-route-manager-release-private.key
-export OUTPUT_DIR="$PWD/release"
-./scripts/build-release.sh
+1. Run source/race/vet/Staticcheck/Govulncheck/ShellCheck/JS/fuzz, signed bootstrap tamper tests, Linux integration and all component cross-builds. CI must be green for the exact merged commit.
+2. Push topic branch, create PR, review/integrate, merge main. Create signed tag only after software gates. Do not change existing tags.
+3. Keep Ed25519 signing key outside Git, mode0600. RC2 public key rotation must match templates/bootstrap; RC1 key/assets are unchanged.
+4. Build signed artifacts from final commit:
+
+```sh
+KRM_RELEASE_PRIVATE_KEY=/secure/external/rc2-release.private.key ./scripts/build-release.sh
+python3 scripts/verify-release.py release/dist
 ```
 
-The script runs source checks, builds four static Linux binaries, creates an Ed25519-signed update manifest and writes `SHA256SUMS`.
+All daemon/UI/ctl/release-tool binaries are built for amd64/arm64/armv7/mipsle. Build tool executes native host signing tool, never attempts to execute foreign release binaries. Artifacts: component binaries, three bootstraps, signed install payload, manifest/signature, SHA256SUMS/signature, SPDX inventory.
 
-The private key is never copied into the repository or generated release directory. `release-public.key` is safe to publish and is also embedded in the example configurations.
+5. Check binary sizes, native Linux version/validation/readiness/HTTP assets and signed artifacts. Publish release notes with exact unresolved hardware/capability limits. Attach SHA256SUMS.
+6. Complete [hardware plan](HARDWARE_TEST_PLAN.md) separately with router access. A stable release requires acceptance; RC2 code/tests alone do not close hardware DoD.
 
-## GitHub release layout
-
-Upload these files from `release/dist/` to a tag named `v1.0.0-rc.1`:
-
-```text
-kee-route-manager-linux-amd64
-kee-route-manager-linux-arm64
-kee-route-manager-linux-armv7
-kee-route-manager-linux-mipsle
-manifest-rc.json
-manifest-rc.json.sig
-SHA256SUMS
-```
-
-The default configuration expects:
-
-```text
-https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.1/manifest-rc.json
-https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.1/manifest-rc.json.sig
-```
-
-## Stable channel
-
-A stable release must use channel `stable`, a stable semantic version and a separate `manifest-stable.json`/signature pair. Do not retag or replace published assets: signed manifests bind each architecture to an exact URL, size and SHA-256 digest.
-
-## RC acceptance criteria
-
-Before promoting to `1.0.0`:
-
-1. Run the RC on the target Keenetic for at least 72 hours.
-2. Test loss and recovery of every subscription source.
-3. Test exhaustion of the full hot pool and confirm explicit direct mode.
-4. Confirm that existing connections behave as expected during balancer changes; dead remote TCP/UDP sessions cannot be migrated.
-5. Run installation/uninstallation on OpenWrt and Linux test gateways.
-6. Perform one signed update and one deliberately broken update to verify rollback.
-7. Review diagnostic output for accidental credential disclosure.
+`./scripts/test-release.sh` creates a disposable external signing fixture and verifies all digests plus deliberate tamper rejection without changing production trust key.

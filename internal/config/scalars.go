@@ -1,9 +1,9 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -72,10 +72,10 @@ func ParseByteSize(raw string) (int64, error) {
 		}
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f < 0 {
+	if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, fmt.Errorf("invalid byte size %q", raw)
 	}
-	if f > float64(^uint64(0)>>1)/float64(mult) {
+	if f >= float64(^uint64(0)>>1)/float64(mult) {
 		return 0, fmt.Errorf("byte size too large")
 	}
 	return int64(f * float64(mult)), nil
@@ -91,16 +91,4 @@ func FormatByteSize(v int64) string {
 	default:
 		return fmt.Sprintf("%dB", v)
 	}
-}
-
-func decodeStrictJSON(data []byte, target any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("unexpected trailing JSON")
-	}
-	return nil
 }

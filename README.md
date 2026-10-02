@@ -2,145 +2,39 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-**Kee Route Manager (KRM)** is a local Xray route controller for routers and Linux gateways. It combines multiple subscription sources into one deduplicated node pool, keeps a configurable hot pool loaded in Xray, switches new connections to a verified fallback without waiting for a full benchmark, and exposes an adaptive Web/PWA interface.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.0.0-rc.2 is an experimental prerelease; real Keenetic acceptance is a separate pending stage.** RC1 tags and assets are unchanged.
 
-Current release: **1.0.0-rc.1**.
+Three independent processes:
 
-## Scope of RC1
+- `kee-route-managerd`: sole owner of state, scheduler, Xray/firewall and authenticated HTTPS/Unix APIs. Runs without UI.
+- `kee-route-manager-ui`: embedded Web/PWA and TLS-verified API proxy. No router/core/process-execution dependency.
+- `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 
-| Area | Supported |
-|---|---|
-| Platforms | Keenetic + Entware + XKeen; OpenWrt + procd; Linux + systemd |
-| CPU builds | amd64, arm64, armv7, mipsle |
-| VPN core | Xray |
-| Nodes | VLESS Reality/TCP; VLESS WebSocket/TLS |
-| Subscriptions | plain URI list; base64-encoded URI list; up to 20 sources |
-| Pool | unified deduplicated pool; 5 hot nodes by default; configurable |
-| Failover | verified fallback first; direct route only when every VPN fallback fails |
-| UI | embedded responsive Web/PWA; optional Linux UI proxy for PC/Raspberry Pi |
-| Authentication | user-defined login/password; PBKDF2-SHA256; session + CSRF protection |
-| Updates | Ed25519-signed manifests; SHA-256 assets; atomic replacement and rollback |
+Builds: Linux amd64, arm64, armv7, mipsle for all three components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists (Reality TCP and WebSocket TLS). No third-party runtime Go modules.
 
-## How failover works
+Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. Linux/OpenWrt managed nftables can bypass interception independently of Xray. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every platform remains experimental pending hardware checks.
 
-```text
-subscription sources
-        │
-        ▼
-deduplicated node pool
-        │
-        ▼
-benchmark + health history
-        │
-        ▼
-hot pool (default: 5 Xray outbounds)
-        │
-        ├─ active VPN node
-        ├─ verified fallback
-        ├─ verified fallback
-        ├─ verified fallback
-        └─ verified fallback
-```
+Automatic update application is **disabled** until a real A/B launcher exists. Signed update discovery supports separate RC/stable GitHub prerelease channels. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
 
-1. The active path is checked through Xray every 15 seconds by default.
-2. After two failed health cycles, KRM probes the already-loaded fallback slots.
-3. New connections are moved to the first working fallback through Xray's local API.
-4. A full benchmark runs after connectivity is restored, not before failover.
-5. If no VPN slot works, KRM deliberately switches the managed traffic to `direct`.
-6. While direct mode is active, fallback slots continue to be probed. VPN is restored after two successful checks.
-7. Existing TCP/UDP sessions on a dead remote server cannot be migrated; applications reconnect through the new path.
+For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, private config, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-Benchmark payloads are streamed directly to `io.Discard`. Downloaded speed-test data is never persisted to disk.
-
-## Repository layout
-
-```text
-cmd/kee-route-manager/       daemon and CLI
-cmd/krm-release-tool/        Ed25519 release tooling
-internal/auth/               credentials, sessions, CSRF support
-internal/bench/              latency, health and adaptive speed tests
-internal/config/             strict YAML subset and validation
-internal/core/               scheduler, pool, failover and operations
-internal/platform/           Keenetic, OpenWrt and Linux adapters
-internal/subscription/       fetch, cache, parser and deduplication
-internal/update/             signed self-update and rollback
-internal/web/                HTTPS API and embedded PWA
-internal/xray/               managed fragments, API switching, rollback
-configs/                     platform templates
-install/                     platform installers and uninstallers
-web/                         frontend source
-```
-
-## Installation
-
-For an interactive one-command installation on Keenetic, run as `root` over SSH:
+Example after preparing private config as described in the runbook:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/bootstrap-keenetic.sh
+KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-The bootstrap detects the CPU architecture, downloads the latest release binary and `SHA256SUMS`, verifies the binary, fetches the Keenetic installer files, and starts the same interactive setup. No repository clone or release archive is required.
-
-If only `wget` is available:
+OpenWrt/Linux assets: `bootstrap-openwrt.sh` / `bootstrap-linux.sh`. Local UI requires `KRM_UI_CONFIG_FILE`; remote UI uses an authenticated SSH tunnel and trusted controller CA/SPKI. No mutable `main` installation or insecure upstream TLS defaults.
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | sh
+make build
+./scripts/check.sh
+go test -race ./...
+./scripts/fuzz-smoke.sh
+./scripts/cross-build.sh
 ```
 
-To install a specific release instead of `latest`:
+Documentation: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [security](docs/SECURITY.md), [limitations](docs/KNOWN_LIMITATIONS.md), [test report](docs/TEST_REPORT.md), [hardware plan](docs/HARDWARE_TEST_PLAN.md), [release](docs/RELEASE.md), [breaking changes](docs/BREAKING_CHANGES.md), [changelog](CHANGELOG.md).
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/jarymor-ux/kee-route-manager/main/install/keenetic/bootstrap.sh | KRM_VERSION=v1.0.0-rc.1 sh
-```
-
-Installation from an unpacked release bundle remains supported:
-
-```sh
-sh install/keenetic/install.sh
-```
-
-Read [docs/INSTALL.md](docs/INSTALL.md) for requirements and recovery guidance. The installer refuses to silently migrate `blanc-auto`; RC1 is clean-install only.
-
-## Local development
-
-KRM has no third-party Go dependencies.
-
-```sh
-go test ./...
-go vet ./...
-go build ./cmd/kee-route-manager
-go build ./cmd/krm-release-tool
-```
-
-Validate a configuration:
-
-```sh
-./kee-route-manager validate --config configs/linux-systemd.yaml
-```
-
-Create credentials without putting the password in process arguments:
-
-```sh
-printf '%s\n' 'a-long-password' |
-  ./kee-route-manager passwd \
-    --config /etc/kee-route-manager/config.yaml \
-    --username admin \
-    --password-stdin
-```
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Installation](docs/INSTALL.md)
-- [Security](docs/SECURITY.md)
-- [Breaking changes](docs/BREAKING_CHANGES.md)
-- [Update and release format](docs/UPDATE_FORMAT.md)
-- [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [API overview](docs/API.md)
-- [Test report](docs/TEST_REPORT.md)
-- [Release procedure](docs/RELEASE.md)
-
-## Release status
-
-This is a release candidate. Unit tests, static checks, configuration validation, installer syntax checks and cross-compilation are part of the release script. Installation on the target router must still be treated as a controlled rollout with access to the router's recovery path.
+Licensed under [Apache-2.0](LICENSE), selected by the owner.

@@ -6,3 +6,9 @@
 credentials.json
 .DS_Store
 /release/
+*release-private*
+*.private.key
+*.private.pem
+.env
+.env.*
+/router-backups/

@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+BIN=/opt/bin/kee-route-manager-ui
+CONFIG=/opt/etc/kee-route-manager-ui/config.yaml
+RUN=/opt/var/run/kee-route-manager-ui
+PIDFILE=$RUN/supervisor.pid
+CHILD_FILE=$RUN/service-child.pid
+start_ticks(){ awk '{sub(/^[^)]*\) /,""); print $20}' "/proc/$1/stat" 2>/dev/null; }
+identity(){
+ [ -s "$1" ] || return 1
+ IFS=' ' read -r pid ticks < "$1" || return 1
+ case "$pid:$ticks" in *[!0-9:]*|:*) return 1;; esac
+ [ "$(start_ticks "$pid")" = "$ticks" ] || return 1
+ [ "$(awk '{sub(/^[^)]*\) /,"");print $1}' "/proc/$pid/stat" 2>/dev/null)" != Z ] || return 1
+ kill -0 "$pid" 2>/dev/null
+}
+running(){ identity "$PIDFILE"; }
+shutdown(){
+ trap '' TERM INT
+ if identity "$CHILD_FILE"; then kill "$pid"; wait "$pid" || true; fi
+ rm -f "$PIDFILE" "$CHILD_FILE"
+ exit 0
+}
+case "${1:-}" in
+ start)
+  running && exit 0
+  mkdir -p "$RUN"; chmod 0700 "$RUN"
+  [ -x "$BIN" ] && [ -f "$CONFIG" ] || exit 1
+  nohup sh "$0" supervise >/dev/null 2>&1 &
+  for attempt in 1 2 3 4 5; do : "$attempt"; running && exit 0; sleep 1; done
+  echo 'Supervisor did not start' >&2; exit 1;;
+ supervise)
+  printf '%s %s\n' "$$" "$(start_ticks "$$")" > "$PIDFILE"
+  trap shutdown TERM INT
+  while :; do
+   "$BIN" serve --config "$CONFIG" >/dev/null 2>&1 &
+   child=$!
+   printf '%s %s\n' "$child" "$(start_ticks "$child")" > "$CHILD_FILE"
+   wait "$child" || true
+   rm -f "$CHILD_FILE"
+   sleep 5 & wait "$!" || true
+  done;;
+ stop)
+  if running; then
+   kill "$pid"
+   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    : "$attempt"
+    running || break
+    sleep 1
+   done
+   running && { echo 'Supervisor still stopping; installation preserved' >&2; exit 1; }
+  fi
+  identity "$CHILD_FILE" && { echo 'Daemon still stopping; installation preserved' >&2; exit 1; }
+  rm -f "$PIDFILE" "$CHILD_FILE";;
+ restart) "$0" stop; "$0" start;;
+ status) running;;
+ *) echo "Usage: $0 start|stop|restart|status" >&2; exit 2;;
+esac

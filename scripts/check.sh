@@ -1,45 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-
 unformatted="$(gofmt -l cmd internal)"
-if [[ -n "$unformatted" ]]; then
-  printf 'The following Go files are not gofmt-formatted:\n%s\n' "$unformatted" >&2
-  exit 1
-fi
-
+[[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
 go test ./...
 go vet ./...
-
-sh -n install/keenetic/bootstrap.sh
-sh -n install/keenetic/install.sh
-sh -n install/keenetic/S99kee-route-manager
-sh -n install/keenetic/uninstall.sh
-sh -n install/openwrt/install.sh
-sh -n install/openwrt/kee-route-manager.init
-sh -n install/openwrt/uninstall.sh
-bash -n install/linux-systemd/install.sh
-bash -n install/linux-systemd/uninstall.sh
-bash -n install/ui-proxy/install.sh
-
-if command -v node >/dev/null 2>&1; then
-  node --check web/app.js
-fi
-
+while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \))
+for script in scripts/*.sh; do bash -n "$script"; done
+node --check web/app.js
+node --check web/sw.js
 for name in index.html app.css app.js manifest.webmanifest sw.js; do
-  cmp -s "web/$name" "internal/web/static/$name" || {
-    echo "embedded web asset differs from web/$name" >&2
-    exit 1
-  }
+ cmp -s "web/$name" "internal/web/ui/static/$name" || { echo "embedded asset differs: $name" >&2; exit 1; }
 done
-
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-CGO_ENABLED=0 go build -trimpath -o "$TMP/kee-route-manager" ./cmd/kee-route-manager
-for cfg in configs/keenetic.yaml configs/openwrt.yaml configs/linux-systemd.yaml configs/ui-proxy.yaml; do
-  "$TMP/kee-route-manager" validate --config "$cfg" >/dev/null
-done
-
-printf 'All source, test, syntax, embedded-asset and configuration checks passed.\n'
+CGO_ENABLED=0 go build -trimpath -o "$TMP/ctl" ./cmd/kee-route-managerctl
+for cfg in configs/*.yaml; do "$TMP/ctl" validate --config "$cfg" >/dev/null; done
+python3 scripts/test-bootstrap.py
+printf 'Source, tests, syntax, embedded assets, templates and adversarial bootstrap checks passed.\n'

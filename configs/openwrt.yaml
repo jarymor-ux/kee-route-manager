@@ -7,9 +7,19 @@ paths:
   cache_dir: /var/cache/kee-route-manager
   log_file: /var/log/kee-route-manager.log
   run_dir: /var/run/kee-route-manager
-web:
+api:
   enabled: true
-  listen: "0.0.0.0:9443"
+  listen: "127.0.0.1:9443"
+  unix_socket: "/var/run/kee-route-manager/control.sock"
+  tls:
+    enabled: true
+    auto_generate: true
+    cert_file: /etc/kee-route-manager/api.crt
+    key_file: /etc/kee-route-manager/api.key
+    hosts: [127.0.0.1, localhost]
+web:
+  enabled: false
+  listen: "0.0.0.0:9444"
   credentials_file: /etc/kee-route-manager/credentials.json
   session_ttl: 24h
   tls:
@@ -47,7 +57,7 @@ xray:
   dynamic_api: true
   route:
     inbound_tags: [redirect, tproxy]
-    replace_outbound_tags: [vless-reality]
+    replace_outbound_tags: [REPLACE_WITH_SELECTED_OUTBOUND]
 subscriptions:
   max_sources: 20
   max_nodes: 500
@@ -76,6 +86,19 @@ targets:
     weight: 1
     policy: 2xx3xx
     max_response_bytes: 64KiB
+  - id: health_secondary
+    name: Independent health target
+    url: "https://independent-health.example.invalid/replace-me"
+    role: health
+    weight: 1
+    policy: 2xx3xx
+    max_response_bytes: 64KiB
+failover:
+  detection_interval: 5s
+  failure_threshold: 2
+  probe_timeout: 2s
+  overall_deadline: 5s
+  quorum: 2
 health:
   interval: 15s
   failure_threshold: 2
@@ -109,16 +132,18 @@ benchmark:
     target_duration: 6s
     repetitions: 3
 update:
-  enabled: true
+  enabled: false
   channel: rc
-  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/latest/download/manifest-rc.json"
-  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/latest/download/manifest-rc.json.sig"
-  public_key: "3vyElDXWgOF42iL7bWpj75B7/3DI0vakzOgqg+fzv84"
+  github_repository: jarymor-ux/kee-route-manager
+  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/manifest-rc.json"
+  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/manifest-rc.json.sig"
+  public_key: "aQ84vvvQU0w/i/Op99rz4pT/FodfHLbhxdVaMCdqNF8"
   check_interval: 24h
   auto_apply: false
   health_grace_period: 30s
   allow_downgrade: false
-ui_proxy:
+ui:
+  enabled: false
   upstream: "https://127.0.0.1:9443"
   insecure_tls: false
   request_timeout: 30s

@@ -2,6 +2,7 @@ package operation
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -23,5 +24,25 @@ func TestExclusiveOperation(t *testing.T) {
 	}
 	if c.Current().Status != "succeeded" {
 		t.Fatal("completion not persisted")
+	}
+}
+
+func TestOperationErrorsAreRedacted(t *testing.T) {
+	c, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := c.Start("test", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.Fail(errors.New("https://user:secret@example.com/path?token=hidden uuid=12345678-1234-1234-1234-123456789abc")); err != nil {
+		t.Fatal(err)
+	}
+	message := c.Current().Error
+	for _, secret := range []string{"secret", "hidden", "12345678-1234"} {
+		if strings.Contains(message, secret) {
+			t.Fatalf("operation leaked %s", secret)
+		}
 	}
 }

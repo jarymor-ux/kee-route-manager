@@ -2,6 +2,8 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,66 +28,263 @@ func (g *generic) firewallConfig() firewallConfig {
 	return firewallConfig{v.FirewallMode, v.LANInterfaces, v.TCPRedirectPort, v.UDPTProxyPort, v.Mark, v.RouteTable, v.BypassCIDRs}
 }
 
+type firewallOwnership struct {
+	Mark   int  `json:"mark"`
+	Table  int  `json:"table"`
+	Bypass bool `json:"bypass"`
+}
+
+func (g *generic) ownershipPath() string {
+	return filepath.Join(g.cfg.Paths.StateDir, "firewall-owner.json")
+}
+func (g *generic) ownership() (firewallOwnership, bool, error) {
+	var owner firewallOwnership
+	b, err := os.ReadFile(g.ownershipPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return owner, false, nil
+	}
+	if err != nil {
+		return owner, false, err
+	}
+	if err = json.Unmarshal(b, &owner); err != nil {
+		return owner, false, err
+	}
+	c := g.firewallConfig()
+	if owner.Mark != c.Mark || owner.Table != c.Table {
+		return owner, false, fmt.Errorf("firewall ownership differs from configuration")
+	}
+	return owner, true, nil
+}
+func (g *generic) saveOwnership(owner firewallOwnership) error {
+	if err := os.MkdirAll(g.cfg.Paths.StateDir, 0700); err != nil {
+		return err
+	}
+	b, err := json.Marshal(owner)
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(g.cfg.Paths.StateDir, ".firewall-owner-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(b)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	err = errors.Join(err, f.Close())
+	if err != nil {
+		return err
+	}
+	if err = os.Rename(f.Name(), g.ownershipPath()); err != nil {
+		return err
+	}
+	dir, err := os.Open(g.cfg.Paths.StateDir)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
+func (g *generic) tableExists(ctx context.Context) (bool, error) {
+	_, err := g.r.Run(ctx, []string{"nft", "list", "table", "inet", "krm"})
+	if err == nil {
+		return true, nil
+	}
+	if isMissingRuleError(err) {
+		return false, nil
+	}
+	return false, err
+}
 func (g *generic) EnsureFirewall(ctx context.Context) error {
+	g.firewallMu.Lock()
+	defer g.firewallMu.Unlock()
 	c := g.firewallConfig()
 	if c.Mode != "managed" {
 		return nil
 	}
-	if err := os.MkdirAll(g.cfg.Paths.RunDir, 0700); err != nil {
+	owner, owned, err := g.ownership()
+	if err != nil {
 		return err
+	}
+	if owned && owner.Bypass {
+		exists, err := g.tableExists(ctx)
+		if err != nil {
+			return err
+		}
+		if exists {
+			_, err = g.r.Run(ctx, []string{"nft", "delete", "table", "inet", "krm"})
+		}
+		return err
+	}
+	return g.ensureFirewall(ctx, c, owned)
+}
+func (g *generic) ensureFirewall(ctx context.Context, c firewallConfig, owned bool) error {
+	exists, err := g.tableExists(ctx)
+	if err != nil {
+		return err
+	}
+	if exists && !owned {
+		return fmt.Errorf("refusing to replace an unowned inet krm table")
+	}
+	// Reserve only unused policy resources. Existing unrelated rules/routes are never removed.
+	rules, err := g.r.Run(ctx, []string{"ip", "-j", "rule", "show"})
+	if err != nil {
+		return err
+	}
+	var list []map[string]any
+	if err = json.Unmarshal(rules, &list); err != nil {
+		return fmt.Errorf("decode policy rules: %w", err)
+	}
+	policyExists := false
+	for _, rule := range list {
+		table := fmt.Sprint(rule["table"])
+		mark := fmt.Sprint(rule["fwmark"])
+		matchMark := mark == strconv.Itoa(c.Mark) || mark == fmt.Sprintf("0x%x", c.Mark)
+		if table == strconv.Itoa(c.Table) || matchMark {
+			if !owned || !matchMark || table != strconv.Itoa(c.Table) {
+				return fmt.Errorf("managed policy mark/table conflicts with existing rule")
+			}
+			policyExists = true
+		}
+	}
+	routes, err := g.r.Run(ctx, []string{"ip", "-j", "route", "show", "table", strconv.Itoa(c.Table)})
+	if err != nil {
+		if !isMissingRuleError(err) {
+			return err
+		}
+		routes = nil
+	}
+	if len(routes) > 0 {
+		var entries []map[string]any
+		if err = json.Unmarshal(routes, &entries); err != nil {
+			return err
+		}
+		for _, route := range entries {
+			if !owned || fmt.Sprint(route["type"]) != "local" || fmt.Sprint(route["dev"]) != "lo" || (fmt.Sprint(route["dst"]) != "default" && fmt.Sprint(route["dst"]) != "0.0.0.0/0") {
+				return fmt.Errorf("managed route table is already in use")
+			}
+		}
+	}
+	if err = os.MkdirAll(g.cfg.Paths.RunDir, 0700); err != nil {
+		return err
+	}
+	transaction := renderFirewall(c)
+	if exists {
+		transaction = "delete table inet krm\n" + transaction
 	}
 	path := filepath.Join(g.cfg.Paths.RunDir, "krm-firewall.nft")
-	checkPath := filepath.Join(g.cfg.Paths.RunDir, "krm-firewall-check.nft")
-	if err := os.WriteFile(checkPath, []byte(renderFirewallTable(c, "krm_check")), 0600); err != nil {
+	if err = os.WriteFile(path, []byte(transaction), 0600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(renderFirewallTable(c, "krm")), 0600); err != nil {
+	if _, err = g.r.Run(ctx, []string{"nft", "-c", "-f", path}); err != nil {
+		return fmt.Errorf("validate managed nftables transaction: %w", err)
+	}
+	if err = g.saveOwnership(firewallOwnership{Mark: c.Mark, Table: c.Table}); err != nil {
 		return err
 	}
-	if _, err := g.r.Run(ctx, []string{"nft", "-c", "-f", checkPath}); err != nil {
-		return fmt.Errorf("validate managed nftables rules: %w", err)
+	if _, err = g.r.Run(ctx, []string{"ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", strconv.Itoa(c.Table)}); err != nil {
+		return err
 	}
-	if _, err := g.r.Run(ctx, []string{"nft", "delete", "table", "inet", "krm"}); err != nil && !isMissingRuleError(err) {
-		return fmt.Errorf("replace managed nftables table: %w", err)
+	if !policyExists {
+		if _, err = g.r.Run(ctx, []string{"ip", "rule", "add", "fwmark", strconv.Itoa(c.Mark), "table", strconv.Itoa(c.Table)}); err != nil {
+			return err
+		}
 	}
-	if _, err := g.r.Run(ctx, []string{"nft", "-f", path}); err != nil {
-		return fmt.Errorf("apply managed nftables rules: %w", err)
-	}
-	mark, table := strconv.Itoa(c.Mark), strconv.Itoa(c.Table)
-	_, _ = g.r.Run(ctx, []string{"ip", "rule", "del", "fwmark", mark, "table", table})
-	if _, err := g.r.Run(ctx, []string{"ip", "rule", "add", "fwmark", mark, "table", table}); err != nil {
-		_ = g.removeFirewallRules(context.Background(), c)
-		return fmt.Errorf("install managed policy rule: %w", err)
-	}
-	if _, err := g.r.Run(ctx, []string{"ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table}); err != nil {
-		_ = g.removeFirewallRules(context.Background(), c)
-		return fmt.Errorf("install managed policy route: %w", err)
+	if _, err = g.r.Run(ctx, []string{"nft", "-f", path}); err != nil {
+		return fmt.Errorf("apply managed nftables transaction: %w", err)
 	}
 	return nil
 }
-
-func (g *generic) RemoveFirewall(ctx context.Context) error {
+func (g *generic) EnterDirectBypass(ctx context.Context) error {
+	g.firewallMu.Lock()
+	defer g.firewallMu.Unlock()
+	c := g.firewallConfig()
+	if c.Mode != "managed" {
+		return fmt.Errorf("platform direct bypass requires managed firewall mode")
+	}
+	_, owned, err := g.ownership()
+	if err != nil {
+		return err
+	}
+	exists, err := g.tableExists(ctx)
+	if err != nil {
+		return err
+	}
+	if exists && !owned {
+		return fmt.Errorf("refusing to bypass an unowned firewall table")
+	}
+	// Persist desired bypass before deleting interception so restart cannot silently re-enable it.
+	if err = g.saveOwnership(firewallOwnership{Mark: c.Mark, Table: c.Table, Bypass: true}); err != nil {
+		return err
+	}
+	if exists {
+		_, err = g.r.Run(ctx, []string{"nft", "delete", "table", "inet", "krm"})
+	}
+	return err
+}
+func (g *generic) LeaveDirectBypass(ctx context.Context) error {
+	g.firewallMu.Lock()
+	defer g.firewallMu.Unlock()
 	c := g.firewallConfig()
 	if c.Mode != "managed" {
 		return nil
 	}
-	return g.removeFirewallRules(ctx, c)
+	_, owned, err := g.ownership()
+	if err != nil {
+		return err
+	}
+	return g.ensureFirewall(ctx, c, owned)
 }
-
-func (g *generic) removeFirewallRules(ctx context.Context, c firewallConfig) error {
-	mark, table := strconv.Itoa(c.Mark), strconv.Itoa(c.Table)
-	var errs []string
-	if _, err := g.r.Run(ctx, []string{"ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", table}); err != nil && !isMissingRuleError(err) {
-		errs = append(errs, err.Error())
+func (g *generic) DirectBypassActive(ctx context.Context) (bool, error) {
+	g.firewallMu.Lock()
+	defer g.firewallMu.Unlock()
+	if g.firewallConfig().Mode != "managed" {
+		return false, nil
 	}
-	if _, err := g.r.Run(ctx, []string{"ip", "rule", "del", "fwmark", mark, "table", table}); err != nil && !isMissingRuleError(err) {
-		errs = append(errs, err.Error())
+	owner, owned, err := g.ownership()
+	if err != nil || !owned {
+		return false, err
 	}
-	if _, err := g.r.Run(ctx, []string{"nft", "delete", "table", "inet", "krm"}); err != nil && !isMissingRuleError(err) {
-		errs = append(errs, err.Error())
+	exists, err := g.tableExists(ctx)
+	return owner.Bypass && !exists, err
+}
+func (g *generic) RemoveFirewall(ctx context.Context) error {
+	g.firewallMu.Lock()
+	defer g.firewallMu.Unlock()
+	c := g.firewallConfig()
+	if c.Mode != "managed" {
+		return nil
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("remove managed firewall: %s", strings.Join(errs, "; "))
+	_, owned, err := g.ownership()
+	if err != nil {
+		return err
+	}
+	if !owned {
+		return nil
+	}
+	exists, err := g.tableExists(ctx)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if _, err = g.r.Run(ctx, []string{"nft", "delete", "table", "inet", "krm"}); err != nil {
+			return err
+		}
+	}
+	var errs []error
+	for _, cmd := range [][]string{{"ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", strconv.Itoa(c.Table)}, {"ip", "rule", "del", "fwmark", strconv.Itoa(c.Mark), "table", strconv.Itoa(c.Table)}} {
+		if _, err = g.r.Run(ctx, cmd); err != nil && !isMissingRuleError(err) {
+			errs = append(errs, err)
+		}
+	}
+	if err = errors.Join(errs...); err != nil {
+		return err
+	}
+	if err = os.Remove(g.ownershipPath()); !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
@@ -98,17 +297,18 @@ func renderFirewallTable(c firewallConfig, tableName string) string {
 		quotedIfaces = append(quotedIfaces, fmt.Sprintf("%q", iface))
 	}
 	bypass := strings.Join(c.Bypass, ", ")
+	guard := fmt.Sprintf("  meta nfproto != ipv4 return\n  iifname != { %s } return\n  ip daddr { %s } return\n", strings.Join(quotedIfaces, ", "), bypass)
 	return fmt.Sprintf(`table inet %s {
- chain prerouting {
+ chain tcp_redirect {
+  type nat hook prerouting priority dstnat; policy accept;
+%s  meta l4proto tcp redirect to :%d
+ }
+ chain udp_tproxy {
   type filter hook prerouting priority mangle; policy accept;
-  meta nfproto != ipv4 return
-  iifname != { %s } return
-  ip daddr { %s } return
-  meta l4proto tcp redirect to :%d
-  meta l4proto udp meta mark set %d tproxy to :%d
+%s  meta l4proto udp meta mark set %d tproxy to :%d
  }
 }
-`, tableName, strings.Join(quotedIfaces, ", "), bypass, c.TCPPort, c.Mark, c.UDPPort)
+`, tableName, guard, c.TCPPort, guard, c.Mark, c.UDPPort)
 }
 
 func isMissingRuleError(err error) bool {
