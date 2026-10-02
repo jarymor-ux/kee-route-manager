@@ -59,6 +59,8 @@ verify_file release-files.tar.gz
 mkdir payload
 # Even trusted publisher mistakes must not write outside the temporary payload directory.
 if tar -tzf release-files.tar.gz | awk 'BEGIN {bad=0} /^\// || /(^|\/)\.\.(\/|$)/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive paths'; fi
+# Symlinks/hardlinks and special files can escape extraction despite safe names.
+if tar -tvzf release-files.tar.gz | awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive entry types'; fi
 tar -xzf release-files.tar.gz -C payload
 mkdir -p payload/dist
 MODE=${KRM_MODE:-local-ui}

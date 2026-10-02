@@ -123,8 +123,11 @@ ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:9445:1
 По аутентифицированному SSH скопируйте **публичный** `api.crt` в private staging, не копируйте `api.key`/credentials/state. В UI YAML upstream `https://127.0.0.1:9445`; CA cert из core. При желании дополнительно задайте `ui.upstream_spki_sha256` (base64 SHA256 SubjectPublicKeyInfo), вычисленный на trusted cert через OpenSSL.
 
 ```sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/bootstrap-linux.sh
 KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt sh /tmp/krm-bootstrap.sh
 ```
+
+Скачивание выше выполнять на Linux-компьютере с UI. Для UI на OpenWrt/Keenetic выбрать bootstrap соответствующей платформы, не переносить Keenetic bootstrap на Linux-хост.
 
 UI Linux service использует DynamicUser и собственный state dir. SSH tunnel обеспечить отдельным сервисом пользователя/администратора и проверить reconnect/reboot. При падении tunnel UI возвращает upstream unavailable; маршрутизацией продолжает владеть core.
 
@@ -151,6 +154,18 @@ kee-route-managerctl restore-xray --config CONFIG_PATH
 ```
 
 Используйте signed `install/PLATFORM/uninstall.sh` из payload. Он также выполняет restore через живой daemon **до** остановки. Ошибка restore оставляет сервисы и файлы для диагностики. По умолчанию приватный config/state сохраняются; `--purge` удаляет только стандартные KRM config/state/cache directories. Нестандартные пути проверять и очищать отдельно.
+
+Укажите режим установки явно:
+
+```sh
+KRM_MODE=core sh install/PLATFORM/uninstall.sh
+# Или core + local UI:
+KRM_MODE=local-ui sh install/PLATFORM/uninstall.sh
+# На отдельном UI-хосте (без локального ctl/restore):
+KRM_MODE=ui sh install/PLATFORM/uninstall.sh
+```
+
+Заменить `PLATFORM` на `keenetic`, `openwrt` или `linux-systemd`. Для UI-only предварительный `restore-xray` на UI-хосте пропустить: удаление UI не меняет маршрутизацию удалённого core. `--purge` добавлять только после backup и осознанного выбора удаления сохранённых данных.
 
 Перед reinstall перенесите сохранённые KRM config/state/cache в приватный backup либо выполните осознанный `--purge`. Проверьте Xray strict JSON и WAN, затем повторите чистую установку. При routing drift восстановление должно отказаться от удаления пользовательских правок; разберите diff вручную с резервной копией, не возвращайте вслепую весь старый routing файл.
 
