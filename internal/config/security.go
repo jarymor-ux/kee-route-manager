@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -77,9 +78,13 @@ func (c Config) validateCommon() []error {
 			}
 		}
 		if c.UIProxy.UpstreamSPKISHA256 != "" {
-			pin, err := base64.StdEncoding.DecodeString(c.UIProxy.UpstreamSPKISHA256)
+			raw := strings.TrimPrefix(c.UIProxy.UpstreamSPKISHA256, "sha256/")
+			pin, err := base64.StdEncoding.DecodeString(raw)
 			if err != nil || len(pin) != 32 {
-				es = append(es, fmt.Errorf("ui.upstream_spki_sha256 must be a base64 SHA-256 digest"))
+				pin, err = hex.DecodeString(raw)
+			}
+			if err != nil || len(pin) != 32 {
+				es = append(es, fmt.Errorf("ui.upstream_spki_sha256 must be a base64 or hex SHA-256 digest"))
 			}
 		}
 		if c.UIProxy.InsecureTLS && (c.UIProxy.UpstreamSPKISHA256 != "" || c.UIProxy.UpstreamCAFile != "") {
@@ -124,6 +129,11 @@ func (c Config) validateController() []error {
 	add := func(err error) {
 		if err != nil {
 			es = append(es, err)
+		}
+	}
+	for name, p := range map[string]string{"paths.state_dir": c.Paths.StateDir, "paths.cache_dir": c.Paths.CacheDir, "paths.run_dir": c.Paths.RunDir, "web.credentials_file": c.Web.CredentialsFile} {
+		if !filepath.IsAbs(p) || strings.ContainsRune(p, 0) {
+			add(fmt.Errorf("%s requires an absolute path without NUL", name))
 		}
 	}
 	if c.API.Enabled {
@@ -292,8 +302,14 @@ func (c Config) validateController() []error {
 				add(fmt.Errorf("update URLs must be HTTPS channel-specific or versioned; /releases/latest is forbidden"))
 			}
 		}
-		key, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(c.Update.PublicKey, "="))
-		if err != nil || len(key) != 32 {
+		var key []byte
+		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+			if b, e := enc.DecodeString(strings.TrimSpace(c.Update.PublicKey)); e == nil && len(b) == 32 {
+				key = b
+				break
+			}
+		}
+		if len(key) != 32 {
 			add(fmt.Errorf("update.public_key must be a base64 Ed25519 public key"))
 		}
 	}

@@ -399,8 +399,8 @@ func validateManagedFirewall(prefix, mode string, interfaces []string, tcpPort, 
 	if mark < 1 || mark > 1<<30 {
 		errs = append(errs, fmt.Errorf("%s.mark must be between 1 and %d", prefix, 1<<30))
 	}
-	if table < 1 || table > 1<<30 {
-		errs = append(errs, fmt.Errorf("%s.route_table must be between 1 and %d", prefix, 1<<30))
+	if table < 1 || table > 1<<30 || table >= 253 && table <= 255 {
+		errs = append(errs, fmt.Errorf("%s.route_table must be between 1 and %d and must not use reserved tables 253..255", prefix, 1<<30))
 	}
 	if len(bypass) == 0 {
 		errs = append(errs, fmt.Errorf("%s.bypass_cidrs cannot be empty in managed mode", prefix))
