@@ -261,6 +261,16 @@ func TestBenchmarkReservationIsSynchronous(t *testing.T) {
 	m, _, _ := fixture(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
+	// The operation status may finish before its final event is persisted.
+	// Join the worker before TempDir cleanup, including assertion failures.
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		m.Stop()
+	}()
 	m.bench = fakeBenchmark{start: started, release: release}
 	op, err := m.RequestBenchmark(context.Background(), "api")
 	if err != nil {
