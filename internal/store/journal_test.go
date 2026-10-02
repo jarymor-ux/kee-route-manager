@@ -15,7 +15,7 @@ func TestJournalSurvivesEveryStage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = s.PrepareTransaction(Transaction{ID: "tx-test", Before: initial, Desired: initial}); err != nil {
+			if err = s.PrepareTransaction(Transaction{ID: "tx-test", Kind: "pool", Before: initial, Desired: initial}); err != nil {
 				t.Fatal(err)
 			}
 			for _, next := range stages[1:] {
@@ -52,7 +52,7 @@ func TestJournalRejectsSkippedStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.PrepareTransaction(Transaction{ID: "tx"}); err != nil {
+	if err = s.PrepareTransaction(Transaction{ID: "tx", Kind: "pool", Desired: model.NewState("v", "slot-", 1)}); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.AdvanceTransaction(StateCommitted); err == nil {

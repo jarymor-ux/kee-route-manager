@@ -14,6 +14,8 @@ import (
 
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
+	"strings"
 )
 
 const (
@@ -61,6 +63,7 @@ func (s *Store) load() error {
 		return err
 	}
 	var invalid bool
+	var recoveredPrevious bool
 	for _, name := range []string{"state.json", "state.previous.json"} {
 		b, err := os.ReadFile(filepath.Join(s.stateDir, name))
 		if errors.Is(err, os.ErrNotExist) {
@@ -94,6 +97,7 @@ func (s *Store) load() error {
 		}
 		s.state = candidate
 		s.nodes = candidateNodes
+		recoveredPrevious = name == "state.previous.json"
 		if s.state.Measurements == nil {
 			s.state.Measurements = map[string]model.Measurement{}
 		}
@@ -106,6 +110,18 @@ func (s *Store) load() error {
 	if invalid {
 		s.state = clone(s.initial)
 		s.state.XrayLastError = "state copies invalid; routing reconciliation required"
+	}
+	if recoveredPrevious {
+		xs := make([]model.Node, 0, len(s.nodes))
+		for _, node := range s.nodes {
+			xs = append(xs, node)
+		}
+		if err := writeJSON(filepath.Join(s.cacheDir, "nodes.json"), xs); err != nil {
+			return err
+		}
+		if err := writeJSON(filepath.Join(s.stateDir, "state.json"), s.state); err != nil {
+			return err
+		}
 	}
 	s.committedNodes = copyNodes(s.nodes)
 	f, err := os.Open(s.eventsPath())
@@ -121,6 +137,8 @@ func (s *Store) load() error {
 	for sc.Scan() {
 		var e event.Event
 		if json.Unmarshal(sc.Bytes(), &e) == nil {
+			e.Message = redact.Text(e.Message)
+			e.Fields = redactFields(e.Fields)
 			s.events = append(s.events, e)
 			if e.Sequence > s.seq {
 				s.seq = e.Sequence
@@ -142,7 +160,9 @@ func (s *Store) load() error {
 func (s *Store) State() model.State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.state)
+	out := clone(s.state)
+	sanitizeState(&out)
+	return out
 }
 
 func (s *Store) Update(fn func(*model.State) error) error {
@@ -152,6 +172,7 @@ func (s *Store) Update(fn func(*model.State) error) error {
 	if err := fn(&v); err != nil {
 		return err
 	}
+	sanitizeState(&v)
 	if reflect.DeepEqual(v, s.state) {
 		return nil
 	}
@@ -176,6 +197,7 @@ func (s *Store) UpdateVolatile(fn func(*model.State) error) error {
 	if err := fn(&v); err != nil {
 		return err
 	}
+	sanitizeState(&v)
 	if reflect.DeepEqual(v, s.state) {
 		return nil
 	}
@@ -243,6 +265,8 @@ func (s *Store) Node(id string) (model.Node, bool) {
 }
 
 func (s *Store) Append(e event.Event) (event.Event, error) {
+	e.Message = redact.Text(e.Message)
+	e.Fields = redactFields(e.Fields)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
@@ -268,6 +292,8 @@ func (s *Store) Append(e event.Event) (event.Event, error) {
 	if err != nil {
 		return e, err
 	}
+	e.Message = redact.Text(e.Message)
+	e.Fields = redactFields(e.Fields)
 	s.events = append(s.events, e)
 	if len(s.events) > maxEvents {
 		s.events = append([]event.Event(nil), s.events[len(s.events)-maxEvents:]...)
@@ -476,4 +502,54 @@ func (s *Store) persist(v model.State) error {
 	}
 	s.committedNodes = copyNodes(s.nodes)
 	return nil
+}
+
+func sanitizeState(state *model.State) {
+	state.XrayLastError = redact.Text(state.XrayLastError)
+	state.LastHealthMessage = redact.Text(state.LastHealthMessage)
+	state.LastBenchmark.Error = redact.Text(state.LastBenchmark.Error)
+	for id, value := range state.Measurements {
+		value.Error = redact.Text(value.Error)
+		state.Measurements[id] = value
+	}
+	for id, value := range state.Sources {
+		value.LastError = redact.Text(value.LastError)
+		state.Sources[id] = value
+	}
+	for i := range state.LastBenchmark.Results {
+		state.LastBenchmark.Results[i].Error = redact.Text(state.LastBenchmark.Results[i].Error)
+	}
+}
+func redactFields(fields map[string]any) map[string]any {
+	if fields == nil {
+		return nil
+	}
+	out := make(map[string]any, len(fields))
+	for key, value := range fields {
+		normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+		switch normalized {
+		case "authorization", "cookie", "setcookie", "uuid", "password", "publickey", "shortid", "secret", "token":
+			out[key] = "<redacted>"
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			out[key] = redact.Text(v)
+		case map[string]any:
+			out[key] = redactFields(v)
+		case []any:
+			xs := make([]any, len(v))
+			for i, item := range v {
+				if text, ok := item.(string); ok {
+					xs[i] = redact.Text(text)
+				} else {
+					xs[i] = item
+				}
+			}
+			out[key] = xs
+		default:
+			out[key] = value
+		}
+	}
+	return out
 }

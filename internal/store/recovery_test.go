@@ -66,3 +66,51 @@ func TestBothInvalidCopiesEnterRecovery(t *testing.T) {
 		t.Fatal("expected safe recovery state")
 	}
 }
+
+func TestPreviousRecoveryIncludesMatchingNodeCache(t *testing.T) {
+	d := t.TempDir()
+	initial := model.NewState("rc2", "slot-", 1)
+	s, err := New(d, d, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReplaceNodes([]model.Node{{ID: "old"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(st *model.State) error {
+		st.XrayConfigured = true
+		st.Pool[0].NodeID = "old"
+		st.ActiveSlot = 0
+		st.ActiveNodeID = "old"
+		st.XrayGeneration = 1
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReplaceNodes([]model.Node{{ID: "new"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(st *model.State) error {
+		st.Pool[0].NodeID = "new"
+		st.ActiveNodeID = "new"
+		st.XrayGeneration = 2
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(d, "state.json"), []byte("corrupted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		s, err = New(d, d, initial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.State().ActiveNodeID != "old" {
+			t.Fatal("matching node cache was not recovered")
+		}
+		if _, ok := s.Node("old"); !ok {
+			t.Fatal("previous node missing")
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"os"
 	"path/filepath"
 	"sync"
@@ -52,6 +53,8 @@ func New(dir string) (*Coordinator, error) {
 				op.UpdatedAt = op.FinishedAt
 				_ = c.write(op)
 			}
+			op.Error = redact.Text(op.Error)
+			op.Message = redact.Text(op.Message)
 			c.last = &op
 		}
 	}
@@ -98,7 +101,7 @@ func (h *Handle) Update(stage string, current, total int, msg string) error {
 		o.Stage = stage
 		o.Current = current
 		o.Total = total
-		o.Message = msg
+		o.Message = redact.Text(msg)
 		o.UpdatedAt = time.Now().UTC()
 	})
 }
@@ -114,8 +117,8 @@ func (h *Handle) finish(status, msg, failure string) error {
 		now := time.Now().UTC()
 		o.Status = status
 		o.Stage = "finished"
-		o.Message = msg
-		o.Error = failure
+		o.Message = redact.Text(msg)
+		o.Error = redact.Text(failure)
 		o.UpdatedAt = now
 		o.FinishedAt = now
 	})

@@ -40,6 +40,9 @@ func (s *Store) PrepareTransaction(tx Transaction) error {
 	}
 	tx.Schema = 1
 	tx.Stage = Prepared
+	if err = s.validateTransaction(tx); err != nil {
+		return err
+	}
 	return writeJSON(s.Path("transaction.json"), tx)
 }
 func (s *Store) AdvanceTransaction(stage string) error {
@@ -85,6 +88,9 @@ func (s *Store) PendingTransaction() (*Transaction, error) {
 	if !stages[tx.Stage] {
 		return nil, fmt.Errorf("invalid transaction stage")
 	}
+	if err = s.validateTransaction(tx); err != nil {
+		return nil, err
+	}
 	if tx.Stage == Done {
 		return nil, nil
 	}
@@ -95,5 +101,31 @@ func (s *Store) PendingTransaction() (*Transaction, error) {
 // from PREPARED after checking actual tunnel/firewall state.
 func (s *Store) RestartTransaction(tx Transaction) error {
 	tx.Stage = Prepared
+	if err := s.validateTransaction(tx); err != nil {
+		return err
+	}
 	return writeJSON(s.Path("transaction.json"), tx)
+}
+
+func (s *Store) validateTransaction(tx Transaction) error {
+	if tx.Kind != "pool" && tx.Kind != "select" && tx.Kind != "restore" && tx.Kind != "reconcile" {
+		return fmt.Errorf("invalid transaction kind")
+	}
+	nodes := map[string]model.Node{}
+	for _, node := range tx.Nodes {
+		if node.ID == "" {
+			return fmt.Errorf("transaction contains invalid node")
+		}
+		if _, exists := nodes[node.ID]; exists {
+			return fmt.Errorf("duplicate transaction node")
+		}
+		nodes[node.ID] = node
+	}
+	if err := s.validateWithNodes(tx.Desired, nodes); err != nil {
+		return fmt.Errorf("invalid transaction desired state: %w", err)
+	}
+	if tx.Kind != "restore" && tx.Desired.XrayGeneration < tx.Before.XrayGeneration {
+		return fmt.Errorf("transaction generation regressed")
+	}
+	return nil
 }
