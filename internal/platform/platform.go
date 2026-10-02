@@ -24,6 +24,7 @@ type Capabilities struct {
 	SystemLogs      bool `json:"system_logs"`
 	Diagnostics     bool `json:"diagnostics"`
 	ManagedFirewall bool `json:"managed_firewall"`
+	DirectBypass    bool `json:"direct_bypass"`
 }
 type Port struct {
 	ID    string `json:"id"`
@@ -84,6 +85,9 @@ type Adapter interface {
 	Diagnostics(context.Context) (string, error)
 	EnsureFirewall(context.Context) error
 	RemoveFirewall(context.Context) error
+	EnterDirectBypass(context.Context) error
+	LeaveDirectBypass(context.Context) error
+	DirectBypassActive(context.Context) (bool, error)
 }
 
 type Runner struct {

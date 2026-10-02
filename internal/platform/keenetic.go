@@ -378,3 +378,11 @@ func validMAC(v string) bool {
 }
 func (k *keenetic) EnsureFirewall(context.Context) error { return nil }
 func (k *keenetic) RemoveFirewall(context.Context) error { return nil }
+
+// XKeen's interception is outside KRM ownership. Automatic bypass is deliberately
+// unavailable until a router-specific mechanism has been tested on hardware.
+func (k *keenetic) EnterDirectBypass(context.Context) error {
+	return fmt.Errorf("platform direct bypass is unsupported on Keenetic; disable XKeen interception using the router's documented policy controls")
+}
+func (k *keenetic) LeaveDirectBypass(context.Context) error          { return nil }
+func (k *keenetic) DirectBypassActive(context.Context) (bool, error) { return false, nil }

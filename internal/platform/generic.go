@@ -6,6 +6,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type generic struct {
@@ -13,14 +14,15 @@ type generic struct {
 	r               Runner
 	kind            string
 	reboot, managed bool
+	firewallMu      sync.Mutex
 }
 
 func newGeneric(c config.Config, r Runner, k string, reboot, managed bool) Adapter {
-	return &generic{c, r, k, reboot, managed}
+	return &generic{cfg: c, r: r, kind: k, reboot: reboot, managed: managed}
 }
 func (g *generic) Kind() string { return g.kind }
 func (g *generic) Capabilities() Capabilities {
-	return Capabilities{Metrics: true, Reboot: g.reboot, SystemLogs: true, Diagnostics: true, ManagedFirewall: g.managed}
+	return Capabilities{Metrics: true, Reboot: g.reboot, SystemLogs: true, Diagnostics: true, ManagedFirewall: g.managed, DirectBypass: g.managed}
 }
 func (g *generic) RestartXray(ctx context.Context) error {
 	_, e := g.r.Run(ctx, g.cfg.Platform.XrayRestartCommand)
