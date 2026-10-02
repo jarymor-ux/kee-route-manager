@@ -1,6 +1,6 @@
 # Полная установка Kee Route Manager для AI-агента
 
-Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Версия: **v1.1.0-rc.3**, experimental prerelease. Аппаратная приёмка каждой платформы проводится отдельно; контейнерные проверки не заменяют её. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
+Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Версия: **v1.1.0-rc.4**, experimental prerelease. Аппаратная приёмка каждой платформы проводится отдельно; контейнерные проверки не заменяют её. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
 
 **Прежний v1.0.0-rc.2 не использовать для новой установки:** его раздельные секции Xray `routing` перезаписывают друг друга. В новой версии routing объединён в выбранном base-файле и проверен с реальным Xray. Прежние опубликованные assets остаются неизменными.
 
@@ -54,12 +54,12 @@ crontab -l
 ```sh
 git clone https://github.com/jarymor-ux/kee-route-manager.git
 cd kee-route-manager
-git checkout v1.1.0-rc.3
+git checkout v1.1.0-rc.4
 ```
 
 Читайте release notes и `release-public.key`. Для этой версии используется закреплённый release signing key; ключ доверять через аутентифицированный репозиторий/канал владельца, а не через файл, скачанный вместе с потенциально подменённой подписью. Bootstrap содержит pinned public key. Первое получение bootstrap защищено HTTPS/GitHub trust; для усиления проверьте подпись и его digest на доверенном компьютере командой `scripts/verify-release.py` после скачивания assets.
 
-Для этой инструкции используйте assets из release `v1.1.0-rc.3`; сначала убедитесь, что опубликован весь подписанный набор. Если release ещё отсутствует, установка по этим ссылкам должна остановиться, а не подменять версию. Не используйте `main` или `/releases/latest` для установки. Версия, бинарники, сервисы и конфигурации должны совпадать.
+Для этой инструкции используйте assets из release `v1.1.0-rc.4`; сначала убедитесь, что опубликован весь подписанный набор. Если release ещё отсутствует, установка по этим ссылкам должна остановиться, а не подменять версию. Не используйте `main` или `/releases/latest` для установки. Версия, бинарники, сервисы и конфигурации должны совпадать.
 
 ## 4. Подготовить приватную core-конфигурацию
 
@@ -92,7 +92,7 @@ kee-route-managerctl validate --config /root/krm-install/config.yaml
 Keenetic:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.3/bootstrap-keenetic.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.4/bootstrap-keenetic.sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 /opt/bin/kee-route-managerctl ready --config /opt/etc/kee-route-manager/config.yaml
 /opt/bin/kee-route-managerctl status --config /opt/etc/kee-route-manager/config.yaml
@@ -127,7 +127,7 @@ ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:9445:1
 По аутентифицированному SSH скопируйте **публичный** `api.crt` в private staging, не копируйте `api.key`/credentials/state. В UI YAML upstream `https://127.0.0.1:9445`; CA cert из core. При желании дополнительно задайте `ui.upstream_spki_sha256` (base64 SHA256 SubjectPublicKeyInfo), вычисленный на trusted cert через OpenSSL.
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.3/bootstrap-linux.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.4/bootstrap-linux.sh
 KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt sh /tmp/krm-bootstrap.sh
 ```
 
@@ -156,7 +156,7 @@ kee-route-managerctl switch --slot 1 --config CONFIG_PATH
 ```sh
 kee-route-managerctl update-check --config CONFIG_PATH
 kee-route-managerctl update-status --config CONFIG_PATH
-kee-route-managerctl update-apply --target-version 1.1.0-rc.3 --config CONFIG_PATH
+kee-route-managerctl update-apply --target-version 1.1.0-rc.4 --config CONFIG_PATH
 ```
 
 Замените target version на доступную проверенную версию из `update-check`. Указание версии защищает от смены выбранного релиза между проверкой и применением. Кнопка UI использует тот же authenticated API; `update-status` показывает результат и после перезапуска daemon. Проверяйте результат, readiness и фактический маршрут после завершения операции.
