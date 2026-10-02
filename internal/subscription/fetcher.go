@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"io"
 	"net/http"
 	"net/url"
@@ -37,7 +38,15 @@ type cache struct {
 }
 
 func New(cfg config.Subscriptions, b []config.Duration, cacheDir string) *Fetcher {
-	return &Fetcher{cfg: cfg, backoff: b, dir: filepath.Join(cacheDir, "subscriptions"), client: &http.Client{Timeout: cfg.RequestTimeout.Duration}, now: func() time.Time { return time.Now().UTC() }}
+	return &Fetcher{cfg: cfg, backoff: b, dir: filepath.Join(cacheDir, "subscriptions"), client: &http.Client{Timeout: cfg.RequestTimeout.Duration, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many subscription redirects")
+		}
+		if len(via) > 0 && (req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme) {
+			return errors.New("cross-origin subscription redirect refused")
+		}
+		return nil
+	}}, now: func() time.Time { return time.Now().UTC() }}
 }
 func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceState, force bool) Result {
 	_ = os.MkdirAll(f.dir, 0700)
@@ -70,23 +79,29 @@ func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceStat
 		}(s)
 	}
 	go func() { wg.Wait(); close(ch) }()
-	all := []model.Node{}
-	emergency := []model.Node{}
+	all := map[string][]model.Node{}
+	emergency := map[string][]model.Node{}
+	order := []string{}
+	for _, s := range f.cfg.Sources {
+		if s.Enabled {
+			order = append(order, s.ID)
+		}
+	}
 	for x := range ch {
 		r.States[x.id] = x.state
 		if x.state.Status == "unavailable" && x.state.UsingCache {
-			emergency = append(emergency, x.nodes...)
-		} else {
-			all = append(all, x.nodes...)
+			emergency[x.id] = x.nodes
+		} else if len(x.nodes) > 0 {
+			all[x.id] = x.nodes
 		}
 		if x.err != nil {
-			r.Errors = append(r.Errors, fmt.Errorf("%s: %w", x.id, x.err))
+			r.Errors = append(r.Errors, fmt.Errorf("%s: %s", x.id, redact.Text(x.err.Error())))
 		}
 	}
 	if len(all) == 0 {
 		all = emergency
 	}
-	r.Nodes = Merge(all, f.cfg.MaxNodes)
+	r.Nodes = fairMerge(all, order, f.cfg.MaxNodes, f.cfg.MaxNodesPerSource)
 	return r
 }
 func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceState, force bool) ([]model.Node, model.SourceState, error) {
@@ -121,6 +136,9 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 		var xs []model.Node
 		xs, err = ParsePayload(body, s.ID)
 		if err == nil {
+			if f.cfg.MaxNodesPerSource > 0 {
+				xs = Merge(xs, f.cfg.MaxNodesPerSource)
+			}
 			c := cache{1, s.ID, now, xs}
 			if err = f.save(c); err == nil {
 				st.Status = "healthy"
@@ -154,7 +172,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 		}
 	}
 	if err != nil {
-		st.LastError = err.Error()
+		st.LastError = redact.Text(err.Error())
 	}
 	if xs, c, e := f.load(s.ID); e == nil {
 		st.UsingCache = true
