@@ -1,5 +1,7 @@
 # Kee Route Manager
 
+**English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
+
 **Kee Route Manager (KRM)** is a local Xray route controller for routers and Linux gateways. It combines multiple subscription sources into one deduplicated node pool, keeps a configurable hot pool loaded in Xray, switches new connections to a verified fallback without waiting for a full benchmark, and exposes an adaptive Web/PWA interface.
 
 Current release: **1.0.0-rc.1**.
