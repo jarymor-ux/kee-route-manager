@@ -14,4 +14,4 @@ Linux amd64、arm64、armv7、mipsle 均提供独立组件。健康检查比较 
 
 AI 代理应先阅读 [AGENTS.md](AGENTS.md)，再按照 [完整安装流程](docs/AGENT_INSTALL.md) 执行 SSH、备份、配置、core/UI 安装、TLS、验证、卸载及回滚。
 
-参见 [测试报告](docs/TEST_REPORT.md)、[硬件计划](docs/HARDWARE_TEST_PLAN.md)、[限制](docs/KNOWN_LIMITATIONS.md) 与 [发布流程](docs/RELEASE.md)。许可证：[Apache-2.0](LICENSE)。
+参见 [限制](docs/KNOWN_LIMITATIONS.md) 与 [发布流程](docs/RELEASE.md)。自动化验证见 [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions)。许可证：[Apache-2.0](LICENSE)。

@@ -133,7 +133,7 @@ UI Linux service использует DynamicUser и собственный stat
 
 ## 8. Проверить и принять
 
-Проверки выполнять по [HARDWARE_TEST_PLAN.md](HARDWARE_TEST_PLAN.md), сохраняя доступ по SSH. Минимум:
+Проверки выполнять с учётом [ограничений платформ](KNOWN_LIMITATIONS.md), сохраняя независимый доступ по SSH. Минимум:
 
 ```sh
 kee-route-managerctl benchmark --config CONFIG_PATH

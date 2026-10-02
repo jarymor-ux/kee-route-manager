@@ -8,4 +8,4 @@ Artifacts pin `v1.0.0-rc.2`; bootstrap authenticates manifests/checksums and com
 
 Restore occurs through the live daemon before service shutdown. On drift/restore failure keep the installation for diagnosis. Reinstall requires backing up/moving retained private config or intentional purge. Automatic self-update is unavailable; rollback is a controlled clean installation of a verified version.
 
-All platforms are experimental. Keenetic automatic platform bypass is not supported; Linux/OpenWrt bypass requires managed interception. Hardware acceptance is [pending](HARDWARE_TEST_PLAN.md).
+All platforms are experimental. Keenetic automatic platform bypass is not supported; Linux/OpenWrt bypass requires managed interception. Hardware acceptance remains pending; see [known limitations](KNOWN_LIMITATIONS.md).

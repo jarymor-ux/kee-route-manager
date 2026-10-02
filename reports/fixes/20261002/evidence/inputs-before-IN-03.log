@@ -1,7 +1,0 @@
-=== RUN   TestFileSourcesRequireRegularFilesAndCancellation
-    input_regression_test.go:94: canceled regular source: <nil>
-    input_regression_test.go:124: FIFO remained blocked after deadline
---- FAIL: TestFileSourcesRequireRegularFilesAndCancellation (0.16s)
-FAIL
-FAIL	github.com/jarymor-ux/kee-route-manager/internal/subscription	0.535s
-FAIL

@@ -35,6 +35,6 @@ go test -race ./...
 ./scripts/cross-build.sh
 ```
 
-Documentation: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [security](docs/SECURITY.md), [limitations](docs/KNOWN_LIMITATIONS.md), [test report](docs/TEST_REPORT.md), [hardware plan](docs/HARDWARE_TEST_PLAN.md), [release](docs/RELEASE.md), [breaking changes](docs/BREAKING_CHANGES.md), [changelog](CHANGELOG.md).
+Documentation: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [security](docs/SECURITY.md), [limitations](docs/KNOWN_LIMITATIONS.md), [release](docs/RELEASE.md), [breaking changes](docs/BREAKING_CHANGES.md), [changelog](CHANGELOG.md). Automated verification runs in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions).
 
 Licensed under [Apache-2.0](LICENSE), selected by the owner.

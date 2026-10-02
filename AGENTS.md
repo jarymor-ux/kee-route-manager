@@ -16,6 +16,8 @@ This contract applies to the entire repository. Product name: **Kee Route Manage
 
 Execute clear, reversible repository work through completion. Delegate bounded independent work when it improves correctness; use separate file ownership and integrate before verification. Before cleanup/refactor, write a short plan and lock missing behavior with regressions. Prefer deletion and existing patterns, no unsolicited new dependencies.
 
+Do not create or commit review reports, test reports, raw logs, evidence directories, hardware result matrices or agent setup summaries. Keep necessary temporary evidence outside the checkout; communicate verification results in chat or CI. Repository documentation describes the product, configuration, installation and maintained limitations.
+
 Run targeted tests, then `./scripts/check.sh`, race, vet, Staticcheck, Govulncheck, ShellCheck, fuzz smoke, cross-build and signed fixture verification. Use Docker for isolated Linux integration; never test firewall/uninstall against the developer host. Read failures and fix root causes. Do not equate cross-build or fake tests with hardware acceptance.
 
 ## Secrets, releases and deployment

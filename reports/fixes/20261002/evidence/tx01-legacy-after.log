@@ -1,4 +1,0 @@
-=== RUN   TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity
---- PASS: TestLegacyInitialReplayWithoutIdentityRefusesAmbiguity (0.02s)
-PASS
-ok  	github.com/jarymor-ux/kee-route-manager/internal/core	1.125s

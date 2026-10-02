@@ -1,6 +1,0 @@
-=== RUN   TestCommaURIListPreservesUnicodeLabels
-    input_regression_test.go:236: URI byte boundary changed for "invalid-\xff-label": [{ID:6d1beeaead5a790f40d060a44701f7c4 Label:invalid-�-label,v Protocol:vless Address:example.com Port:443 UUID:11111111-1111-1111-1111-111111111111 Flow: Encryption:none Network:tcp Security:reality Fingerprint:chrome ServerName:example.com PublicKey:abc ShortID: SpiderX: WSHost: WSPath: ALPN:[] Sources:[provider]}] <nil>
---- FAIL: TestCommaURIListPreservesUnicodeLabels (0.00s)
-FAIL
-FAIL	github.com/jarymor-ux/kee-route-manager/internal/subscription	0.697s
-FAIL

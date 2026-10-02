@@ -1,9 +1,0 @@
-=== RUN   TestLegacyOversizedEventDoesNotBlockStateRecovery
-    event_limits_test.go:39: legacy oversized line blocks recovery: bufio.Scanner: token too long
---- FAIL: TestLegacyOversizedEventDoesNotBlockStateRecovery (0.01s)
-=== RUN   TestEventSerializedBoundIncludesFieldsAndEscaping
-    event_limits_test.go:87: reader/writer bound mismatch: 0 bufio.Scanner: token too long
---- FAIL: TestEventSerializedBoundIncludesFieldsAndEscaping (1.21s)
-FAIL
-FAIL	github.com/jarymor-ux/kee-route-manager/internal/store	1.576s
-FAIL

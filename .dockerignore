@@ -6,3 +6,11 @@ dist
 *.private.*
 credentials.json
 router-backups
+reports
+reviews
+audits
+evidence
+artifacts
+coverage
+*.log
+*.sarif

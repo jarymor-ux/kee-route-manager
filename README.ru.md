@@ -21,6 +21,6 @@ curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. Настоящая аппаратная матрица: [HARDWARE_TEST_PLAN.md](docs/HARDWARE_TEST_PLAN.md). Проверки и ограничения: [TEST_REPORT.md](docs/TEST_REPORT.md), [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Изменения: [CHANGELOG.md](CHANGELOG.md).
+Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. Ограничения: [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Автоматические проверки: [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions). Изменения: [CHANGELOG.md](CHANGELOG.md).
 
 Лицензия [Apache-2.0](LICENSE) выбрана владельцем.
