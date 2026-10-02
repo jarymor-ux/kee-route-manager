@@ -290,23 +290,10 @@ async function checkUpdate() {
     showTool(pendingUpdate.available
       ? `Доступна версия ${pendingUpdate.latest_version}. Текущая: ${pendingUpdate.current_version}.`
       : `Установлена актуальная версия ${pendingUpdate.current_version}.`);
-    $('#update-apply').classList.toggle('hidden', !pendingUpdate.available);
+    if (pendingUpdate.available) showTool(`Доступна версия ${pendingUpdate.latest_version}. Установите проверенный подписанный релиз по инструкции репозитория; автоматическая установка отключена в RC2.`);
   } catch (error) {
     pendingUpdate = null;
-    $('#update-apply').classList.add('hidden');
     showTool(`Ошибка проверки обновления: ${error.message}`);
-  }
-}
-
-async function applyUpdate() {
-  if (!pendingUpdate?.available) return;
-  if (!confirm(`Установить ${pendingUpdate.latest_version}? Панель кратковременно отключится.`)) return;
-  try {
-    await api('/api/v1/update/apply', { method: 'POST', body: JSON.stringify({ version: pendingUpdate.latest_version }) });
-    showTool('Обновление установлено. Служба перезапускается…');
-    setTimeout(() => location.reload(), 8000);
-  } catch (error) {
-    showTool(`Ошибка установки обновления: ${error.message}`);
   }
 }
 
@@ -363,7 +350,6 @@ $('#refresh-events').onclick = loadEvents;
 $('#system-logs').onclick = loadSystemLogs;
 $('#diagnostics').onclick = runDiagnostics;
 $('#update-check').onclick = checkUpdate;
-$('#update-apply').onclick = applyUpdate;
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 session();
