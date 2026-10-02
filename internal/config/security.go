@@ -297,8 +297,11 @@ func (c Config) validateController() []error {
 		}
 	}
 	if c.Update.Enabled {
+		if c.Update.GitHubRepository != "" && !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`).MatchString(c.Update.GitHubRepository) {
+			add(fmt.Errorf("update.github_repository must be owner/repository"))
+		}
 		for _, raw := range []string{c.Update.ManifestURL, c.Update.SignatureURL} {
-			if !validHTTPURL(raw, true) || strings.Contains(raw, "/releases/latest/") {
+			if raw != "" && (!validHTTPURL(raw, true) || strings.Contains(raw, "/releases/latest/")) {
 				add(fmt.Errorf("update URLs must be HTTPS channel-specific or versioned; /releases/latest is forbidden"))
 			}
 		}

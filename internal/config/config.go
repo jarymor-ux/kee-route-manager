@@ -199,6 +199,7 @@ type Speed struct {
 	Repetitions    int      `json:"repetitions"`
 }
 type Update struct {
+	GitHubRepository  string   `json:"github_repository"`
 	Enabled           bool     `json:"enabled"`
 	Channel           string   `json:"channel"`
 	ManifestURL       string   `json:"manifest_url"`
@@ -566,7 +567,7 @@ func (c Config) Validate() error {
 		if c.Update.Channel != "rc" && c.Update.Channel != "stable" {
 			es = append(es, fmt.Errorf("update.channel invalid"))
 		}
-		if c.Update.ManifestURL == "" || c.Update.SignatureURL == "" || c.Update.PublicKey == "" {
+		if c.Update.PublicKey == "" || c.Update.GitHubRepository == "" && (c.Update.ManifestURL == "" || c.Update.SignatureURL == "") {
 			es = append(es, fmt.Errorf("update URLs and public_key required"))
 		}
 	}

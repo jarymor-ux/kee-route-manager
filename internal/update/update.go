@@ -74,11 +74,21 @@ func (u *Updater) Check(ctx context.Context) (CheckResult, error) {
 	if !u.cfg.Enabled {
 		return CheckResult{}, fmt.Errorf("updates disabled")
 	}
-	manifestBytes, e := u.download(ctx, u.cfg.ManifestURL, 4<<20)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	manifestURL, signatureURL, releaseTag := u.cfg.ManifestURL, u.cfg.SignatureURL, ""
+	if u.cfg.GitHubRepository != "" {
+		var err error
+		manifestURL, signatureURL, releaseTag, err = u.githubManifestURLs(ctx)
+		if err != nil {
+			return CheckResult{}, err
+		}
+	}
+	manifestBytes, e := u.download(ctx, manifestURL, 4<<20)
 	if e != nil {
 		return CheckResult{}, e
 	}
-	sig, e := u.download(ctx, u.cfg.SignatureURL, 4096)
+	sig, e := u.download(ctx, signatureURL, 4096)
 	if e != nil {
 		return CheckResult{}, e
 	}
@@ -104,6 +114,9 @@ func (u *Updater) Check(ctx context.Context) (CheckResult, error) {
 	}
 	if m.SchemaVersion != 1 {
 		return CheckResult{}, fmt.Errorf("unsupported manifest schema")
+	}
+	if releaseTag != "" && strings.TrimPrefix(m.Version, "v") != strings.TrimPrefix(releaseTag, "v") {
+		return CheckResult{}, fmt.Errorf("signed manifest version does not match GitHub release tag")
 	}
 	if m.Channel != u.cfg.Channel {
 		return CheckResult{}, fmt.Errorf("manifest channel %q does not match %q", m.Channel, u.cfg.Channel)
@@ -166,6 +179,11 @@ func (u *Updater) download(ctx context.Context, raw string, max int64) ([]byte, 
 	if e != nil {
 		return nil, e
 	}
+	req.Header.Set("User-Agent", "Kee-Route-Manager")
+	if req.URL.Host == "api.github.com" {
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+	}
 	resp, e := u.client.Do(req)
 	if e != nil {
 		return nil, e
@@ -211,5 +229,5 @@ func decodeSignature(b []byte) ([]byte, error) {
 
 func secureURL(raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Fragment == ""
+	return err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Fragment == ""
 }

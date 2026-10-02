@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -66,5 +68,24 @@ func TestSecureUpdateURL(t *testing.T) {
 		if secureURL(raw) {
 			t.Errorf("unsafe %s", raw)
 		}
+	}
+}
+
+func TestUpdateRejectsHTTPSDowngradeRedirect(t *testing.T) {
+	plainHit := false
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { plainHit = true; w.Write([]byte("untrusted")) }))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, plain.URL, http.StatusFound) }))
+	defer secure.Close()
+	cfg := config.Default().Update
+	cfg.Enabled = true
+	cfg.ManifestURL = secure.URL
+	u := New(cfg, t.TempDir(), "1.0.0-rc.2")
+	u.client.Transport = secure.Client().Transport
+	if _, err := u.Check(context.Background()); err == nil {
+		t.Fatal("downgrade redirect accepted")
+	}
+	if plainHit {
+		t.Fatal("plaintext request was sent")
 	}
 }
