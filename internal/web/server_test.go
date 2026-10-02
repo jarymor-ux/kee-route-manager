@@ -35,9 +35,10 @@ func TestUIProxyRewritesOriginAndReferer(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := config.Default()
-	cfg.Instance.Role = "ui-proxy"
+	cfg.Instance.Role = "ui"
 	cfg.UIProxy.Upstream = upstream.URL
 	cfg.UIProxy.InsecureTLS = true
+	cfg.Web.TLS.Enabled = false
 	handler, err := ProxyHandler(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -61,5 +62,22 @@ func TestUIProxyRewritesOriginAndReferer(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotReferer, upstream.URL) {
 		t.Fatalf("referer = %q", gotReferer)
+	}
+}
+
+func TestEmbeddedAssetContract(t *testing.T) {
+	c := config.Default()
+	h, err := ProxyHandler(func() config.Config { c.UIProxy.Upstream = "http://127.0.0.1:1"; return c }())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ path, mime string }{{"/", "text/html"}, {"/assets/app.css", "text/css"}, {"/assets/app.js", "javascript"}, {"/sw.js", "javascript"}, {"/manifest.webmanifest", "manifest+json"}} {
+		t.Run(tc.path, func(t *testing.T) {
+			r := httptest.NewRecorder()
+			h.ServeHTTP(r, httptest.NewRequest("GET", tc.path, nil))
+			if r.Code != 200 || !strings.Contains(r.Header().Get("Content-Type"), tc.mime) {
+				t.Fatalf("%s: status=%d type=%q", tc.path, r.Code, r.Header().Get("Content-Type"))
+			}
+		})
 	}
 }
