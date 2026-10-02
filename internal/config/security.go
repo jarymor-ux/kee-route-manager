@@ -50,6 +50,16 @@ func durationError(name string, d Duration, max time.Duration) error {
 }
 func (c Config) validateCommon() []error {
 	var es []error
+	// Core authorizes both network and local requests. Embedded UI enablement
+	// must never determine whether controller authentication is validated.
+	if c.Instance.Role == "controller" {
+		if c.Web.CredentialsFile == "" {
+			es = append(es, fmt.Errorf("web.credentials_file is required for controller authorization"))
+		}
+		if c.Web.SessionTTL.Duration < 5*time.Minute || c.Web.SessionTTL.Duration > 30*24*time.Hour {
+			es = append(es, fmt.Errorf("web.session_ttl must be 5m..30d for controller authorization"))
+		}
+	}
 	if c.Web.Enabled {
 		host, _, err := listenPort(c.Web.Listen)
 		if err != nil {
@@ -58,9 +68,6 @@ func (c Config) validateCommon() []error {
 			es = append(es, fmt.Errorf("TLS-off web listener must be loopback"))
 		}
 		es = append(es, tlsErrors("web.tls", c.Web.TLS)...)
-		if c.Web.SessionTTL.Duration > 30*24*time.Hour {
-			es = append(es, fmt.Errorf("web.session_ttl must be <= 30d"))
-		}
 	}
 	if c.Instance.Role == "ui" || c.Instance.Role == "ui-proxy" {
 		if !c.UIProxy.Enabled || !c.Web.Enabled {

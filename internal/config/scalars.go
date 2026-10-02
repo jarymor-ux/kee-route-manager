@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -92,16 +91,4 @@ func FormatByteSize(v int64) string {
 	default:
 		return fmt.Sprintf("%dB", v)
 	}
-}
-
-func decodeStrictJSON(data []byte, target any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("unexpected trailing JSON")
-	}
-	return nil
 }

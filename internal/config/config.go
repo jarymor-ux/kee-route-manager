@@ -303,6 +303,39 @@ func (c *Config) ApplyPlatformDefaults() {
 		kind = DetectPlatform()
 		c.Platform.Kind = kind
 	}
+	if c.Instance.Role == "ui" {
+		prefix := ""
+		if kind == "keenetic" {
+			prefix = "/opt"
+		}
+		defaults := Default()
+		if c.Paths.StateDir == defaults.Paths.StateDir {
+			c.Paths.StateDir = prefix + "/var/lib/kee-route-manager-ui"
+		}
+		if c.Paths.CacheDir == defaults.Paths.CacheDir {
+			c.Paths.CacheDir = prefix + "/var/cache/kee-route-manager-ui"
+		}
+		if c.Paths.RunDir == defaults.Paths.RunDir {
+			if prefix != "" {
+				c.Paths.RunDir = prefix + "/var/run/kee-route-manager-ui"
+			} else {
+				c.Paths.RunDir = "/run/kee-route-manager-ui"
+			}
+		}
+		if c.Paths.LogFile == defaults.Paths.LogFile {
+			c.Paths.LogFile = filepath.Join(c.Paths.StateDir, "ui.log")
+		}
+		if c.Web.TLS.CertFile == defaults.Web.TLS.CertFile {
+			c.Web.TLS.CertFile = filepath.Join(c.Paths.StateDir, "tls.crt")
+		}
+		if c.Web.TLS.KeyFile == defaults.Web.TLS.KeyFile {
+			c.Web.TLS.KeyFile = filepath.Join(c.Paths.StateDir, "tls.key")
+		}
+		if c.Web.CredentialsFile == defaults.Web.CredentialsFile {
+			c.Web.CredentialsFile = ""
+		}
+		return
+	}
 	if c.Platform.Kind == "keenetic" {
 		if c.API.TLS.CertFile == "/etc/kee-route-manager/tls.crt" {
 			c.API.TLS.CertFile = "/opt/etc/kee-route-manager/tls.crt"
@@ -445,12 +478,6 @@ func (c Config) Validate() error {
 	if c.Web.Enabled {
 		if _, _, err := net.SplitHostPort(c.Web.Listen); err != nil {
 			es = append(es, fmt.Errorf("web.listen: %w", err))
-		}
-		if c.Web.CredentialsFile == "" {
-			es = append(es, fmt.Errorf("web.credentials_file is required"))
-		}
-		if c.Web.SessionTTL.Duration < 5*time.Minute {
-			es = append(es, fmt.Errorf("web.session_ttl must be at least 5m"))
 		}
 	}
 	if c.Instance.Role == "ui-proxy" || c.Instance.Role == "ui" {

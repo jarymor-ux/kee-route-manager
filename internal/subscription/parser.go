@@ -92,7 +92,7 @@ func ParseVLESS(raw, source string) (model.Node, error) {
 	}
 	n := model.Node{Label: label, Protocol: "vless", Address: host, Port: port, UUID: id, Flow: q.Get("flow"), Encryption: def(q.Get("encryption"), "none"), Network: network, Security: security, Fingerprint: q.Get("fp"), ServerName: def(q.Get("sni"), q.Get("serverName")), PublicKey: def(q.Get("pbk"), q.Get("publicKey")), ShortID: def(q.Get("sid"), q.Get("shortId")), SpiderX: def(q.Get("spx"), q.Get("spiderX")), WSHost: q.Get("host"), WSPath: q.Get("path"), Sources: []string{source}}
 	if security == "reality" && (n.ServerName == "" || n.PublicKey == "") {
-		return model.Node{}, fmt.Errorf("Reality node missing SNI/public key")
+		return model.Node{}, fmt.Errorf("reality node missing SNI/public key")
 	}
 	if network == "ws" && n.WSPath == "" {
 		n.WSPath = "/"

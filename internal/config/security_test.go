@@ -133,3 +133,59 @@ func TestLoadRelativeConfigResolvesAbsolutePaths(t *testing.T) {
 		t.Fatal("relative path retained")
 	}
 }
+
+func TestControllerAuthValidatedWithoutEmbeddedWeb(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		for _, tc := range []struct {
+			name   string
+			mutate func(*Config)
+		}{
+			{"missing credentials", func(c *Config) { c.Web.CredentialsFile = "" }},
+			{"zero session TTL", func(c *Config) { c.Web.SessionTTL = Dur(0) }},
+			{"negative session TTL", func(c *Config) { c.Web.SessionTTL = Dur(-time.Second) }},
+			{"short session TTL", func(c *Config) { c.Web.SessionTTL = Dur(time.Minute) }},
+			{"oversized session TTL", func(c *Config) { c.Web.SessionTTL = Dur(31 * 24 * time.Hour) }},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				c := validConfig(t)
+				c.Web.Enabled = false
+				c.API.Enabled = enabled
+				tc.mutate(&c)
+				if err := c.Validate(); err == nil {
+					t.Fatal("invalid controller auth accepted")
+				}
+			})
+		}
+	}
+}
+func TestMinimalUIDefaultsHaveSeparateNamespace(t *testing.T) {
+	for _, kind := range []string{"linux-systemd", "keenetic"} {
+		body := "instance:\n  role: ui\nplatform:\n  kind: " + kind + "\nui:\n  upstream: https://127.0.0.1:9443\n"
+		p := filepath.Join(t.TempDir(), "ui.yaml")
+		os.WriteFile(p, []byte(body), 0600)
+		c, err := Load(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, value := range map[string]string{"state": c.Paths.StateDir, "cache": c.Paths.CacheDir, "run": c.Paths.RunDir, "log": c.Paths.LogFile, "cert": c.Web.TLS.CertFile, "key": c.Web.TLS.KeyFile} {
+			if !strings.Contains(value, "kee-route-manager-ui") {
+				t.Errorf("%s uses core namespace: %s", name, value)
+			}
+		}
+		if c.Web.CredentialsFile != "" {
+			t.Fatal("UI carries core credentials path")
+		}
+	}
+}
+func TestUICustomPathsPreserved(t *testing.T) {
+	c := Default()
+	c.Instance.Role = "ui"
+	c.Paths.StateDir = "/custom/state"
+	c.Paths.LogFile = "/custom/log"
+	c.Web.TLS.CertFile = "/custom/cert"
+	c.Web.TLS.KeyFile = "/custom/key"
+	c.ApplyPlatformDefaults()
+	if c.Paths.StateDir != "/custom/state" || c.Paths.LogFile != "/custom/log" || c.Web.TLS.CertFile != "/custom/cert" || c.Web.TLS.KeyFile != "/custom/key" {
+		t.Fatal("custom UI paths replaced")
+	}
+}
