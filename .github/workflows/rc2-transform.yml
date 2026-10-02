@@ -29,6 +29,7 @@ jobs:
           set -euo pipefail
           cat scripts/rc2_parts/* | tr -d '\n' | base64 -d | gzip -dc > scripts/rc2_phase2.py
           python3 scripts/rc2_phase2.py
+          sed -i '/"strings"/d' internal/xray/config_test.go
           rm -rf scripts/rc2_phase2.py scripts/rc2_phase2.py.gz scripts/rc2_parts .github/workflows/rc2-transform.yml
           gofmt -w cmd internal
           go test ./...
