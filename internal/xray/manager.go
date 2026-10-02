@@ -468,23 +468,21 @@ func (m *Manager) restore(dir string) error {
 	if len(paths) == 0 || meta == nil {
 		return fmt.Errorf("snapshot metadata is empty")
 	}
-	expected := map[string]bool{}
-	for _, path := range m.snapshotPaths() {
-		expected[path] = true
+	targets, e := m.snapshotTargets(paths)
+	if e != nil {
+		return e
 	}
 	for i, path := range paths {
-		if !expected[path] {
-			return fmt.Errorf("snapshot contains unexpected path %q", path)
-		}
+		target := targets[i]
 		if meta[path] {
 			source := filepath.Join(dir, fmt.Sprintf("%d", i))
 			if _, statErr := os.Stat(source); statErr != nil {
 				return fmt.Errorf("snapshot content for %q is missing: %w", path, statErr)
 			}
-			if e = copyFile(source, path, 0600); e != nil {
+			if e = copyFile(source, target, 0600); e != nil {
 				return e
 			}
-		} else if e = os.Remove(path); e != nil && !errors.Is(e, os.ErrNotExist) {
+		} else if e = os.Remove(target); e != nil && !errors.Is(e, os.ErrNotExist) {
 			return e
 		}
 	}
@@ -825,29 +823,27 @@ func (m *Manager) reverseRestore(snapshot string) error {
 	if err = json.Unmarshal(b, &meta); err != nil {
 		return err
 	}
-	expected := map[string]bool{}
-	for _, path := range m.snapshotPaths() {
-		expected[path] = true
+	targets, err := m.snapshotTargets(paths)
+	if err != nil {
+		return err
 	}
 	for i, path := range paths {
-		if !expected[path] {
-			return fmt.Errorf("snapshot contains unexpected path")
-		}
-		if path == m.cfg.Xray.BaseRoutingFile {
+		target := targets[i]
+		if target == m.cfg.Xray.BaseRoutingFile {
 			if !meta[path] {
 				return fmt.Errorf("original routing unavailable")
 			}
-			if err = m.reverseBaseRoute(filepath.Join(snapshot, fmt.Sprint(i)), path); err != nil {
+			if err = m.reverseBaseRoute(filepath.Join(snapshot, fmt.Sprint(i)), target); err != nil {
 				return err
 			}
 			continue
 		}
 		if meta[path] {
-			if err = copyFile(filepath.Join(snapshot, fmt.Sprint(i)), path, 0600); err != nil {
+			if err = copyFile(filepath.Join(snapshot, fmt.Sprint(i)), target, 0600); err != nil {
 				return err
 			}
 		} else {
-			if err = os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err = os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 		}
@@ -973,8 +969,12 @@ func (m *Manager) checkAdoptedRouting() error {
 	if err = json.Unmarshal(b, &paths); err != nil {
 		return err
 	}
+	targets, err := m.snapshotTargets(paths)
+	if err != nil {
+		return err
+	}
 	originalPath := ""
-	for i, path := range paths {
+	for i, path := range targets {
 		if path == m.cfg.Xray.BaseRoutingFile {
 			originalPath = filepath.Join(originalDir, fmt.Sprint(i))
 		}

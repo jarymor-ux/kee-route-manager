@@ -99,13 +99,25 @@ function renderStatus(data) {
   const capabilities = data.capabilities || {};
 
   $('#version').textContent = `v${data.version}`;
-  $('#status-dot').className = `dot ${running ? (state.direct_mode ? 'warn' : '') : 'bad'}`;
-  $('#status-text').textContent = running ? (state.direct_mode ? 'Прямой маршрут' : 'VPN активен') : 'Xray остановлен';
-  $('#route-mode').textContent = state.direct_mode ? 'DIRECT' : 'VPN';
   const activeSlot = state.pool?.find((slot) => slot.index === state.active_slot);
-  $('#active-node').textContent = state.direct_mode
-    ? 'Трафик временно идёт напрямую'
-    : activeSlot?.label || state.active_node_id || 'Не выбран';
+  if (state.automatic_routing_paused) {
+    $('#status-dot').className = 'dot warn';
+    $('#status-text').textContent = 'Управление приостановлено';
+    $('#route-mode').textContent = 'ПАУЗА';
+    $('#active-node').textContent = 'Запустите тестирование, чтобы возобновить управление';
+  } else if (!state.xray_configured) {
+    $('#status-dot').className = 'dot warn';
+    $('#status-text').textContent = 'Маршрут не настроен';
+    $('#route-mode').textContent = 'НЕ НАСТРОЕН';
+    $('#active-node').textContent = 'Запустите тестирование для выбора узла';
+  } else {
+    $('#status-dot').className = `dot ${running ? (state.direct_mode ? 'warn' : '') : 'bad'}`;
+    $('#status-text').textContent = running ? (state.direct_mode ? 'Прямой маршрут' : 'VPN активен') : 'Xray остановлен';
+    $('#route-mode').textContent = state.direct_mode ? 'DIRECT' : 'VPN';
+    $('#active-node').textContent = state.direct_mode
+      ? 'Трафик временно идёт напрямую'
+      : activeSlot?.label || state.active_node_id || 'Не выбран';
+  }
   $('#health').textContent = state.last_health_at
     ? (state.consecutive_failures ? `Ошибка ×${state.consecutive_failures}` : 'В норме')
     : 'Нет данных';

@@ -114,3 +114,126 @@ func TestPreviousRecoveryIncludesMatchingNodeCache(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletedRestoreRecoveryUsesJournal(t *testing.T) {
+	for _, damage := range []string{"primary-corrupt", "primary-missing", "both-corrupt", "both-missing", "cache-corrupt"} {
+		t.Run(damage, func(t *testing.T) {
+			s, initial := completedRestoreFixture(t)
+			journal, err := os.ReadFile(s.Path("transaction.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if damage == "primary-missing" || damage == "both-missing" {
+				err = os.Remove(s.Path("state.json"))
+			} else {
+				err = os.WriteFile(s.Path("state.json"), []byte("corrupted"), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch damage {
+			case "both-corrupt":
+				err = os.WriteFile(s.Path("state.previous.json"), []byte("corrupted"), 0600)
+			case "both-missing":
+				err = os.Remove(s.Path("state.previous.json"))
+			case "cache-corrupt":
+				err = os.WriteFile(s.CachePath("nodes.json"), []byte("corrupted"), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				s, err = New(s.Path(""), s.CachePath(""), initial)
+				if err != nil {
+					t.Fatal(err)
+				}
+				state := s.State()
+				if !state.AutomaticRoutingPaused || state.XrayConfigured || state.ActiveNodeID != "" || len(state.Pool) != 0 || len(s.Nodes()) != 0 {
+					t.Fatalf("completed restore lost during recovery: %+v", state)
+				}
+				after, err := os.ReadFile(s.Path("transaction.json"))
+				if err != nil || string(after) != string(journal) {
+					t.Fatal("recovery changed the journal")
+				}
+			}
+		})
+	}
+}
+
+func TestRestoreRecoveryRetainsPendingManualResume(t *testing.T) {
+	s, initial := completedRestoreFixture(t)
+	desired := initial
+	desired.XrayConfigured = true
+	desired.ActiveSlot = 0
+	desired.ActiveNodeID = "resumed"
+	desired.Pool[0].NodeID = "resumed"
+	desired.XrayGeneration = 1
+	tx := Transaction{ID: "manual-resume", Kind: "pool", Before: s.State(), Desired: desired, Nodes: []model.Node{{ID: "resumed"}}}
+	if err := s.PrepareTransaction(tx); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := os.ReadFile(s.Path("transaction.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(s.Path("state.json"), []byte("corrupted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := New(s.Path(""), s.CachePath(""), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := recovered.PendingTransaction()
+	if err != nil || pending == nil || pending.ID != tx.ID || pending.Stage != Prepared || pending.Desired.AutomaticRoutingPaused {
+		t.Fatalf("manual resume intent lost: %+v %v", pending, err)
+	}
+	after, err := os.ReadFile(s.Path("transaction.json"))
+	if err != nil || string(after) != string(journal) {
+		t.Fatal("recovery changed the pending resume journal")
+	}
+}
+
+func completedRestoreFixture(t *testing.T) (*Store, model.State) {
+	t.Helper()
+	d := t.TempDir()
+	initial := model.NewState("rc2", "slot-", 1)
+	s, err := New(d, d, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReplaceNodes([]model.Node{{ID: "old"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(state *model.State) error {
+		state.XrayConfigured = true
+		state.ActiveSlot = 0
+		state.ActiveNodeID = "old"
+		state.Pool[0].NodeID = "old"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	desired := model.NewState("rc2", "slot-", 1)
+	desired.Pool = []model.Slot{}
+	desired.AutomaticRoutingPaused = true
+	if err = s.PrepareTransaction(Transaction{ID: "restore", Kind: "restore", Before: s.State(), Desired: desired}); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{XrayFilesStaged, XrayRuntimeApplied, FirewallApplied, SelectionApplied} {
+		if err = s.AdvanceTransaction(stage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = s.ReplaceNodes(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(state *model.State) error { *state = desired; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{StateCommitted, Done} {
+		if err = s.AdvanceTransaction(stage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s, initial
+}

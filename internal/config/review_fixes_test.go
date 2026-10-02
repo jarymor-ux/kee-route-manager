@@ -44,3 +44,18 @@ func TestXrayAcceptsSamePhysicalConfdirAliases(t *testing.T) {
 		t.Fatalf("same physical directory refused: %v", err)
 	}
 }
+
+func TestXrayRejectsReservedSelectionPrefix(t *testing.T) {
+	for _, mutate := range []func(*Config){
+		func(c *Config) { c.Xray.ManagedDirectTag = "krm-persisted-selection" },
+		func(c *Config) { c.Xray.ManagedDirectTag = "krm-persisted-selection-direct" },
+		func(c *Config) { c.Xray.SlotTagPrefix = "krm-persisted-selection-" },
+		func(c *Config) { c.Xray.APITag = "krm-persisted-selection-api" },
+	} {
+		c := validConfig(t)
+		mutate(&c)
+		if err := c.Validate(); err == nil {
+			t.Fatalf("reserved selection prefix accepted: %+v", c.Xray)
+		}
+	}
+}

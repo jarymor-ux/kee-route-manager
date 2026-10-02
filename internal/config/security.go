@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// XraySelectionTag owns its entire prefix because balancer selectors use prefix matching.
+const XraySelectionTag = "krm-persisted-selection"
+
 func loopback(host string) bool { ip := net.ParseIP(host); return ip != nil && ip.IsLoopback() }
 func listenPort(addr string) (string, int, error) {
 	host, raw, err := net.SplitHostPort(addr)
@@ -289,8 +292,8 @@ func (c Config) validateController() []error {
 	tagRE := regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	tags := map[string]bool{}
 	for _, tag := range append([]string{c.Xray.APITag, c.Xray.BalancerTag, c.Xray.ManagedDirectTag}, slotTags(c)...) {
-		if !tagRE.MatchString(tag) || tags[tag] {
-			add(fmt.Errorf("invalid or duplicate managed Xray tag %q", tag))
+		if !tagRE.MatchString(tag) || tags[tag] || strings.HasPrefix(tag, XraySelectionTag) {
+			add(fmt.Errorf("invalid, duplicate, or reserved managed Xray tag %q", tag))
 		}
 		tags[tag] = true
 	}

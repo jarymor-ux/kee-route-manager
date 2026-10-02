@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve completed restore intent when recovering damaged state; release finished operations after persistence failures and report those failures.
+- Reserve the persistent Xray selection prefix and accept equivalent directory aliases for snapshot restore, rollback and journal replay without relaxing file identity checks.
+- Prevent unchanged subscriptions with retained pool nodes from repeatedly scheduling benchmarks; enforce cache TTL before normal reuse.
+- Show paused and unconfigured routing explicitly in the UI.
 - Persist automatic-routing pause after restore; require a successful manual benchmark to resume, preventing scheduler races during uninstall.
 - Refresh generated Xray configuration when API/inbound/routing settings change and reject unsupported nested config paths.
 - Reset consecutive VPN recovery evidence after Xray outages and retain the failure diagnostic during independent bypass.

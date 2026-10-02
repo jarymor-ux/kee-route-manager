@@ -111,7 +111,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	st.ID = s.ID
 	st.Name = s.Name
 	if !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
-		if xs, c, e := f.load(s.ID); e == nil {
+		if xs, c, e := f.load(s.ID); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
 			st.UsingCache = true
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)

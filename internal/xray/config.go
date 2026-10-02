@@ -10,7 +10,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
 
-const selectionTag = "krm-persisted-selection"
+const selectionTag = config.XraySelectionTag
 
 type Managed struct{ API, Inbounds, Outbounds, Routing []byte }
 

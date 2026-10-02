@@ -130,18 +130,31 @@ func (c *Coordinator) mutate(id string, fn func(*Operation)) error {
 		return fmt.Errorf("operation not current")
 	}
 	fn(c.current)
+	terminal := c.current.Status != "running"
+	if terminal {
+		// Completion has released the execution slot even if its audit record
+		// cannot be saved. Keep the persistence failure visible in memory.
+		defer func() {
+			x := *c.current
+			c.last = &x
+			c.current = nil
+		}()
+	}
 	mustWrite := c.current.Status != "running" || c.current.Stage != c.lastStage || time.Since(c.lastWrite) >= 500*time.Millisecond
 	if mustWrite {
 		if err := c.write(*c.current); err != nil {
+			if terminal {
+				c.current.Status = "unknown"
+				failure := fmt.Errorf("operation completion persistence failed: %w", err)
+				if c.current.Error != "" {
+					failure = fmt.Errorf("%s; %w", c.current.Error, failure)
+				}
+				c.current.Error = redact.Text(failure.Error())
+			}
 			return err
 		}
 		c.lastWrite = time.Now()
 		c.lastStage = c.current.Stage
-	}
-	if c.current.Status != "running" {
-		x := *c.current
-		c.last = &x
-		c.current = nil
 	}
 	return nil
 }

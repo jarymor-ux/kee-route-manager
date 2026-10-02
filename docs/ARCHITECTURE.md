@@ -18,6 +18,10 @@ TunnelCore exposes lifecycle/capabilities/pool/selection/probe/readiness/actual-
 
 Restore also durably pauses automatic routing until a successful explicit benchmark. Startup, source refresh and scheduled benchmark loops honor that pause so uninstall cannot race with routing reinstallation. Xray readiness failures reset consecutive recovery evidence.
 
+When the primary state cannot be loaded, a validated completed restore journal preserves its desired paused state instead of reverting to a pre-restore snapshot. Pending manual-resume journals remain subject to normal runtime/file reconciliation. A failed operation-completion write releases the execution reservation, reports the error and exposes an unknown completion status; it does not authorize overlapping running operations.
+
+Subscription comparisons include deliberately retained pool nodes so unchanged providers do not trigger repeated benchmarks. Normal cache reuse stops at its TTL; expired entries remain emergency candidates only when no non-emergency provider nodes are available. Xray's persistent-selection tag prefix is reserved, and snapshot/replay paths may use equivalent directory aliases only when the entire owned file set and recorded content identities still match.
+
 Managed nft replacement is one validated transaction in the owned table; route ownership metadata protects foreign tables/rules. Existing interception remains operator-managed. [nftables atomic replacement](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement) documents the transaction contract.
 
 Updates authenticate channel manifests but never replace running executables in RC2. Production installers are part of the same signed release payload; readiness and manual rollback remain operator/agent visible.

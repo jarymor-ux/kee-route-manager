@@ -63,7 +63,8 @@ func (s *Store) load() error {
 		return err
 	}
 	var invalid bool
-	var recoveredPrevious bool
+	var recoveredState bool
+	var loadedPrimary bool
 	for _, name := range []string{"state.json", "state.previous.json"} {
 		b, err := os.ReadFile(filepath.Join(s.stateDir, name))
 		if errors.Is(err, os.ErrNotExist) {
@@ -97,7 +98,8 @@ func (s *Store) load() error {
 		}
 		s.state = candidate
 		s.nodes = candidateNodes
-		recoveredPrevious = name == "state.previous.json"
+		loadedPrimary = name == "state.json"
+		recoveredState = name == "state.previous.json"
 		if s.state.Measurements == nil {
 			s.state.Measurements = map[string]model.Measurement{}
 		}
@@ -111,7 +113,24 @@ func (s *Store) load() error {
 		s.state = clone(s.initial)
 		s.state.XrayLastError = "state copies invalid; routing reconciliation required"
 	}
-	if recoveredPrevious {
+	if !loadedPrimary {
+		tx, err := s.readTransaction()
+		if err != nil {
+			return err
+		}
+		// An older snapshot can predate a successful restore. Its completed
+		// journal still proves the pause, so do not recover routing permission
+		// from that snapshot. Pending journals remain for startup replay.
+		if tx != nil && tx.Stage == Done && tx.Kind == "restore" && tx.Desired.AutomaticRoutingPaused && !tx.Desired.XrayConfigured {
+			s.state = clone(tx.Desired)
+			s.nodes = map[string]model.Node{}
+			for _, node := range tx.Nodes {
+				s.nodes[node.ID] = node
+			}
+			recoveredState = true
+		}
+	}
+	if recoveredState {
 		xs := make([]model.Node, 0, len(s.nodes))
 		for _, node := range s.nodes {
 			xs = append(xs, node)

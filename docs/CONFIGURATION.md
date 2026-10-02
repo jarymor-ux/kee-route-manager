@@ -10,11 +10,13 @@ Failover: `detection_interval: 5s`, `failure_threshold: 2`, `probe_timeout: 2s`,
 
 `paths.log_file` is bounded to 1MiB plus three backups; private log permissions. Runtime directories/state/cache hold sensitive data. For systemd UI, writable TLS/log files belong in `/var/lib/kee-route-manager-ui`, not root-private core config.
 
-Xray `managed_dir` must resolve to the same directory as absolute `config_dir`; `base_routing_file`, when set, must be a JSON file directly in that directory. Nested paths are rejected because Xray's `-confdir` loading is not recursive. API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. Firewall `existing` never claims independent bypass; `managed` requires own table/mark/policy-route ownership and correct redirect/TProxy inbounds.
+Xray `managed_dir` must resolve to the same directory as absolute `config_dir`; `base_routing_file`, when set, must be a JSON file directly in that directory. Nested paths are rejected because Xray's `-confdir` loading is not recursive. Equivalent directory symlink aliases also work for restore, rollback and pending journal replay; unexpected/duplicate targets and changed file identities remain rejected. API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique and cannot begin with the reserved `krm-persisted-selection` prefix. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. Firewall `existing` never claims independent bypass; `managed` requires own table/mark/policy-route ownership and correct redirect/TProxy inbounds.
 
 After changing generated Xray API, probe or health configuration and restarting the daemon, the next benchmark refreshes the full managed configuration. This requires an Xray restart and may interrupt existing connections; unchanged configurations continue to use the configured pool-update mechanism.
 
 `subscriptions.max_nodes_per_source: 0` uses automatic fair share; round-robin merge preserves provider representation before global max_nodes. Provider diversity accounts for all node source memberships.
+
+Normal subscription cache reuse is bounded by both `refresh_interval` and `cache_ttl`. Expiry triggers a fresh fetch even before the refresh interval ends. If fetching fails, expired entries are marked unavailable and used only as emergency cache when no other provider nodes are available.
 
 Update: `enabled: false` recommended in RC2; `auto_apply` must be false. `github_repository: jarymor-ux/kee-route-manager` can discover highest RC/stable matching prerelease channel from up to 100 recent releases. Selected signed manifest version must match tag, URLs HTTPS; `/releases/latest` rejected. Manual versioned URLs remain supported when repository discovery omitted.
 

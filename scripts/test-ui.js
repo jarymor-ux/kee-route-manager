@@ -42,7 +42,52 @@ function visible(h) {
   return [...h.element.innerHTML.matchAll(/<strong>event_(\d+)<\/strong>/g)].map((match) => Number(match[1]));
 }
 
+function statusChecks() {
+  const start = source.indexOf('function renderStatus(data)');
+  const end = source.indexOf('\nfunction renderPool', start);
+  assert(start >= 0 && end > start, 'renderStatus must be present');
+  const elements = new Map();
+  const select = (selector) => {
+    if (!elements.has(selector)) {
+      elements.set(selector, { textContent: '', className: '', style: {}, classList: { toggle() {} } });
+    }
+    return elements.get(selector);
+  };
+  const context = vm.createContext({ $: select, renderPool() {}, renderSources() {}, fmtAge: () => '—' });
+  vm.runInContext(source.slice(start, end), context);
+  const render = (state, running = true) => {
+    context.data = { version: 'test', xray_running: running, capabilities: {}, state };
+    vm.runInContext('renderStatus(data)', context);
+    return { status: select('#status-text').textContent, route: select('#route-mode').textContent, active: select('#active-node').textContent, dot: select('#status-dot').className };
+  };
+  const restored = { xray_configured: false, automatic_routing_paused: true, direct_mode: false, active_slot: -1, pool: [] };
+  for (const running of [false, true]) {
+    const paused = render(restored, running);
+    assert.equal(paused.status, 'Управление приостановлено');
+    assert.equal(paused.route, 'ПАУЗА');
+    assert.equal(paused.dot, 'dot warn');
+    assert.equal(paused.active, 'Запустите тестирование, чтобы возобновить управление');
+  }
+  const unconfigured = render({ ...restored, automatic_routing_paused: false });
+  assert.equal(unconfigured.status, 'Маршрут не настроен');
+  assert.equal(unconfigured.route, 'НЕ НАСТРОЕН');
+  assert.equal(unconfigured.dot, 'dot warn');
+  assert.equal(unconfigured.active, 'Запустите тестирование для выбора узла');
+  const vpnState = { xray_configured: true, automatic_routing_paused: false, direct_mode: false, active_slot: 0, active_node_id: 'node', pool: [{ index: 0, node_id: 'node', label: 'Node' }] };
+  const vpn = render(vpnState);
+  assert.equal(vpn.status, 'VPN активен');
+  assert.equal(vpn.route, 'VPN');
+  assert.equal(vpn.active, 'Node');
+  const direct = render({ ...vpnState, direct_mode: true, active_slot: -1, active_node_id: '' });
+  assert.equal(direct.status, 'Прямой маршрут');
+  assert.equal(direct.route, 'DIRECT');
+  assert.equal(direct.dot, 'dot warn');
+  assert.equal(direct.active, 'Трафик временно идёт напрямую');
+  assert.equal(render(vpnState, false).status, 'Xray остановлен');
+}
+
 async function main() {
+  statusChecks();
   for (const count of [0, 301, 1000, 2000]) {
     const events = Array.from({ length: count }, (_, index) => event(index + 1));
     const h = harness((after, limit) => events.filter((item) => item.sequence > after).slice(0, limit));
@@ -91,7 +136,7 @@ async function main() {
   assert.equal(endless.element.innerHTML, 'previous events');
   assert.equal(endless.errors.length, 1);
 
-  console.log('UI event pagination checks passed.');
+  console.log('UI status and event pagination checks passed.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

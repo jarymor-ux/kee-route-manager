@@ -72,6 +72,14 @@ func (s *Store) AdvanceTransaction(stage string) error {
 	return writeJSON(s.Path("transaction.json"), tx)
 }
 func (s *Store) PendingTransaction() (*Transaction, error) {
+	tx, err := s.readTransaction()
+	if err != nil || tx == nil || tx.Stage == Done {
+		return nil, err
+	}
+	return tx, nil
+}
+
+func (s *Store) readTransaction() (*Transaction, error) {
 	b, err := os.ReadFile(s.Path("transaction.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -92,9 +100,6 @@ func (s *Store) PendingTransaction() (*Transaction, error) {
 	}
 	if err = s.validateTransaction(tx); err != nil {
 		return nil, err
-	}
-	if tx.Stage == Done {
-		return nil, nil
 	}
 	return &tx, nil
 }

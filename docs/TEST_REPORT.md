@@ -29,6 +29,8 @@ Source fixes after the immutable RC2 release add coverage for durable restore pa
 
 Published RC tags and assets are unchanged. This source verification does not qualify existing RC2 binaries or provide hardware acceptance.
 
+The second review adds regressions for primary/previous state and node-cache damage after completed restore, pending manual resume, operation-completion write failures and subsequent recovery, unchanged subscriptions with retained pool nodes, reserved selection-prefix validation, equivalent directory aliases during restore/rollback/replay, duplicate/outside snapshot rejection and file-hash drift, cache TTL expiry with emergency fallback, and paused/unconfigured UI status. See the focused tests in `internal/core`, `internal/store`, `internal/operation`, `internal/config`, `internal/xray`, `internal/subscription` and `scripts/test-ui.js`.
+
 The first GitHub race run exposed test teardown that removed a temporary directory before a benchmark's final event write. The test now joins the manager before cleanup, including failure paths; targeted race repetitions cover this fix. Release publication requires green CI on the exact merged commit; evidence is available in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions) and [PR #3](https://github.com/jarymor-ux/kee-route-manager/pull/3).
 
 ## Hardware acceptance — pending

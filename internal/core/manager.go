@@ -27,31 +27,32 @@ type sourceFetcher interface {
 }
 
 type Manager struct {
-	cfg             config.Config
-	version         string
-	store           *store.Store
-	ops             *operation.Coordinator
-	platform        platform.Adapter
-	xray            tunnel.TunnelCore
-	fetcher         sourceFetcher
-	bench           benchmarkRunner
-	ctx             context.Context
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
-	mu              sync.RWMutex
-	routeMu         sync.Mutex
-	lifeMu          sync.Mutex
-	stopping        bool
-	metrics         platform.Metrics
-	clients         []platform.Client
-	clientsUpdated  time.Time
-	clientsError    string
-	recoveryNode    string
-	recoveryCount   int
-	benchmarkQueued bool
-	xrayRunning     bool
-	reconciled      bool
-	readinessErr    error
+	cfg                  config.Config
+	version              string
+	store                *store.Store
+	ops                  *operation.Coordinator
+	platform             platform.Adapter
+	xray                 tunnel.TunnelCore
+	fetcher              sourceFetcher
+	bench                benchmarkRunner
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	wg                   sync.WaitGroup
+	mu                   sync.RWMutex
+	routeMu              sync.Mutex
+	lifeMu               sync.Mutex
+	stopping             bool
+	metrics              platform.Metrics
+	clients              []platform.Client
+	clientsUpdated       time.Time
+	clientsError         string
+	recoveryNode         string
+	recoveryCount        int
+	benchmarkQueued      bool
+	benchmarkSourceNodes []model.Node
+	xrayRunning          bool
+	reconciled           bool
+	readinessErr         error
 }
 
 type Status struct {
@@ -209,30 +210,33 @@ func (m *Manager) RequestBenchmark(ctx context.Context, source string) (*operati
 }
 func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *operation.Handle) error {
 	var err error
+	var fetched subscription.Result
 	started := time.Now().UTC()
 	m.log("info", "benchmark.started", "benchmark started", h.ID(), map[string]any{"mode": mode, "source": source})
-	finish := func(runErr error) {
-		if runErr != nil {
-			_ = h.Fail(runErr)
-			m.log("error", "benchmark.failed", runErr.Error(), h.ID(), nil)
-			return
+	finish := func(runErr error) error {
+		completionErr := m.finishOperation(h, runErr, "benchmark complete")
+		if completionErr != nil {
+			m.log("error", "benchmark.failed", completionErr.Error(), h.ID(), nil)
+			return completionErr
 		}
-		_ = h.Success("benchmark complete")
 		m.log("info", "benchmark.completed", "benchmark complete", h.ID(), nil)
+		m.mu.Lock()
+		m.benchmarkSourceNodes = append([]model.Node(nil), fetched.Nodes...)
+		m.mu.Unlock()
+		return nil
 	}
 
 	_ = h.Update("subscriptions", 0, len(m.cfg.Subscriptions.Sources), "fetching subscriptions")
 	beforeFetch := m.store.State()
 	forceFetch := mode != "emergency"
-	fetched := m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
+	fetched = m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
 	_ = m.store.Update(func(s *model.State) error {
 		s.Sources = fetched.States
 		return nil
 	})
 	if len(fetched.Nodes) == 0 {
 		err = fmt.Errorf("no nodes available from subscriptions or cache")
-		finish(err)
-		return err
+		return finish(err)
 	}
 
 	oldNodes := m.store.Nodes()
@@ -249,8 +253,7 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 		_ = h.Update(stage, current, total, msg)
 	})
 	if err != nil {
-		finish(err)
-		return err
+		return finish(err)
 	}
 
 	// Preserve prior measurements for a currently active node that disappeared from a
@@ -272,8 +275,7 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	// running. Re-read state under the routing mutation lock and retain that node.
 	state := m.store.State()
 	if mode != "manual" && state.AutomaticRoutingPaused {
-		finish(nil)
-		return nil
+		return finish(nil)
 	}
 	// Choose an authorized replacement before active retention can fill a single slot.
 	if state.ActiveNodeID != "" {
@@ -296,16 +298,14 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 			}
 		}
 		if err = m.store.ReplaceNodes(retained); err != nil {
-			finish(err)
-			return err
+			return finish(err)
 		}
 		err = m.store.Update(func(st *model.State) error {
 			st.Measurements = keep
 			st.LastBenchmark = model.BenchmarkSummary{OperationID: h.ID(), StartedAt: started, FinishedAt: time.Now().UTC(), Mode: mode, NodeCount: len(fetched.Nodes), TestedCount: len(results), Results: trimResults(results, 100)}
 			return nil
 		})
-		finish(err)
-		return err
+		return finish(err)
 	}
 	desired := -1
 	reason := ""
@@ -410,8 +410,7 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	}
 	_ = update(&next)
 	err = m.commitRoute(ctx, next, retainedNodes, "pool")
-	finish(err)
-	return err
+	return finish(err)
 }
 
 func (m *Manager) ForceBenchmark(ctx context.Context) error {
@@ -477,7 +476,16 @@ func (m *Manager) refreshSources() {
 			break
 		}
 	}
-	if recovered || nodeSetChanged(m.store.Nodes(), result.Nodes) {
+	// Track the last processed subscription set separately from nodes retained
+	// for routing. A removed fallback triggers once; an intentionally retained
+	// node does not create a change on every subsequent poll.
+	m.mu.RLock()
+	previous := m.benchmarkSourceNodes
+	m.mu.RUnlock()
+	if previous == nil {
+		previous = m.store.Nodes()
+	}
+	if recovered || nodeSetChanged(previous, result.Nodes) {
 		m.queueBenchmark("source-refresh")
 	}
 }
@@ -872,14 +880,26 @@ func (m *Manager) RunAction(ctx context.Context, kind, source string, fn func(co
 	m.log("info", "action.started", kind+" started", h.ID(), nil)
 	_ = h.Update("running", 0, 1, kind)
 	err = fn(ctx)
+	err = m.finishOperation(h, err, kind+" complete")
 	if err != nil {
-		_ = h.Fail(err)
 		m.log("error", "action.failed", err.Error(), h.ID(), map[string]any{"type": kind})
 		return err
 	}
-	_ = h.Success(kind + " complete")
 	m.log("info", "action.completed", kind+" complete", h.ID(), nil)
 	return nil
+}
+
+func (m *Manager) finishOperation(h *operation.Handle, runErr error, message string) error {
+	var err error
+	if runErr != nil {
+		err = h.Fail(runErr)
+	} else {
+		err = h.Success(message)
+	}
+	if err != nil {
+		m.log("error", "operation.persistence_failed", err.Error(), h.ID(), nil)
+	}
+	return errors.Join(runErr, err)
 }
 func (m *Manager) RestoreOriginalXray(ctx context.Context) error {
 	return m.RunAction(ctx, "xray-restore-original", "cli", func(c context.Context) error {

@@ -75,19 +75,19 @@ func (m *Manager) PrepareReplay(ctx context.Context, desired tunnel.DesiredPool,
 		if len(paths) != len(proof) || meta == nil {
 			return nil, fmt.Errorf("invalid original replay paths")
 		}
-		seen := map[string]bool{}
+		targets, err := m.snapshotTargets(paths)
+		if err != nil {
+			return nil, err
+		}
 		for i, path := range paths {
-			f, ok := proof[path]
-			if !ok || seen[path] {
-				return nil, fmt.Errorf("snapshot contains unexpected path")
-			}
-			seen[path] = true
-			if path == m.cfg.Xray.BaseRoutingFile {
+			target := targets[i]
+			f := proof[target]
+			if target == m.cfg.Xray.BaseRoutingFile {
 				if !meta[path] {
 					return nil, fmt.Errorf("original routing unavailable")
 				}
 				planned := filepath.Join(tmp, "routing.json")
-				if err = copyFile(path, planned, 0600); err != nil {
+				if err = copyFile(target, planned, 0600); err != nil {
 					return nil, err
 				}
 				if err = m.reverseBaseRoute(filepath.Join(original, fmt.Sprint(i)), planned); err != nil {
@@ -105,7 +105,7 @@ func (m *Manager) PrepareReplay(ctx context.Context, desired tunnel.DesiredPool,
 			if err != nil {
 				return nil, err
 			}
-			proof[path] = f
+			proof[target] = f
 		}
 		return proof, nil
 	}
@@ -150,15 +150,16 @@ func (m *Manager) ValidateReplay(ctx context.Context, proof tunnel.ReplayProof) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	paths := m.snapshotPaths()
-	if len(proof) != len(paths) {
-		return fmt.Errorf("incomplete tunnel replay proof")
+	recorded := make([]string, 0, len(proof))
+	for path := range proof {
+		recorded = append(recorded, path)
 	}
-	for _, path := range paths {
-		f, ok := proof[path]
-		if !ok {
-			return fmt.Errorf("missing tunnel replay proof")
-		}
+	targets, err := m.snapshotTargets(recorded)
+	if err != nil {
+		return err
+	}
+	for i, path := range targets {
+		f := proof[recorded[i]]
 		hash, err := fileIdentity(path)
 		if err != nil {
 			return err

@@ -8,6 +8,8 @@ Controller network API is authenticated HTTPS on loopback, local control on priv
 
 Successful `restore-xray` persists `state.automatic_routing_paused: true`. Scheduled, subscription and health work cannot reinstall managed routing while paused, including after a daemon restart. A successful explicit benchmark through CLI or API resumes automatic routing; failed benchmarks and runs without a healthy candidate leave it paused.
 
+If an operation finishes but its completion record cannot be persisted, status exposes `unknown` with a redacted persistence error and subsequent operations can run once storage recovers. The action returns an error, even when its routing effects succeeded; inspect state before retrying. The UI distinguishes paused and unconfigured routing from an active VPN, independently of whether the original Xray process is running.
+
 CLI:
 
 ```sh
