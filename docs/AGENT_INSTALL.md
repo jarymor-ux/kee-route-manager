@@ -65,7 +65,7 @@ git checkout v1.0.0-rc.2
 
 - `subscriptions.sources`: собственные URL/headers; подписки с секретами доступны только root.
 - `targets`: score endpoint и два health endpoint разных hostname/операторов, возвращающих ожидаемый статус; quorum по умолчанию 2. Нельзя использовать один сервер под двумя URL как независимые targets.
-- `xray.binary`, `asset_dir`, `config_dir`, `managed_dir`, `base_routing_file`: реальные пути strict JSON; managed_dir внутри confdir.
+- `xray.binary`, `asset_dir`, `config_dir`, `managed_dir`, `base_routing_file`: реальные пути strict JSON; managed_dir должен указывать на тот же каталог, что config_dir, а base_routing_file — на JSON-файл непосредственно в нём.
 - `xray.route.inbound_tags` и `replace_outbound_tags`: реальные выбранные tags; убрать `REPLACE_WITH_SELECTED_OUTBOUND`.
 - `api.listen: 127.0.0.1:9443`, `api.unix_socket` внутри `paths.run_dir`, API TLS paths/hosts из шаблона.
 - `web.enabled: false`: core не раздаёт UI.
@@ -153,7 +153,7 @@ kee-route-managerctl switch --slot 1 --config CONFIG_PATH
 kee-route-managerctl restore-xray --config CONFIG_PATH
 ```
 
-Используйте signed `install/PLATFORM/uninstall.sh` из payload. Он также выполняет restore через живой daemon **до** остановки. Ошибка restore оставляет сервисы и файлы для диагностики. По умолчанию приватный config/state сохраняются; `--purge` удаляет только стандартные KRM config/state/cache directories. Нестандартные пути проверять и очищать отдельно.
+Используйте signed `install/PLATFORM/uninstall.sh` из payload. Он также выполняет restore через живой daemon **до** остановки. В исходниках после RC2 успешный restore сохраняет `automatic_routing_paused: true`: scheduler не устанавливает маршрутизацию заново, в том числе после перезапуска daemon. Возобновление требует успешного ручного `benchmark`; не запускайте его во время удаления. Опубликованные RC2 assets этим исправлением не обновляются. Ошибка restore оставляет сервисы и файлы для диагностики. По умолчанию приватный config/state сохраняются; `--purge` удаляет только стандартные KRM config/state/cache directories. Нестандартные пути проверять и очищать отдельно.
 
 Укажите режим установки явно:
 

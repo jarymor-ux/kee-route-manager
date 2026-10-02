@@ -10,7 +10,9 @@ Failover: `detection_interval: 5s`, `failure_threshold: 2`, `probe_timeout: 2s`,
 
 `paths.log_file` is bounded to 1MiB plus three backups; private log permissions. Runtime directories/state/cache hold sensitive data. For systemd UI, writable TLS/log files belong in `/var/lib/kee-route-manager-ui`, not root-private core config.
 
-Xray managed_dir/routing file must stay inside absolute config_dir; API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. Firewall `existing` never claims independent bypass; `managed` requires own table/mark/policy-route ownership and correct redirect/TProxy inbounds.
+Xray `managed_dir` must resolve to the same directory as absolute `config_dir`; `base_routing_file`, when set, must be a JSON file directly in that directory. Nested paths are rejected because Xray's `-confdir` loading is not recursive. API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. Firewall `existing` never claims independent bypass; `managed` requires own table/mark/policy-route ownership and correct redirect/TProxy inbounds.
+
+After changing generated Xray API, probe or health configuration and restarting the daemon, the next benchmark refreshes the full managed configuration. This requires an Xray restart and may interrupt existing connections; unchanged configurations continue to use the configured pool-update mechanism.
 
 `subscriptions.max_nodes_per_source: 0` uses automatic fair share; round-robin merge preserves provider representation before global max_nodes. Provider diversity accounts for all node source memberships.
 

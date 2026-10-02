@@ -177,6 +177,9 @@ func (m *Manager) Diagnostics(ctx context.Context) (string, error) {
 }
 
 func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
+	if mode != "manual" && m.store.State().AutomaticRoutingPaused {
+		return nil
+	}
 	if !m.beginWork() {
 		return context.Canceled
 	}
@@ -268,6 +271,10 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	// Health failover may have changed the active slot while the long benchmark was
 	// running. Re-read state under the routing mutation lock and retain that node.
 	state := m.store.State()
+	if mode != "manual" && state.AutomaticRoutingPaused {
+		finish(nil)
+		return nil
+	}
 	// Choose an authorized replacement before active retention can fill a single slot.
 	if state.ActiveNodeID != "" {
 		if previous, ok := state.Measurements[state.ActiveNodeID]; ok {
@@ -365,6 +372,11 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	}
 	next := state
 	update := func(s *model.State) error {
+		// Only committing a healthy manually requested pool resumes routing after
+		// restore. Failed measurements leave the durable pause untouched.
+		if mode == "manual" {
+			s.AutomaticRoutingPaused = false
+		}
 		s.Measurements = filteredMeasurements
 		s.Pool = newSlots
 		s.Sources = fetched.States
@@ -536,13 +548,15 @@ func (m *Manager) checkHealth(ctx context.Context) {
 		}
 	}
 	state := m.store.State()
-	if !state.XrayConfigured {
+	if state.AutomaticRoutingPaused || !state.XrayConfigured {
 		return
 	}
 	if err := m.xray.Ready(ctx); err != nil {
 		m.mu.Lock()
 		m.xrayRunning = false
 		m.readinessErr = err
+		m.recoveryNode = ""
+		m.recoveryCount = 0
 		m.mu.Unlock()
 		_ = m.store.Update(func(st *model.State) error {
 			st.LastHealthClass = "xray_failed"
@@ -552,6 +566,7 @@ func (m *Manager) checkHealth(ctx context.Context) {
 		if m.platform.Capabilities().DirectBypass {
 			next := directState(state, "Xray unavailable; independent platform bypass")
 			next.LastHealthClass = "xray_failed"
+			next.XrayLastError = err.Error()
 			if err = m.commitRoute(ctx, next, m.store.Nodes(), "select"); err != nil {
 				m.log("error", "failover.bypass_failed", err.Error(), "", nil)
 			}
@@ -871,6 +886,7 @@ func (m *Manager) RestoreOriginalXray(ctx context.Context) error {
 		m.routeMu.Lock()
 		defer m.routeMu.Unlock()
 		next := model.NewState(m.version, m.cfg.Xray.SlotTagPrefix, m.cfg.Pool.Size)
+		next.AutomaticRoutingPaused = true
 		next.Pool = []model.Slot{}
 		next.Sources = m.store.State().Sources
 		return m.commitRoute(c, next, nil, "restore")

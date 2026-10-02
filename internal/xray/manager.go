@@ -93,12 +93,17 @@ func (m *Manager) Bootstrap(ctx context.Context, desired tunnel.DesiredPool) err
 	if e = m.validateCandidate(ctx, managed); e != nil {
 		return e
 	}
+	return m.installManaged(ctx, managed, initialTag)
+}
+
+// installManaged replaces the complete generated configuration while m.mu is held.
+func (m *Manager) installManaged(ctx context.Context, managed Managed, initialTag string) error {
 	backup, e := m.snapshot()
 	if e != nil {
 		return e
 	}
+	defer os.RemoveAll(backup)
 	if e = m.preserveOriginal(backup); e != nil {
-		os.RemoveAll(backup)
 		return e
 	}
 	rollback := func(cause error) error {
@@ -126,7 +131,6 @@ func (m *Manager) Bootstrap(ctx context.Context, desired tunnel.DesiredPool) err
 			return rollback(e)
 		}
 	}
-	_ = os.RemoveAll(backup)
 	return nil
 }
 func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) error {
@@ -144,6 +148,21 @@ func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) err
 	}
 	if e = m.validateCandidate(ctx, managed); e != nil {
 		return e
+	}
+	// Ports, API and routing topology cannot be changed by outbound replacement.
+	// Refresh all generated files and runtime together when those settings change.
+	for name, desiredBytes := range map[string][]byte{
+		"00_90_kee_route_manager_api.json":      managed.API,
+		"03_90_kee_route_manager_inbounds.json": managed.Inbounds,
+		"05_90_kee_route_manager_routing.json":  managed.Routing,
+	} {
+		current, err := os.ReadFile(filepath.Join(m.cfg.Xray.ManagedDir, name))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err != nil || !bytes.Equal(current, desiredBytes) {
+			return m.installManaged(ctx, managed, desired.Selection.Tag)
+		}
 	}
 	if !m.cfg.Xray.DynamicAPI {
 		if e = atomicWrite(filepath.Join(m.cfg.Xray.ManagedDir, "04_90_kee_route_manager_outbounds.json"), managed.Outbounds, 0600); e != nil {

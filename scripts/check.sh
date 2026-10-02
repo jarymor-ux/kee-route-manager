@@ -10,6 +10,7 @@ while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( 
 for script in scripts/*.sh; do bash -n "$script"; done
 node --check web/app.js
 node --check web/sw.js
+node scripts/test-ui.js
 for name in index.html app.css app.js manifest.webmanifest sw.js; do
  cmp -s "web/$name" "internal/web/ui/static/$name" || { echo "embedded asset differs: $name" >&2; exit 1; }
 done

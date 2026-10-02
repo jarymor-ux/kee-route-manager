@@ -154,11 +154,11 @@ func (c Config) validateController() []error {
 	if c.API.UnixSocket != "" && (!filepath.IsAbs(c.API.UnixSocket) || !within(c.Paths.RunDir, c.API.UnixSocket)) {
 		add(fmt.Errorf("api.unix_socket must be an absolute path inside paths.run_dir"))
 	}
-	if !filepath.IsAbs(c.Xray.ConfigDir) || !filepath.IsAbs(c.Xray.ManagedDir) || !within(c.Xray.ConfigDir, c.Xray.ManagedDir) {
-		add(fmt.Errorf("xray.managed_dir must be inside absolute xray.config_dir"))
+	if !filepath.IsAbs(c.Xray.ConfigDir) || !filepath.IsAbs(c.Xray.ManagedDir) || physicalPath(c.Xray.ConfigDir) != physicalPath(c.Xray.ManagedDir) {
+		add(fmt.Errorf("xray.managed_dir must resolve to absolute xray.config_dir; nested directories are not loaded"))
 	}
-	if c.Xray.BaseRoutingFile != "" && (!filepath.IsAbs(c.Xray.BaseRoutingFile) || !within(c.Xray.ConfigDir, c.Xray.BaseRoutingFile) || filepath.Ext(c.Xray.BaseRoutingFile) != ".json") {
-		add(fmt.Errorf("xray.base_routing_file must be a JSON file inside config_dir"))
+	if c.Xray.BaseRoutingFile != "" && (!filepath.IsAbs(c.Xray.BaseRoutingFile) || !within(c.Xray.ConfigDir, c.Xray.BaseRoutingFile) || physicalPath(filepath.Dir(c.Xray.BaseRoutingFile)) != physicalPath(c.Xray.ConfigDir) || filepath.Ext(c.Xray.BaseRoutingFile) != ".json") {
+		add(fmt.Errorf("xray.base_routing_file must be a JSON file directly inside config_dir"))
 	}
 	host, apiPort, err := listenPort(c.Xray.APIAddress)
 	add(err)

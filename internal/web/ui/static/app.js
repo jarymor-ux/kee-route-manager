@@ -4,7 +4,6 @@ const $ = (selector) => document.querySelector(selector);
 let csrf = '';
 let statusData = null;
 let nodesData = [];
-let eventSeq = 0;
 let pollTimer;
 let pendingUpdate = null;
 
@@ -244,8 +243,20 @@ function renderClients(clients) {
 
 async function loadEvents() {
   try {
-    const items = await api('/api/v1/events?after=0&limit=300');
-    if (items.length) eventSeq = items[items.length - 1].sequence;
+    let after = 0;
+    let items = [];
+    for (let page = 0; page < 10; page++) {
+      const batch = await api(`/api/v1/events?after=${after}&limit=1000`);
+      for (const event of batch) {
+        if (!Number.isSafeInteger(event.sequence) || event.sequence <= after) {
+          throw new Error('Некорректная последовательность событий');
+        }
+        after = event.sequence;
+      }
+      items = items.concat(batch).slice(-300);
+      if (batch.length < 1000) break;
+      if (page === 9) throw new Error('Журнал событий меняется слишком быстро; обновите его ещё раз');
+    }
     $('#events-list').innerHTML = items.slice().reverse().map((event) => `<div class="event">
       <div class="time">${new Date(event.timestamp).toLocaleString()}</div>
       <div class="type">${esc(event.type)}</div>

@@ -6,6 +6,8 @@ Controller network API is authenticated HTTPS on loopback, local control on priv
 
 `POST /api/v1/actions/benchmark` reserves the operation before responding202 and returns `{ "accepted": true, "operation_id": "op-..." }`. A concurrent request cannot create a second benchmark reservation. Update apply is disabled and returns an explicit unavailable response.
 
+Successful `restore-xray` persists `state.automatic_routing_paused: true`. Scheduled, subscription and health work cannot reinstall managed routing while paused, including after a daemon restart. A successful explicit benchmark through CLI or API resumes automatic routing; failed benchmarks and runs without a healthy candidate leave it paused.
+
 CLI:
 
 ```sh

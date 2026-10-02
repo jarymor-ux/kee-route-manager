@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Persist automatic-routing pause after restore; require a successful manual benchmark to resume, preventing scheduler races during uninstall.
+- Refresh generated Xray configuration when API/inbound/routing settings change and reject unsupported nested config paths.
+- Reset consecutive VPN recovery evidence after Xray outages and retain the failure diagnostic during independent bypass.
+- Paginate the UI event history so its latest 300 records include recent errors and route changes.
+
 ## 1.0.0-rc.2 — 2026-10-02
 
 Experimental prerelease; real Keenetic acceptance deferred to separate owner-authorized hardware stage.

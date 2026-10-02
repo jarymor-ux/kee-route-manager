@@ -23,6 +23,12 @@ Date: 2026-10-02. Software verification only; real router acceptance is a separa
 
 Install fixture uses a service-manager shim with actual KRM processes; it does not qualify systemd/procd or Keenetic firmware. Real nftables tests use a Linux container kernel/network namespace, not a router's existing firewall topology. The unconfigured installer fixture correctly reports degraded readiness; configured Xray routing requires hardware acceptance.
 
+## Post-review source regressions
+
+Source fixes after the immutable RC2 release add coverage for durable restore pause across scheduler/source refresh and state reload, explicit manual resume, pending-journal repair while paused, consecutive recovery reset after Xray outage, full generated Xray configuration replacement in static/dynamic and VPN/direct modes, exact rollback/replay identities after restart failure, flat confdir validation with physical-path aliases, and UI pagination through 2,000 retained events. UI checks also cover repeated refresh, sequence gaps, compaction, upstream failure and bounded termination. These regressions reproduced the original bugs before the production changes; the targeted core/Xray/config suites and `node scripts/test-ui.js` pass with the fixes.
+
+Published RC tags and assets are unchanged. This source verification does not qualify existing RC2 binaries or provide hardware acceptance.
+
 The first GitHub race run exposed test teardown that removed a temporary directory before a benchmark's final event write. The test now joins the manager before cleanup, including failure paths; targeted race repetitions cover this fix. Release publication requires green CI on the exact merged commit; evidence is available in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions) and [PR #3](https://github.com/jarymor-ux/kee-route-manager/pull/3).
 
 ## Hardware acceptance — pending

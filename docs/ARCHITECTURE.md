@@ -16,6 +16,8 @@ Benchmark updates pool/measurements while retaining selection and honoring impro
 
 TunnelCore exposes lifecycle/capabilities/pool/selection/probe/readiness/actual-state/restore, enabling a future non-Xray adapter. Xray writes persistent concrete routing selection so restart does not select empty blackhole slots randomly. Restoration reverses owned patches while retaining unrelated routing edits; drift rejects unsafe overwrite.
 
+Restore also durably pauses automatic routing until a successful explicit benchmark. Startup, source refresh and scheduled benchmark loops honor that pause so uninstall cannot race with routing reinstallation. Xray readiness failures reset consecutive recovery evidence.
+
 Managed nft replacement is one validated transaction in the owned table; route ownership metadata protects foreign tables/rules. Existing interception remains operator-managed. [nftables atomic replacement](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement) documents the transaction contract.
 
 Updates authenticate channel manifests but never replace running executables in RC2. Production installers are part of the same signed release payload; readiness and manual rollback remain operator/agent visible.
