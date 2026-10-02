@@ -1,17 +1,19 @@
-# RC2 known limitations
+# Known limitations
 
-- All platforms are experimental pending real device/gateway acceptance. Owner explicitly deferred Keenetic testing to a separate stage.
+- Published RC2 has a confirmed Xray multi-file routing defect: later routing sections replace its balancer and API rules. Current source fixes the merge and has a real-Xray lifecycle regression, but published assets are immutable. A separately signed corrected build is required for deployment.
+
+- All platforms remain experimental. A corrected private build has passed installation, local UI authentication and VPN health checks on one Keenetic router; one selected LAN client was confirmed working by the owner; reboot, power-loss and exhaustive LAN-client acceptance remain separate hardware checks.
 - Keenetic independent platform direct bypass is unsupported; a dead Xray does not automatically become working direct there. Existing unmanaged interception on any platform cannot be safely bypassed by KRM.
 - Managed interception is IPv4 LAN prerouting only; operator owns IPv6 policy, WAN routing, upstream access and any interception outside KRM table. No IPv6 leak-protection claim.
-- No A/B updater/launcher: apply disabled. Manual signed clean install/rollback only. Broken future-slot rollback hardware test is not claimed.
+- Protocol1 updates require the separately installed stable launcher. Failed or interrupted read-only trials roll back; after the durable activation decision, crashes restart the committed version without restoring old state. The launcher itself, service scripts and config schema migrations require separate maintenance. Standalone UI and systemd DynamicUser UI are updated separately. Router power-loss and deliberately broken candidate hardware tests are not claimed.
 - Only Xray is implemented. Nodes: supported VLESS URI formats; no sing-box adapter yet, JSON provider schema unsupported.
 - WAN-vs-VPN evidence depends on direct probes actually traversing WAN on the target installation; targets sharing a hostname cannot meet independent quorum. Network/DNS ambiguity preserves selection rather than guessing.
 - A benchmark hot-pool refresh can require restarting Xray depending on its dynamic API capabilities; existing connections may be interrupted. Failed remote connections cannot migrate.
 - Startup reconciliation uses durable intent and actual runtime/file/firewall checks; exhaustive real kill-9/power-loss/kernel behavior awaits hardware qualification. Do not treat fake step replay as a real router crash test.
 - Restore preserves unrelated edits and fails on irreconcilable owned-rule drift. A private backup and recovery path remain necessary.
 - Installer is a clean-install flow using prepared private config; it refuses overwrite. It installs KRM only, not Entware/XKeen/Xray or an SSH tunnel service.
-- Remote UI requires trusted CA/SPKI and an authenticated tunnel or verified proxy because core API stays loopback. UI OpenWrt/Keenetic is cross-built and packaged but hardware execution unverified.
-- GitHub update discovery scans the 100 most recent releases; repositories with longer active release histories may need explicit manifest URLs. Applying updates stays disabled.
+- Remote UI requires trusted CA/SPKI and an authenticated tunnel or verified proxy because core API stays loopback. A successful local Keenetic UI check does not qualify other router models or firmware; OpenWrt UI hardware execution remains unverified.
+- GitHub update discovery scans the 100 most recent releases; repositories with longer active release histories may need explicit manifest URLs. Application requires a compatible launcher and explicit user action.
 - SPDX inventory describes shipped files and project license/toolchain version; it is not a complete file-level transitive Go standard-library SBOM.
 
 Xray loopback TCP API is unauthenticated by Xray design. Process locks serialize KRM owners, but do not prevent another local process calling Xray directly. On multiuser Linux, local users must be trusted or the administrator must restrict that API port by OS/firewall policy; do not expose it off-host. KRM socket permissions do not authenticate Xray gRPC.

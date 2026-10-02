@@ -115,6 +115,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/actions/switch", s.protect(s.switchSlot, true))
 	mux.HandleFunc("/api/v1/actions/direct", s.protect(s.direct, true))
 	mux.HandleFunc("/api/v1/update/check", s.protect(s.updateCheck, false))
+	mux.HandleFunc("/api/v1/update/status", s.protect(s.updateStatus, false))
 	mux.HandleFunc("/api/v1/update/apply", s.protect(s.updateApply, true))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	return s.security(mux)
@@ -395,12 +396,16 @@ func (s *Server) policy(w http.ResponseWriter, r *http.Request, _ auth.Session) 
 }
 func (s *Server) switchSlot(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	var q struct {
-		Index int `json:"index"`
+		Index *int `json:"index"`
 	}
 	if e := decodeBody(w, r, &q); e != nil {
 		return
 	}
-	if e := s.mgr.SwitchSlot(r.Context(), q.Index); e != nil {
+	if q.Index == nil || *q.Index < 0 {
+		jsonError(w, http.StatusBadRequest, "index must be an explicit nonnegative integer")
+		return
+	}
+	if e := s.mgr.SwitchSlot(r.Context(), *q.Index); e != nil {
 		jsonError(w, 409, "operation rejected")
 		return
 	}
@@ -414,8 +419,16 @@ func (s *Server) direct(w http.ResponseWriter, r *http.Request, _ auth.Session) 
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	if !s.cfg.Update.Enabled {
+		jsonError(w, 400, "updates disabled")
+		return
+	}
+	if status, data, err := s.launcherRequest(r.Context(), http.MethodGet, "/check", nil); err == nil {
+		writeJSON(w, status, data)
+		return
+	}
 	if s.updater == nil {
-		jsonError(w, 400, "updates unavailable")
+		jsonError(w, 502, "update launcher unavailable")
 		return
 	}
 	v, e := s.updater.Check(r.Context())
@@ -423,10 +436,39 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request, _ auth.Sess
 		jsonError(w, 502, "upstream unavailable")
 		return
 	}
+	// Discovery without the separate launcher can never authorize installation.
+	v.StageSupported = false
 	writeJSON(w, 200, v)
 }
 func (s *Server) updateApply(w http.ResponseWriter, r *http.Request, _ auth.Session) {
-	jsonError(w, http.StatusNotImplemented, "automatic update apply disabled; install a verified release manually")
+	if !s.cfg.Update.Enabled {
+		jsonError(w, http.StatusNotImplemented, "updates disabled")
+		return
+	}
+	var q *struct {
+		Version string `json:"version,omitempty"`
+	}
+	if e := decodeBody(w, r, &q); e != nil {
+		return
+	}
+	if q == nil {
+		jsonError(w, 400, "invalid JSON")
+		return
+	}
+	status, data, err := s.launcherRequest(r.Context(), http.MethodPost, "/apply", q)
+	if err != nil {
+		jsonError(w, 502, "update launcher unavailable")
+		return
+	}
+	writeJSON(w, status, data)
+}
+func (s *Server) updateStatus(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	status, data, err := s.launcherRequest(r.Context(), http.MethodGet, "/status", nil)
+	if err != nil {
+		jsonError(w, 502, "update launcher unavailable")
+		return
+	}
+	writeJSON(w, status, data)
 }
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
@@ -497,6 +539,7 @@ func (s *Server) LocalHandler() http.Handler {
 	register("/api/v1/actions/switch", http.MethodPost, s.switchSlot)
 	register("/api/v1/actions/direct", http.MethodPost, s.direct)
 	register("/api/v1/update/check", http.MethodGet, s.updateCheck)
+	register("/api/v1/update/status", http.MethodGet, s.updateStatus)
 	register("/api/v1/update/apply", http.MethodPost, s.updateApply)
 	register("/api/v1/actions/restore-xray", http.MethodPost, func(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 		if e := s.mgr.RestoreOriginalXray(r.Context()); e != nil {

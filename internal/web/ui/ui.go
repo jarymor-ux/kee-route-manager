@@ -235,6 +235,11 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 		}
 		return nil
 	}
+	serveProxy := func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		proxy.ServeHTTP(w, r.WithContext(ctx))
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" {
@@ -254,9 +259,9 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 				return
 			}
 		}
-		proxy.ServeHTTP(w, r)
+		serveProxy(w, r)
 	}))
-	mux.Handle("/healthz", proxy)
+	mux.HandleFunc("/healthz", serveProxy)
 	mux.Handle("/", files)
 	return Security(mux, c.Web.TLS.Enabled), nil
 }

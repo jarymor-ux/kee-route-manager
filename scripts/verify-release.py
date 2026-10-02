@@ -9,6 +9,7 @@ with tempfile.TemporaryDirectory() as d:
   (d/'sig').write_bytes(base64.b64decode((p/(name+'.sig')).read_text().strip()+'==='))
   subprocess.run(['openssl','pkeyutl','-verify','-pubin','-keyform','DER','-inkey',str(d/'pub.der'),'-rawin','-in',str(p/name),'-sigfile',str(d/'sig')],check=True,stdout=subprocess.DEVNULL)
 m=json.loads((p/'manifest-rc.json').read_text())
+if m.get('schema_version')!=1 or m.get('update_protocol')!=1 or m.get('channel')!='rc': raise SystemExit('unsupported release schema/update protocol/channel')
 seen=set()
 for a in m['assets']:
  name=a['name']
@@ -22,6 +23,6 @@ for line in (p/'SHA256SUMS').read_text().splitlines():
  digest,name=line.split('  ',1)
  if pathlib.Path(name).name!=name: raise SystemExit('unsafe checksum filename')
  if hashlib.sha256((p/name).read_bytes()).hexdigest()!=digest: raise SystemExit('checksum mismatch '+name)
-required={f'{c}-linux-{a}' for c in ['kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','krm-release-tool'] for a in ['amd64','arm64','armv7','mipsle']}|{'bootstrap-keenetic.sh','bootstrap-openwrt.sh','bootstrap-linux.sh','release-files.tar.gz','SBOM.spdx.json'}
+required={f'{c}-linux-{a}' for c in ['kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','kee-route-manager-launcher','krm-release-tool'] for a in ['amd64','arm64','armv7','mipsle']}|{'bootstrap-keenetic.sh','bootstrap-openwrt.sh','bootstrap-linux.sh','release-files.tar.gz','SBOM.spdx.json'}
 if not required<=seen: raise SystemExit('missing required assets '+str(required-seen))
 print(f'Verified signatures, sizes, digests and required manifest assets ({len(seen)} files).')

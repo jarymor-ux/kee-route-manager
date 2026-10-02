@@ -234,7 +234,9 @@ func splitYAMLKey(s string) (string, string, bool) {
 			inDouble = !inDouble
 			continue
 		}
-		if r == ':' && !inSingle && !inDouble {
+		// In this block-style subset a mapping colon must be followed by
+		// whitespace or end of line. Colons inside URLs and IPv6 are scalars.
+		if r == ':' && !inSingle && !inDouble && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
 			return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:]), true
 		}
 	}

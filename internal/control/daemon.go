@@ -3,16 +3,13 @@ package control
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -45,17 +42,23 @@ func Serve(ctx context.Context, c config.Config, version string) error {
 		return fmt.Errorf("tunnel ownership: %w", e)
 	}
 	defer tunnelOwner.Close()
+	if nonce := os.Getenv("KRM_UPDATE_TRIAL"); nonce != "" {
+		activated, err := serveTrial(ctx, c, version, nonce)
+		if err != nil || !activated {
+			return err
+		}
+	}
+	return serveActive(ctx, c, version)
+}
+
+// Called with both ownership locks still held, including across trial activation.
+func serveActive(ctx context.Context, c config.Config, version string) error {
 	logs, e := logging.Setup(c.Paths.LogFile)
 	if e != nil {
 		return e
 	}
 	defer logs.Close()
-	log.Printf("controller owner pid=%d instance=%s process_start=%s", owner.Owner.PID, owner.Owner.InstanceID, owner.Owner.ProcessStart)
-	listener, e := ListenUnix(c.API.UnixSocket)
-	if e != nil {
-		return e
-	}
-	defer listener.Close()
+	log.Printf("controller owner pid=%d", os.Getpid())
 	p, r, e := platform.New(c)
 	if e != nil {
 		return e
@@ -76,31 +79,11 @@ func Serve(ctx context.Context, c config.Config, version string) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	mgr.Start(ctx)
 	defer mgr.Stop()
-	local := &http.Server{Handler: srv.LocalHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 << 10}
-	errorsCh := make(chan error, 2)
-	go func() {
-		e := local.Serve(listener)
-		if errors.Is(e, http.ErrServerClosed) {
-			e = nil
-		}
-		errorsCh <- e
-	}()
-	if c.API.Enabled {
-		go func() { errorsCh <- srv.ListenAndServe(ctx) }()
-	}
+	gate := &updateGate{manager: mgr, version: version}
 	log.Printf("controller %s control_socket=%s api_enabled=%t", version, c.API.UnixSocket, c.API.Enabled)
-	var result error
-	select {
-	case <-ctx.Done():
-	case result = <-errorsCh:
-	}
-	cancel()
-	cc, stop := context.WithTimeout(context.Background(), 10*time.Second)
-	defer stop()
-	_ = local.Shutdown(cc)
-	return result
+	_, e = serveHTTP(ctx, c, gate.local(srv.LocalHandler()), gate.public(srv.Handler()), true, nil, func() { mgr.Start(ctx) })
+	return e
 }
 
 // ListenUnix creates a local authorization boundary. It may only be called

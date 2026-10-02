@@ -8,7 +8,7 @@ PRIVATE_KEY="${KRM_RELEASE_PRIVATE_KEY:-}"
 BASE_URL="${KRM_RELEASE_BASE_URL:-https://github.com/jarymor-ux/kee-route-manager/releases/download/v$KRM_VERSION}"
 CHANNEL="${KRM_RELEASE_CHANNEL:-rc}"
 [[ -n "$PRIVATE_KEY" && -f "$PRIVATE_KEY" ]] || { echo 'KRM_RELEASE_PRIVATE_KEY must point to an external Ed25519 private key' >&2; exit 1; }
-[[ "$CHANNEL" == rc ]] || { echo 'RC2 builder supports rc only' >&2; exit 1; }
+[[ "$CHANNEL" == rc ]] || { echo 'Release builder supports rc only' >&2; exit 1; }
 # Refuse recursive deletion of arbitrary caller paths.
 [[ "$OUTPUT_DIR" == "$ROOT/release" || "$OUTPUT_DIR" == /tmp/krm-release.* || "$OUTPUT_DIR" == /tmp/krm-release.*/output ]] || { echo 'OUTPUT_DIR must be repo/release or /tmp/krm-release.*' >&2; exit 1; }
 ./scripts/check.sh
@@ -24,7 +24,7 @@ BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LDFLAGS="-s -w -X main.version=$KRM_VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME"
 for target in amd64 arm64 armv7 mipsle; do
  case "$target" in armv7) arch=arm; arm=7; mips=;; mipsle) arch=mipsle; arm=; mips=softfloat;; *) arch=$target; arm=; mips=;; esac
- for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl krm-release-tool; do
+ for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl kee-route-manager-launcher krm-release-tool; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" GOMIPS="$mips" go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/$component-linux-$target" "./cmd/$component"
  done
 done
@@ -42,4 +42,4 @@ for f in sorted(p.iterdir()):
 PY
 "$TOOL_DIR/krm-release-tool" sign --private "$PRIVATE_KEY" --input "$DIST/SHA256SUMS" --out "$DIST/SHA256SUMS.sig"
 python3 scripts/verify-release.py "$DIST"
-printf 'Signed RC2 artifacts: %s\n' "$DIST"
+printf 'Signed RC artifacts: %s\n' "$DIST"

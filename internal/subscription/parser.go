@@ -108,8 +108,7 @@ func ParseVLESS(raw, source string) (model.Node, error) {
 	if !((network == "tcp" && security == "reality") || (network == "ws" && security == "tls")) {
 		return model.Node{}, fmt.Errorf("unsupported transport %s/%s", network, security)
 	}
-	label, _ := url.PathUnescape(u.Fragment)
-	label = sanitize(label)
+	label := sanitize(u.Fragment)
 	if label == "" {
 		label = net.JoinHostPort(host, u.Port())
 	}
@@ -190,7 +189,11 @@ func sanitize(s string) string {
 		return r
 	}, strings.TrimSpace(s))
 	if len(s) > 256 {
-		s = s[:256]
+		end := 256
+		for !utf8.RuneStart(s[end]) {
+			end--
+		}
+		s = s[:end]
 	}
 	return s
 }

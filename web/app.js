@@ -6,6 +6,11 @@ let statusData = null;
 let nodesData = [];
 let pollTimer;
 let pendingUpdate = null;
+let updateState = null;
+let updateStatusLoading = false;
+let updateChecking = false;
+let updateSubmitting = false;
+let authenticated = false;
 
 async function api(path, options = {}) {
   const method = options.method || 'GET';
@@ -25,13 +30,18 @@ async function api(path, options = {}) {
 }
 
 function showLogin() {
+  authenticated = false;
   clearInterval(pollTimer);
+  pendingUpdate = null;
+  updateState = null;
+  renderUpdate();
   $('#login').classList.remove('hidden');
   $('#password').value = '';
   setTimeout(() => $('#username').focus(), 50);
 }
 
 function hideLogin() {
+  authenticated = true;
   $('#login').classList.add('hidden');
   startPolling();
 }
@@ -307,24 +317,90 @@ async function runDiagnostics() {
 }
 
 async function checkUpdate() {
+  if (updateChecking || updateSubmitting || updateState?.applying) return;
+  updateChecking = true;
+  renderUpdate();
   try {
     showTool('Проверка подписанного манифеста…');
     pendingUpdate = await api('/api/v1/update/check');
+    if (pendingUpdate.stage_supported) updateState = { ...updateState, launcher: true, enabled: true, last_error: '' };
     showTool(pendingUpdate.available
       ? `Доступна версия ${pendingUpdate.latest_version}. Текущая: ${pendingUpdate.current_version}.`
       : `Установлена актуальная версия ${pendingUpdate.current_version}.`);
-    if (pendingUpdate.available) showTool(`Доступна версия ${pendingUpdate.latest_version}. Установите проверенный подписанный релиз по инструкции репозитория; автоматическая установка отключена в RC2.`);
+    if (pendingUpdate.available && !pendingUpdate.stage_supported) {
+      showTool(`Доступна версия ${pendingUpdate.latest_version}. Для установки нужен совместимый launcher и подписанный пакет обновления.`);
+    }
   } catch (error) {
     pendingUpdate = null;
     showTool(`Ошибка проверки обновления: ${error.message}`);
+  } finally {
+    updateChecking = false;
+    renderUpdate();
+  }
+}
+
+function renderUpdate() {
+  const busy = updateSubmitting || Boolean(updateState?.applying);
+  const installable = authenticated && pendingUpdate?.available && pendingUpdate?.stage_supported;
+  $('#update-apply').classList.toggle('hidden', !installable);
+  $('#update-apply').disabled = !installable || busy || updateChecking || updateState?.launcher === false || updateState?.enabled === false;
+  $('#update-check').disabled = busy || updateChecking;
+  const phases = { downloading: 'Загрузка обновления', preparing: 'Подготовка обновления', trial: 'Проверка новой версии', activating: 'Запуск новой версии' };
+  let text = updateChecking ? 'Проверка обновлений…' : phases[updateState?.phase];
+  if (!text && updateState?.last_error) text = `Обновление не выполнено: ${updateState.last_error}`;
+  if (!text && updateState?.enabled === false) text = 'Обновления отключены';
+  if (!text && pendingUpdate) text = pendingUpdate.available
+    ? `Доступна версия ${pendingUpdate.latest_version}${pendingUpdate.stage_supported ? ' · установка вручную' : ' · установка через launcher недоступна'}`
+    : `Установлена актуальная версия ${pendingUpdate.current_version}`;
+  if (!text && updateState?.last_result) text = updateState.last_result;
+  if (!text && updateState?.current_version) text = `Установлена версия ${updateState.current_version}`;
+  $('#update-status').textContent = text || 'Статус обновлений пока неизвестен';
+}
+
+async function loadUpdateStatus() {
+  if (!authenticated || updateStatusLoading) return;
+  updateStatusLoading = true;
+  try {
+    const state = await api('/api/v1/update/status');
+    if (!authenticated) return;
+    updateState = state;
+    if (!updateChecking) pendingUpdate = state.check || null;
+    renderUpdate();
+  } catch (error) {
+    updateState = { launcher: false, last_error: error.message };
+    renderUpdate();
+  } finally {
+    updateStatusLoading = false;
+  }
+}
+
+async function applyUpdate() {
+  if (!authenticated || !pendingUpdate?.available || !pendingUpdate?.stage_supported || updateChecking || updateSubmitting || updateState?.applying || updateState?.launcher === false || updateState?.enabled === false) return;
+  const version = pendingUpdate.latest_version;
+  if (!confirm(`Установить Kee Route Manager ${version}? Панель управления кратковременно переподключится.`)) return;
+  updateSubmitting = true;
+  renderUpdate();
+  try {
+    await api('/api/v1/update/apply', { method: 'POST', body: JSON.stringify({ version }) });
+    updateState = { ...updateState, launcher: true, enabled: true, applying: true, phase: 'downloading', last_error: '' };
+    toast('Установка обновления запущена');
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    updateSubmitting = false;
+    renderUpdate();
   }
 }
 
 function startPolling() {
   clearInterval(pollTimer);
   loadStatus();
+  loadUpdateStatus();
+  let ticks = 0;
   pollTimer = setInterval(() => {
+    if (!authenticated) return;
     loadStatus();
+    if (++ticks % 5 === 0 || updateState?.applying) loadUpdateStatus();
     const active = document.querySelector('#tabs button.active')?.dataset.tab;
     if (active === 'router') loadRouter();
   }, 3000);
@@ -373,6 +449,7 @@ $('#refresh-events').onclick = loadEvents;
 $('#system-logs').onclick = loadSystemLogs;
 $('#diagnostics').onclick = runDiagnostics;
 $('#update-check').onclick = checkUpdate;
+$('#update-apply').onclick = applyUpdate;
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 session();

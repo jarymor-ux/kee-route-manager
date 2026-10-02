@@ -110,6 +110,8 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	st := old
 	st.ID = s.ID
 	st.Name = s.Name
+	st.UsingCache = false
+	st.CacheExpiresAt = time.Time{}
 	if !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
 		if xs, c, e := f.load(s.ID); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
 			st.UsingCache = true

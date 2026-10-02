@@ -51,7 +51,7 @@ func Version(name, version, commit, buildTime string) {
 
 func Run(ctx context.Context, args []string, version, commit, buildTime string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kee-route-managerctl <status|ready|benchmark|switch --slot N|direct|restore-xray|update-check|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
+		return fmt.Errorf("usage: kee-route-managerctl <status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
 	}
 	command, args := args[0], args[1:]
 	switch command {
@@ -69,6 +69,10 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 	p := f.String("config", DefaultConfigPath(), "configuration path")
 	socket := f.String("socket", "", "daemon Unix socket (overrides config)")
 	slot := f.Int("slot", -1, "slot index for switch")
+	var targetVersion string
+	if command == "update-apply" {
+		f.StringVar(&targetVersion, "target-version", "", "expected signed release version")
+	}
 	if e := f.Parse(args); e != nil {
 		return e
 	}
@@ -107,8 +111,13 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 		method = "POST"
 	case "update-check":
 		path = "/api/v1/update/check"
+	case "update-status":
+		path = "/api/v1/update/status"
 	case "update-apply":
-		return fmt.Errorf("automatic update apply is disabled in RC2; install a verified release manually")
+		path, method = "/api/v1/update/apply", "POST"
+		body = struct {
+			Version string `json:"version,omitempty"`
+		}{Version: targetVersion}
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}

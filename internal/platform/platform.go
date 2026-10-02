@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -109,6 +110,16 @@ func (r Runner) Run(ctx context.Context, cmd []string) ([]byte, error) {
 		defer cancel()
 	}
 	c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+	// Service wrappers can spawn children that keep output pipes open after the
+	// wrapper is killed. Cancel the complete command group and bound pipe waits.
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.Cancel = func() error {
+		if c.Process == nil {
+			return os.ErrProcessDone
+		}
+		return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+	}
+	c.WaitDelay = time.Second
 	var out, errOut limitBuffer
 	limit := r.MaxOutput
 	if limit <= 0 {
@@ -120,7 +131,10 @@ func (r Runner) Run(ctx context.Context, cmd []string) ([]byte, error) {
 	c.Stderr = &errOut
 	err := c.Run()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return out.Bytes(), fmt.Errorf("command timed out: %s", cmd[0])
+		return out.Bytes(), fmt.Errorf("command timed out: %s: %w", cmd[0], ctx.Err())
+	}
+	if ctx.Err() != nil {
+		return out.Bytes(), fmt.Errorf("command canceled: %s: %w", cmd[0], ctx.Err())
 	}
 	if err != nil {
 		m := strings.TrimSpace(errOut.String())
@@ -128,9 +142,9 @@ func (r Runner) Run(ctx context.Context, cmd []string) ([]byte, error) {
 			m = strings.TrimSpace(out.String())
 		}
 		if m == "" {
-			m = err.Error()
+			return out.Bytes(), fmt.Errorf("%s: %w", cmd[0], err)
 		}
-		return out.Bytes(), fmt.Errorf("%s: %s", cmd[0], m)
+		return out.Bytes(), fmt.Errorf("%s: %s: %w", cmd[0], m, err)
 	}
 	return out.Bytes(), nil
 }

@@ -1,11 +1,12 @@
 # Architecture
 
-One Go module, three runtime boundaries:
+One Go module, four runtime boundaries:
 
 ```text
 browser → UI (embedded PWA + TLS upstream proxy) → authenticated core API
 CLI → owner-only Unix socket → same core handlers
 core → TunnelCore (Xray adapter) + platform adapter → owned routing/firewall
+launcher → daemon + optional local UI; signed release slots and update lifecycle
 ```
 
 UI and CLI dependency graphs exclude core, Xray, platform, store and benchmark managers. Daemon acquires flock on both state directory and Xray configuration directory before constructing managers/schedulers; owner metadata records PID/start-time/random instance. Local socket authorization is OS directory 0700/socket0600 ownership; network API uses core credentials/sessions/CSRF.
@@ -26,4 +27,8 @@ Subscription comparisons track processed provider membership separately from del
 
 Managed nft replacement is one validated transaction in the owned table; route ownership metadata protects foreign tables/rules. Existing interception remains operator-managed. [nftables atomic replacement](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement) documents the transaction contract.
 
-Updates authenticate channel manifests but never replace running executables in RC2. Production installers are part of the same signed release payload; readiness and manual rollback remain operator/agent visible.
+The stable launcher owns only the executable release slots and its process tree. The daemon remains the exclusive owner of mutable controller state, Xray and firewall. Initial installation imports a signed protocol-1 bundle into a private immutable version directory and points standard daemon/CLI entrypoints through an atomic `current` symlink. Keenetic/OpenWrt local UI shares that slot and parent; standalone UI and Linux DynamicUser UI retain their independent service. The stable launcher itself is never replaced by an automatic download.
+
+Update discovery periodically checks the configured RC/stable channel; application always requires an explicit authenticated action. The launcher stages and verifies the native daemon/UI/CLI bundle, then asks the current daemon to freeze mutations and drain work. The candidate starts in a read-only trial with a random nonce. Readiness requires the expected process PID, version, nonce and completed reconciliation through the local API, configured HTTPS API and managed UI proxy. A failed trial restarts the previous verified slot. No controller-state snapshot is restored.
+
+The launcher durably commits the new release identity before activating its mutable runtime. A crash before commit recovers the old slot; a crash after commit restarts the new slot, because its activation may already have changed controller state. The owner-only launcher socket exposes update status/check/apply behind the daemon's authenticated API and CLI. Production installers, bootstraps and component binaries belong to the same signed immutable release. See [release procedure](RELEASE.md) for publication and recovery limits.

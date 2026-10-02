@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'web/app.js'), 'utf8');
 assert.equal(source, fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8'));
+assert.equal(fs.readFileSync(path.join(root, 'web/index.html'), 'utf8'), fs.readFileSync(path.join(root, 'internal/web/ui/static/index.html'), 'utf8'));
 const start = source.indexOf('async function loadEvents()');
 const end = source.indexOf('\nfunction showTool', start);
 assert(start >= 0 && end > start, 'loadEvents must be present');
@@ -86,7 +87,199 @@ function statusChecks() {
   assert.equal(render(vpnState, false).status, 'Xray остановлен');
 }
 
+function appHarness() {
+  const elements = new Map();
+  const requests = [];
+  const intervals = new Set();
+  const select = (selector) => {
+    if (!elements.has(selector)) {
+      const classes = new Set(['hidden']);
+      elements.set(selector, {
+        value: '', textContent: '', innerHTML: '', style: {}, dataset: {}, disabled: false,
+        classList: {
+          add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
+          toggle: (name, force) => { if (force) classes.add(name); else classes.delete(name); },
+        },
+        addEventListener(name, fn) { this[name] = fn; }, focus() {},
+      });
+    }
+    return elements.get(selector);
+  };
+  let response = { status: 401, ok: false, data: { error: 'unauthorized' } };
+  let confirmResult = true;
+  const context = vm.createContext({
+    document: { querySelector: select, querySelectorAll: () => [] }, navigator: {}, Date,
+    setTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
+    setInterval: (fn) => { intervals.add(fn); return fn; }, confirm: () => confirmResult,
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      const current = typeof response === 'function' ? await response(url, options) : response;
+      return { ...current, headers: { get: () => 'application/json' }, json: async () => current.data };
+    },
+  });
+  vm.runInContext(source, context);
+  return { context, select, requests, intervals, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+}
+
+async function appChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  assert.equal(h.select('#login').classList.contains('hidden'), false, 'expired session must require login');
+  h.respond({ status: 200, ok: true, data: { accepted: true } });
+  h.run("csrf = 'test-csrf'");
+  await h.run("api('/api/v1/actions/direct', { method: 'POST', body: '{}' })");
+  let request = h.requests.at(-1);
+  assert.equal(request.options.headers['X-KRM-CSRF'], 'test-csrf');
+  assert.equal(request.options.headers['Content-Type'], 'application/json');
+  assert.equal(request.options.credentials, 'same-origin');
+  await h.run("api('/api/v1/status')");
+  assert.equal(h.requests.at(-1).options.headers['X-KRM-CSRF'], undefined);
+  h.respond({ status: 409, ok: false, data: { error: 'operation unavailable' } });
+  await assert.rejects(() => h.run("api('/api/v1/actions/direct', { method: 'POST' })"), /operation unavailable/);
+  h.respond({ status: 401, ok: false, data: { error: 'expired' } });
+  h.run("pollTimer = setInterval(() => {}, 3000)");
+  h.select('#password').value = 'never-retain-this';
+  await assert.rejects(() => h.run("api('/api/v1/status')"), /Требуется вход/);
+  assert.equal(h.intervals.size, 0, 'unauthorized response must stop polling');
+  assert.equal(h.select('#password').value, '');
+
+  const injection = '<img src=x onerror="alert(1)">';
+  h.context.injection = injection;
+  h.run(`renderPool({ pool: [{ index: 0, label: injection, node_id: 'node', score: 1 }], active_slot: 0 });
+    renderSources({ provider: { name: injection, status: 'healthy', last_error: injection, node_count: 1 } });
+    nodesData = [{ label: injection, sources: [injection], network: 'ws', security: 'tls', measurement: {} }]; renderNodes();
+    statusData = { capabilities: { wake_on_lan: true, client_policy: true } };
+    renderClients([{ name: injection, mac: injection, ip: injection, connection_policy: injection }]);
+    renderMetrics({ ports: [{ id: injection, link: injection, speed: injection }] });`);
+  for (const selector of ['#pool', '#sources', '#nodes-body', '#clients-body', '#ports']) {
+    const html = h.select(selector).innerHTML;
+    assert(!html.includes('<img'), `${selector} must escape provider/router text`);
+    assert(html.includes('&lt;img'), `${selector} must preserve escaped text`);
+  }
+  h.select('#node-search').value = 'missing';
+  h.run('renderNodes()');
+  assert(h.select('#nodes-body').innerHTML.includes('Нет узлов'));
+  h.run('showTool(injection)');
+  assert.equal(h.select('#tool-output').textContent, injection, 'diagnostics must render as text');
+
+  h.respond({ status: 200, ok: true, data: { available: true, latest_version: '2.0', current_version: '1.0' } });
+  await h.run('checkUpdate()');
+  assert(h.select('#update-apply').classList.contains('hidden'), 'legacy or launcherless discovery must not allow apply');
+  assert(!h.requests.some((r) => r.url.endsWith('/update/apply')), 'update discovery must never apply');
+  h.respond({ status: 200, ok: true, data: {} });
+  await h.select('#logout').onclick();
+  assert.equal(h.run('csrf'), '');
+  assert.equal(h.select('#login').classList.contains('hidden'), false);
+}
+
+async function updateChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run("authenticated = true; csrf = 'update-csrf'");
+  const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
+  const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
+  h.respond({ status: 200, ok: true, data: state });
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.select('#update-apply').classList.contains('hidden'), false);
+  assert.equal(h.select('#update-apply').disabled, false);
+  assert(h.select('#update-status').textContent.includes('1.2.0'));
+  assert(!h.requests.some((r) => r.url.endsWith('/update/check') || r.url.endsWith('/update/apply')), 'background status must never check or apply');
+
+  h.confirm(false);
+  await h.select('#update-apply').onclick();
+  assert(!h.requests.some((r) => r.url.endsWith('/update/apply')), 'declined manual action must not apply');
+  h.confirm(true);
+  let finishApply;
+  h.respond(() => new Promise((resolve) => { finishApply = resolve; }));
+  const apply = h.select('#update-apply').onclick();
+  await new Promise(setImmediate);
+  assert.equal(h.select('#update-apply').disabled, true, 'in-flight request must disable repeated submission');
+  await h.select('#update-apply').onclick();
+  const requests = h.requests.filter((r) => r.url.endsWith('/update/apply'));
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].options.method, 'POST');
+  assert.equal(requests[0].options.headers['X-KRM-CSRF'], 'update-csrf');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { version: '1.2.0' });
+  finishApply({ status: 202, ok: true, data: { accepted: true } });
+  await apply;
+  assert.equal(h.select('#update-apply').disabled, true, 'accepted update remains busy until launcher status says otherwise');
+  assert(h.select('#update-status').textContent.includes('Загрузка'));
+
+  h.respond({ status: 200, ok: true, data: { ...state, applying: true, phase: 'trial' } });
+  await h.run('loadUpdateStatus()');
+  assert(h.select('#update-status').textContent.includes('Проверка'));
+  assert.equal(h.select('#update-check').disabled, true);
+  h.respond({ status: 200, ok: true, data: { ...state, phase: 'failed', last_error: '<script>failure</script>' } });
+  await h.run('loadUpdateStatus()');
+  assert(h.select('#update-status').textContent.includes('<script>failure</script>'), 'failure is rendered as text');
+  assert.equal(h.select('#update-check').disabled, false);
+
+  h.respond({ status: 200, ok: true, data: { ...state, current_version: '1.2.0', check: undefined } });
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.select('#update-apply').classList.contains('hidden'), true, 'completed update must clear the old available release');
+  assert(h.select('#update-status').textContent.includes('1.2.0'));
+
+  let finishStatus;
+  h.respond(() => new Promise((resolve) => { finishStatus = resolve; }));
+  const statusRead = h.run('loadUpdateStatus()');
+  const before = h.requests.length;
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.requests.length, before, 'slow status request must not overlap');
+  finishStatus({ status: 502, ok: false, data: { error: 'launcher unavailable' } });
+  await statusRead;
+  assert.equal(h.select('#update-apply').disabled, true, 'unreachable launcher must revoke installation readiness');
+
+  h.respond({ status: 401, ok: false, data: { error: 'expired' } });
+  h.run('pollTimer = setInterval(() => {}, 3000)');
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.intervals.size, 0);
+  const count = h.requests.length;
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.requests.length, count, 'logged-out status calls must not create an authentication storm');
+}
+
+async function serviceWorkerChecks() {
+  const worker = fs.readFileSync(path.join(root, 'web/sw.js'), 'utf8');
+  assert.equal(worker, fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8'));
+  const handlers = {};
+  const cached = [];
+  let offline = false;
+  const response = { ok: true, clone: () => ({ cached: true }) };
+  const context = vm.createContext({
+    URL,
+    self: { location: { origin: 'https://ui.test' }, addEventListener: (name, handler) => { handlers[name] = handler; } },
+    caches: {
+      open: async () => ({ addAll: async (assets) => cached.push(...assets), put: async (request) => cached.push(request.url) }),
+      keys: async () => ['krm-ui-old', 'krm-ui-rc2'], delete: async () => true,
+      match: async () => ({ offline: true }),
+    },
+    fetch: async () => { if (offline) throw new Error('offline'); return response; },
+  });
+  vm.runInContext(worker, context);
+  let installation;
+  handlers.install({ waitUntil: (promise) => { installation = promise; } });
+  await installation;
+  assert.deepEqual(cached, ['/', '/assets/app.css', '/assets/app.js', '/manifest.webmanifest']);
+  for (const [method, url] of [['GET', 'https://ui.test/api/v1/status'], ['POST', 'https://ui.test/'], ['GET', 'https://other.test/'], ['GET', 'https://ui.test/?secret=value']]) {
+    let intercepted = false;
+    handlers.fetch({ request: { method, url }, respondWith: () => { intercepted = true; } });
+    assert.equal(intercepted, false, `${method} ${url} must bypass cache`);
+  }
+  for (const isOffline of [false, true]) {
+    offline = isOffline;
+    let fetched;
+    const background = [];
+    handlers.fetch({ request: { method: 'GET', url: 'https://ui.test/assets/app.js' }, respondWith: (promise) => { fetched = promise; }, waitUntil: (promise) => background.push(promise) });
+    const got = await fetched;
+    await Promise.all(background);
+    assert.equal(isOffline ? got.offline : got.ok, true);
+  }
+}
+
 async function main() {
+  await appChecks();
+  await updateChecks();
+  await serviceWorkerChecks();
   statusChecks();
   for (const count of [0, 301, 1000, 2000]) {
     const events = Array.from({ length: count }, (_, index) => event(index + 1));
@@ -136,7 +329,7 @@ async function main() {
   assert.equal(endless.element.innerHTML, 'previous events');
   assert.equal(endless.errors.length, 1);
 
-  console.log('UI status and event pagination checks passed.');
+  console.log('UI authentication, rendering, updates, service worker, status and event pagination checks passed.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -117,7 +117,9 @@ func (s *Store) loadEvents(r io.Reader) error {
 				e = legacyTruncatedEvent(line)
 				valid = true
 			} else {
-				valid = json.Unmarshal(line, &e) == nil
+				decoder := json.NewDecoder(bytes.NewReader(line))
+				decoder.UseNumber()
+				valid = decoder.Decode(&e) == nil && decoder.Decode(new(any)) == io.EOF
 			}
 			if valid {
 				e.Message = redact.Text(e.Message)

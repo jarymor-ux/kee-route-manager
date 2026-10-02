@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
+	"flag"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTLSInitReturnsCertificatePath(t *testing.T) {
@@ -26,6 +31,68 @@ func TestTLSInitReturnsCertificatePath(t *testing.T) {
 	c.API.Enabled = false
 	if _, e = initTLS(c); e == nil {
 		t.Fatal("TLS init accepted disabled API")
+	}
+}
+
+func TestEntrypoint(t *testing.T) {
+	if os.Getenv("KRM_TEST_DAEMON_ENTRYPOINT") == "1" {
+		for i, arg := range os.Args {
+			if arg == "--" {
+				os.Args = append([]string{"kee-route-managerd"}, os.Args[i+1:]...)
+				main()
+				return
+			}
+		}
+		t.Fatal("helper arguments missing")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "controller.yaml")
+	template, err := os.ReadFile("../../configs/linux-systemd.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.NewReplacer("/etc/kee-route-manager/", dir+"/config/", "/var/lib/kee-route-manager", dir+"/state", "/var/cache/kee-route-manager", dir+"/cache", "/run/kee-route-manager", dir+"/run").Replace(string(template))
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	uiPath := filepath.Join(dir, "ui.yaml")
+	if err := os.WriteFile(uiPath, []byte("instance:\n  role: ui\nui:\n  upstream: https://127.0.0.1:9443\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args    []string
+		success bool
+		want    string
+	}{
+		{[]string{"version"}, true, "kee-route-managerd " + version},
+		{[]string{"validate", "--config", path}, true, "Controller configuration is valid"},
+		{[]string{"tls-init", "--config", path}, true, filepath.Join(dir, "config", "api.crt")},
+		{[]string{"serve", "--config", uiPath}, false, "daemon requires instance.role=controller"},
+		{[]string{"validate", "--config", "/missing/config.yaml"}, false, "read config"},
+		{[]string{"unsupported"}, false, "usage: kee-route-managerd"},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		args := []string{"-test.run=^TestEntrypoint$"}
+		if coverage := flag.Lookup("test.gocoverdir"); coverage != nil && coverage.Value.String() != "" {
+			args = append(args, "-test.gocoverdir="+coverage.Value.String())
+		}
+		args = append(args, "--")
+		args = append(args, tc.args...)
+		cmd := exec.CommandContext(ctx, os.Args[0], args...)
+		cmd.Env = append(os.Environ(), "KRM_TEST_DAEMON_ENTRYPOINT=1")
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if (err == nil) != tc.success || !strings.Contains(string(out), tc.want) {
+			t.Fatalf("args=%v err=%v output=%s", tc.args, err, out)
+		}
+	}
+	if _, err := tls.LoadX509KeyPair(filepath.Join(dir, "config", "api.crt"), filepath.Join(dir, "config", "api.key")); err != nil {
+		t.Fatalf("tls-init produced unusable certificate: %v", err)
+	}
+	for _, name := range []string{"state", "cache", "run"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("offline command wrote %s: %v", name, err)
+		}
 	}
 }
 func TestDaemonRejectsUIConfiguration(t *testing.T) {

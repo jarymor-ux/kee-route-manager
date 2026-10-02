@@ -57,7 +57,8 @@
   </div>
   <div class="section-head"><div><h2>Клиенты</h2><p id="clients-freshness">—</p></div><div class="row"><button id="restart-xray" class="ghost">Перезапустить Xray</button><button id="reboot" class="danger-outline">Перезагрузить устройство</button></div></div>
   <div class="table-wrap"><table><thead><tr><th>Устройство</th><th>IP / MAC</th><th>Связь</th><th>Политика</th><th>Действия</th></tr></thead><tbody id="clients-body"></tbody></table></div>
-  <div class="section-head tools-head"><div><h2>Инструменты</h2><p>Диагностика, системный журнал и обновление</p></div><div class="row tool-buttons"><button id="system-logs" class="ghost">Системный журнал</button><button id="diagnostics" class="ghost">Диагностика</button><button id="update-check" class="ghost">Проверить обновление</button></div></div>
+  <div class="section-head tools-head"><div><h2>Инструменты</h2><p>Диагностика, системный журнал и обновление</p></div><div class="row tool-buttons"><button id="system-logs" class="ghost">Системный журнал</button><button id="diagnostics" class="ghost">Диагностика</button><button id="update-check" class="ghost">Проверить обновление</button><button id="update-apply" class="primary hidden" disabled>Установить обновление</button></div></div>
+  <p id="update-status" class="sub" role="status" aria-live="polite">Статус обновлений пока неизвестен</p>
   <pre id="tool-output" class="tool-output hidden"></pre>
   <h2>Порты</h2><div id="ports" class="grid ports-grid"></div>
 </section>

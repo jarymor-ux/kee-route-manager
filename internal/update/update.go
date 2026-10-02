@@ -1,12 +1,9 @@
 package update
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -33,6 +29,7 @@ type Asset struct {
 }
 type Manifest struct {
 	SchemaVersion   int       `json:"schema_version"`
+	UpdateProtocol  int       `json:"update_protocol,omitempty"`
 	Version         string    `json:"version"`
 	Channel         string    `json:"channel"`
 	PublishedAt     time.Time `json:"published_at"`
@@ -40,11 +37,13 @@ type Manifest struct {
 	Assets          []Asset   `json:"assets"`
 }
 type CheckResult struct {
-	CurrentVersion string   `json:"current_version"`
-	LatestVersion  string   `json:"latest_version"`
-	Available      bool     `json:"available"`
-	Manifest       Manifest `json:"manifest"`
-	Asset          Asset    `json:"asset"`
+	CurrentVersion string           `json:"current_version"`
+	LatestVersion  string           `json:"latest_version"`
+	Available      bool             `json:"available"`
+	Manifest       Manifest         `json:"manifest"`
+	Asset          Asset            `json:"asset"`
+	Assets         map[string]Asset `json:"assets,omitempty"`
+	StageSupported bool             `json:"stage_supported"`
 }
 type Pending struct {
 	SchemaVersion  int       `json:"schema_version"`
@@ -71,8 +70,18 @@ func New(c config.Update, stateDir, current string) *Updater {
 }
 func (u *Updater) Enabled() bool { return u.cfg.Enabled }
 func (u *Updater) Check(ctx context.Context) (CheckResult, error) {
+	checked, err := u.checkSigned(ctx)
+	return checked.result, err
+}
+
+type checkedRelease struct {
+	result              CheckResult
+	manifest, signature []byte
+}
+
+func (u *Updater) checkSigned(ctx context.Context) (checkedRelease, error) {
 	if !u.cfg.Enabled {
-		return CheckResult{}, fmt.Errorf("updates disabled")
+		return checkedRelease{}, fmt.Errorf("updates disabled")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -81,82 +90,58 @@ func (u *Updater) Check(ctx context.Context) (CheckResult, error) {
 		var err error
 		manifestURL, signatureURL, releaseTag, err = u.githubManifestURLs(ctx)
 		if err != nil {
-			return CheckResult{}, err
+			return checkedRelease{}, err
 		}
 	}
 	manifestBytes, e := u.download(ctx, manifestURL, 4<<20)
 	if e != nil {
-		return CheckResult{}, e
+		return checkedRelease{}, e
 	}
 	sig, e := u.download(ctx, signatureURL, 4096)
 	if e != nil {
-		return CheckResult{}, e
+		return checkedRelease{}, e
 	}
-	pub, e := decodeKey(u.cfg.PublicKey, ed25519.PublicKeySize)
+	m, e := authenticateManifest(manifestBytes, sig, u.cfg.PublicKey, u.cfg.Channel)
 	if e != nil {
-		return CheckResult{}, fmt.Errorf("public key: %w", e)
-	}
-	signature, e := decodeSignature(sig)
-	if e != nil {
-		return CheckResult{}, e
-	}
-	if !ed25519.Verify(ed25519.PublicKey(pub), manifestBytes, signature) {
-		return CheckResult{}, fmt.Errorf("manifest signature invalid")
-	}
-	var m Manifest
-	dec := json.NewDecoder(bytes.NewReader(manifestBytes))
-	dec.DisallowUnknownFields()
-	if e = dec.Decode(&m); e != nil {
-		return CheckResult{}, e
-	}
-	if e = dec.Decode(new(any)); e != io.EOF {
-		return CheckResult{}, fmt.Errorf("unexpected trailing manifest data")
-	}
-	if m.SchemaVersion != 1 {
-		return CheckResult{}, fmt.Errorf("unsupported manifest schema")
+		return checkedRelease{}, e
 	}
 	if releaseTag != "" && strings.TrimPrefix(m.Version, "v") != strings.TrimPrefix(releaseTag, "v") {
-		return CheckResult{}, fmt.Errorf("signed manifest version does not match GitHub release tag")
-	}
-	if m.Channel != u.cfg.Channel {
-		return CheckResult{}, fmt.Errorf("manifest channel %q does not match %q", m.Channel, u.cfg.Channel)
-	}
-	if m.MinConfigSchema > config.SchemaVersion {
-		return CheckResult{}, fmt.Errorf("release requires config schema %d", m.MinConfigSchema)
+		return checkedRelease{}, fmt.Errorf("signed manifest version does not match GitHub release tag")
 	}
 	a, e := selectAsset(m.Assets)
 	if e != nil {
-		return CheckResult{}, e
-	}
-	if _, e := parseSemVer(m.Version); e != nil {
-		return CheckResult{}, fmt.Errorf("invalid release version: %w", e)
+		return checkedRelease{}, e
 	}
 	if _, e := parseSemVer(u.current); e != nil {
-		return CheckResult{}, fmt.Errorf("invalid current version: %w", e)
+		return checkedRelease{}, fmt.Errorf("invalid current version: %w", e)
 	}
-	if u.cfg.Channel == "stable" && strings.Contains(strings.SplitN(m.Version, "+", 2)[0], "-") {
-		return CheckResult{}, fmt.Errorf("stable channel cannot contain prerelease")
+	if e = validateAsset(a, false); e != nil {
+		return checkedRelease{}, e
 	}
-	if a.Size < 1 || a.Size > 200<<20 {
-		return CheckResult{}, fmt.Errorf("invalid asset size")
-	}
-	if len(a.SHA256) != 64 {
-		return CheckResult{}, fmt.Errorf("invalid asset checksum")
-	}
-	if _, e := hex.DecodeString(a.SHA256); e != nil {
-		return CheckResult{}, fmt.Errorf("invalid asset checksum")
-	}
-	if !secureURL(a.URL) {
-		return CheckResult{}, fmt.Errorf("asset URL must use HTTPS")
+	var assets map[string]Asset
+	if m.UpdateProtocol == 1 {
+		assets, e = bundleAssets(m)
+		if e != nil {
+			return checkedRelease{}, e
+		}
+		if releaseTag != "" {
+			for _, asset := range assets {
+				want := "https://github.com/" + u.cfg.GitHubRepository + "/releases/download/" + releaseTag + "/" + asset.Name
+				if asset.URL != want {
+					return checkedRelease{}, fmt.Errorf("asset is not bound to selected GitHub release")
+				}
+			}
+		}
 	}
 	cmp := compareVersions(m.Version, u.current)
 	available := cmp > 0 || u.cfg.AllowDowngrade && cmp != 0
-	return CheckResult{u.current, m.Version, available, m, a}, nil
+	result := CheckResult{CurrentVersion: u.current, LatestVersion: m.Version, Available: available, Manifest: m, Asset: a, Assets: assets, StageSupported: m.UpdateProtocol == 1}
+	return checkedRelease{result: result, manifest: manifestBytes, signature: sig}, nil
 }
 
-// ErrApplyDisabled documents the RC2 safety boundary: installation must be done
-// by the verified installer until a real A/B launcher with readiness exists.
-var ErrApplyDisabled = errors.New("update.apply disabled in RC2: verified A/B launcher is not implemented; use the versioned installer")
+// In-process apply remains forbidden: only the separate launcher may activate
+// a verified staged release and supervise readiness/rollback.
+var ErrApplyDisabled = errors.New("in-process update apply is disabled; use the separately installed signed-release launcher")
 
 func (u *Updater) Apply(ctx context.Context, r CheckResult) (Pending, error) {
 	return Pending{}, ErrApplyDisabled
@@ -202,15 +187,6 @@ func (u *Updater) download(ctx context.Context, raw string, max int64) ([]byte, 
 	return b, nil
 }
 func (u *Updater) pendingPath() string { return filepath.Join(u.stateDir, "update-pending.json") }
-func selectAsset(xs []Asset) (Asset, error) {
-	goarm := os.Getenv("GOARM")
-	for _, a := range xs {
-		if (a.Component == "" || a.Component == "daemon") && a.OS == runtime.GOOS && a.Arch == runtime.GOARCH && (a.GOARM == "" || goarm == "" || a.GOARM == goarm) {
-			return a, nil
-		}
-	}
-	return Asset{}, fmt.Errorf("no asset for %s/%s", runtime.GOOS, runtime.GOARCH)
-}
 func decodeKey(s string, n int) ([]byte, error) {
 	s = strings.TrimSpace(s)
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {

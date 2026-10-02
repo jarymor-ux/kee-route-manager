@@ -33,6 +33,11 @@ func (m *Manager) PrepareReplay(ctx context.Context, desired tunnel.DesiredPool,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if !restore {
+		if err := m.checkRoutingFiles(); err != nil {
+			return nil, err
+		}
+	}
 	proof := tunnel.ReplayProof{}
 	for _, path := range m.snapshotPaths() {
 		hash, err := fileIdentity(path)

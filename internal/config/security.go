@@ -105,7 +105,7 @@ func (c Config) validateCommon() []error {
 		}
 	}
 	if c.Update.AutoApply {
-		es = append(es, fmt.Errorf("update.auto_apply is unavailable in RC2 without a verified A/B launcher"))
+		es = append(es, fmt.Errorf("update.auto_apply is unsupported; signed updates require an explicit panel or CLI action"))
 	}
 	return es
 }
@@ -156,6 +156,19 @@ func (c Config) validateController() []error {
 	}
 	if c.API.UnixSocket != "" && (!filepath.IsAbs(c.API.UnixSocket) || !within(c.Paths.RunDir, c.API.UnixSocket)) {
 		add(fmt.Errorf("api.unix_socket must be an absolute path inside paths.run_dir"))
+	}
+	if c.Update.InstallDir != "" {
+		if !filepath.IsAbs(c.Update.InstallDir) || strings.ContainsRune(c.Update.InstallDir, 0) {
+			add(fmt.Errorf("update.install_dir must be absolute without NUL"))
+		}
+		for _, path := range []string{c.Paths.StateDir, c.Paths.CacheDir, c.Paths.RunDir, c.Xray.ConfigDir} {
+			if within(path, c.Update.InstallDir) || within(c.Update.InstallDir, path) {
+				add(fmt.Errorf("update.install_dir must be separate from controller state, cache, run and Xray directories"))
+			}
+		}
+	}
+	if c.Update.LauncherSocket != "" && (!filepath.IsAbs(c.Update.LauncherSocket) || strings.ContainsRune(c.Update.LauncherSocket, 0) || !within(c.Paths.RunDir, c.Update.LauncherSocket) || physicalPath(c.Update.LauncherSocket) == physicalPath(c.Paths.RunDir) || physicalPath(c.Update.LauncherSocket) == physicalPath(c.API.UnixSocket)) {
+		add(fmt.Errorf("update.launcher_socket must be a distinct absolute socket inside paths.run_dir"))
 	}
 	if !filepath.IsAbs(c.Xray.ConfigDir) || !filepath.IsAbs(c.Xray.ManagedDir) || physicalPath(c.Xray.ConfigDir) != physicalPath(c.Xray.ManagedDir) {
 		add(fmt.Errorf("xray.managed_dir must resolve to absolute xray.config_dir; nested directories are not loaded"))
@@ -264,10 +277,12 @@ func (c Config) validateController() []error {
 	}
 	register("xray.api_address", apiPort)
 	register("xray.health_proxy_port", c.Xray.HealthProxyPort)
-	for i := 0; i < c.Pool.Size; i++ {
+	// Invalid counts are rejected by Validate. Do not expand untrusted counts
+	// into arbitrarily large port maps and diagnostic lists before that check.
+	for i := 0; i < c.Pool.Size && i < 20; i++ {
 		register("xray.probe", c.Xray.ProbePortStart+i)
 	}
-	for i := 0; i < c.Benchmark.BatchSize; i++ {
+	for i := 0; i < c.Benchmark.BatchSize && i < 100; i++ {
 		register("benchmark.temporary_proxy", c.Benchmark.TemporaryProxyPortStart+i)
 	}
 	if c.API.Enabled {

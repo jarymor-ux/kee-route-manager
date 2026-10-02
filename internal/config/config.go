@@ -200,6 +200,8 @@ type Speed struct {
 	Repetitions    int      `json:"repetitions"`
 }
 type Update struct {
+	InstallDir        string   `json:"install_dir"`
+	LauncherSocket    string   `json:"launcher_socket"`
 	GitHubRepository  string   `json:"github_repository"`
 	Enabled           bool     `json:"enabled"`
 	Channel           string   `json:"channel"`
@@ -293,6 +295,8 @@ func (c *Config) resolve(configPath string) {
 	c.Xray.ConfigDir = f(c.Xray.ConfigDir)
 	c.Xray.ManagedDir = f(c.Xray.ManagedDir)
 	c.Xray.BaseRoutingFile = f(c.Xray.BaseRoutingFile)
+	c.Update.InstallDir = f(c.Update.InstallDir)
+	c.Update.LauncherSocket = f(c.Update.LauncherSocket)
 }
 func (c *Config) ApplyPlatformDefaults() {
 	if c.Instance.Role == "ui-proxy" {
@@ -411,6 +415,12 @@ func (c *Config) ApplyPlatformDefaults() {
 	if c.API.UnixSocket == "" {
 		c.API.UnixSocket = filepath.Join(c.Paths.RunDir, "control.sock")
 	}
+	if c.Update.InstallDir == "" {
+		c.Update.InstallDir = c.Paths.StateDir + "-updates"
+	}
+	if c.Update.LauncherSocket == "" {
+		c.Update.LauncherSocket = filepath.Join(c.Paths.RunDir, "launcher.sock")
+	}
 }
 func validateManagedFirewall(prefix, mode string, interfaces []string, tcpPort, udpPort, mark, table int, bypass []string) []error {
 	if mode != "managed" {
@@ -515,7 +525,7 @@ func (c Config) Validate() error {
 	if c.Pool.Size < 1 || c.Pool.Size > 20 {
 		es = append(es, fmt.Errorf("pool.size must be 1..20"))
 	}
-	if c.Xray.ProbePortStart < 1024 || c.Xray.ProbePortStart+c.Pool.Size >= 65535 {
+	if c.Xray.ProbePortStart < 1024 || c.Xray.ProbePortStart > 65535 || c.Pool.Size > 65536-c.Xray.ProbePortStart {
 		es = append(es, fmt.Errorf("xray.probe_port_start invalid"))
 	}
 	if len(c.Subscriptions.Sources) == 0 {

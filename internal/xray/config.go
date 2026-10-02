@@ -23,10 +23,9 @@ func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.
 	if e != nil {
 		return Managed{}, e
 	}
-	api := map[string]any{"api": map[string]any{"tag": cfg.Xray.APITag, "services": []string{"HandlerService", "RoutingService", "StatsService"}}, "inbounds": []any{map[string]any{"tag": cfg.Xray.APITag, "listen": host, "port": port, "protocol": "dokodemo-door", "settings": map[string]any{"address": host}}}, "routing": map[string]any{"rules": []any{map[string]any{"type": "field", "inboundTag": []string{cfg.Xray.APITag}, "outboundTag": cfg.Xray.APITag}}}}
+	api := map[string]any{"api": map[string]any{"tag": cfg.Xray.APITag, "services": []string{"HandlerService", "RoutingService", "StatsService"}}, "inbounds": []any{map[string]any{"tag": cfg.Xray.APITag, "listen": host, "port": port, "protocol": "dokodemo-door", "settings": map[string]any{"address": host}}}}
 	ins := []any{httpInbound("krm-health", cfg.Xray.HealthProxyPort)}
 	outs := []any{map[string]any{"tag": cfg.Xray.ManagedDirectTag, "protocol": "freedom", "settings": map[string]any{}}}
-	rules := []any{map[string]any{"type": "field", "inboundTag": []string{"krm-health"}, "balancerTag": cfg.Xray.BalancerTag}}
 	byIndex := map[int]model.Slot{}
 	for _, s := range slots {
 		byIndex[s.Index] = s
@@ -44,11 +43,27 @@ func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.
 		} else {
 			outs = append(outs, blackholeOutbound(tag))
 		}
-		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{fmt.Sprintf("krm-probe-%d", i)}, "outboundTag": tag})
 	}
 	outs = append(outs, blackholeOutbound(selectionTag))
-	routing := map[string]any{"routing": map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}}
+	// Xray replaces routing wholesale when loading another configuration file.
+	// With adoption, the base file owns the complete section. Retain the empty
+	// managed fragment's filename for existing snapshot/replay identities.
+	routing := map[string]any{}
+	if cfg.Xray.BaseRoutingFile == "" {
+		routing["routing"] = managedRouting(cfg)
+	}
 	return Managed{pretty(api), pretty(map[string]any{"inbounds": ins}), pretty(map[string]any{"outbounds": outs}), pretty(routing)}, nil
+}
+
+func managedRouting(cfg config.Config) map[string]any {
+	rules := []any{
+		map[string]any{"type": "field", "inboundTag": []string{cfg.Xray.APITag}, "outboundTag": cfg.Xray.APITag},
+		map[string]any{"type": "field", "inboundTag": []string{"krm-health"}, "balancerTag": cfg.Xray.BalancerTag},
+	}
+	for i := 0; i < cfg.Pool.Size; i++ {
+		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{fmt.Sprintf("krm-probe-%d", i)}, "outboundTag": fmt.Sprintf("%s%d", cfg.Xray.SlotTagPrefix, i)})
+	}
+	return map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}
 }
 func Outbound(n model.Node, tag string) (map[string]any, error) {
 	if n.Protocol != "vless" {

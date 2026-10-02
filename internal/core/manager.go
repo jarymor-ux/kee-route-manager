@@ -14,6 +14,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/operation"
 	"github.com/jarymor-ux/kee-route-manager/internal/platform"
+	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"github.com/jarymor-ux/kee-route-manager/internal/store"
 	"github.com/jarymor-ux/kee-route-manager/internal/subscription"
 	"github.com/jarymor-ux/kee-route-manager/internal/tunnel"
@@ -159,7 +160,7 @@ func (m *Manager) Metrics() platform.Metrics {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	v := m.metrics
-	if !v.UpdatedAt.IsZero() && time.Since(v.UpdatedAt) > 15*time.Second {
+	if v.UpdatedAt.IsZero() || time.Since(v.UpdatedAt) > 15*time.Second {
 		v.Stale = true
 	}
 	return v
@@ -168,7 +169,7 @@ func (m *Manager) Clients() ClientsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	xs := append([]platform.Client(nil), m.clients...)
-	return ClientsSnapshot{xs, m.clientsUpdated, m.clientsUpdated.IsZero() || time.Since(m.clientsUpdated) > time.Minute, m.clientsError}
+	return ClientsSnapshot{xs, m.clientsUpdated, m.clientsError != "" || m.clientsUpdated.IsZero() || time.Since(m.clientsUpdated) > time.Minute, m.clientsError}
 }
 func (m *Manager) SystemLogs(ctx context.Context, lines int) (string, error) {
 	return m.platform.SystemLogs(ctx, lines)
@@ -319,10 +320,17 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 		default:
 			activeM, activeKnown := measurements[state.ActiveNodeID]
 			winnerM := measurements[newSlots[winner].NodeID]
-			if (!activeKnown || !activeM.Healthy) && mode != "emergency" && mode != "recovery" && mode != "source-refresh" {
+			activeHealthy := activeKnown && activeM.Healthy
+			if index := slotIndexForNode(state.Pool, state.ActiveNodeID); index >= 0 {
+				active := state.Pool[index]
+				if active.LastVerifiedAt.After(activeM.CheckedAt) {
+					activeHealthy = active.Healthy
+				}
+			}
+			if !activeHealthy && mode != "emergency" && mode != "recovery" && mode != "source-refresh" {
 				desired = winner
 				reason = "active node unhealthy"
-			} else if time.Since(state.LastSwitchAt) >= m.cfg.Benchmark.SwitchCooldown.Duration &&
+			} else if activeKnown && activeM.Healthy && time.Since(state.LastSwitchAt) >= m.cfg.Benchmark.SwitchCooldown.Duration &&
 				time.Since(state.ActiveSince) >= m.cfg.Benchmark.StabilityBeforeUpgrade.Duration &&
 				improvement(activeM.Score, winnerM.Score) >= float64(m.cfg.Benchmark.MinImprovementPercent) {
 				desired = winner
@@ -518,7 +526,7 @@ func (m *Manager) pollMetrics() {
 	if err != nil {
 		v = m.metrics
 		v.Stale = true
-		v.Error = err.Error()
+		v.Error = redact.Text(err.Error())
 	} else {
 		v.Error = ""
 		v.Stale = false
@@ -535,7 +543,7 @@ func (m *Manager) pollClients() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
-		m.clientsError = err.Error()
+		m.clientsError = redact.Text(err.Error())
 		return
 	}
 	m.clients = xs
@@ -660,7 +668,7 @@ func (m *Manager) checkHealth(ctx context.Context) {
 	}
 	if classification == "healthy" {
 		_ = m.store.UpdateVolatile(update)
-		for _, slot := range state.Pool {
+		for _, slot := range m.store.State().Pool {
 			if slot.NodeID != "" && (slot.LastVerifiedAt.IsZero() || time.Since(slot.LastVerifiedAt) >= m.cfg.Health.HotPoolFreshness.Duration) {
 				m.queueBenchmark("hot-pool-refresh")
 				break
@@ -1034,6 +1042,12 @@ func assignSlots(old []model.Slot, selected []model.Node, measurements map[strin
 			if n, ok := selectedMap[s.NodeID]; ok {
 				mm := measurements[n.ID]
 				out[s.Index] = model.Slot{Index: s.Index, Tag: fmt.Sprintf("%s%d", prefix, s.Index), NodeID: n.ID, Label: n.Label, Sources: n.Sources, Healthy: mm.Healthy, LastVerifiedAt: mm.CheckedAt, Score: mm.Score}
+				// A retained node may be absent from the current subscription. Its
+				// historical score must not erase newer live health verification.
+				if s.LastVerifiedAt.After(mm.CheckedAt) {
+					out[s.Index].Healthy = s.Healthy
+					out[s.Index].LastVerifiedAt = s.LastVerifiedAt
+				}
 				used[n.ID] = true
 			}
 		}

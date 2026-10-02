@@ -8,10 +8,12 @@ import (
 )
 
 var (
-	urlRE    = regexp.MustCompile(`(?i)(?:https?|vless|vmess|trojan|ss)://[^\s<>"']+`)
-	uuidRE   = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	urlRE = regexp.MustCompile(`(?i)(?:https?|vless|vmess|trojan|ss)://[^\s<>"']+`)
+	// Credentials remain private when concatenated with labels or other values.
+	uuidRE   = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 	headerRE = regexp.MustCompile(`(?im)\b(Authorization|Cookie|Set-Cookie)\s*:\s*[^\r\n]*`)
-	secretRE = regexp.MustCompile(`(?i)(["']?(?:uuid|password|public[_-]?key|pbk|short[_-]?id|sid|token|secret)["']?\s*[:=]\s*["']?)[^\s,"'}]+`)
+	// Consume complete quoted values, including escapes and truncated log records.
+	secretRE = regexp.MustCompile(`(?is)(["']?(?:uuid|password|public[_-]?key|pbk|short[_-]?id|sid|token|secret)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*(?:"|\\?$)|'(?:\\.|[^'\\])*(?:'|\\?$)|[^\s,"'}]+)`)
 	ipv4RE   = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 	ipv6RE   = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{1,4}:){2,}[0-9a-f:]*\b`)
 )

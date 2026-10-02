@@ -149,6 +149,19 @@ func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) err
 	if e = m.validateCandidate(ctx, managed); e != nil {
 		return e
 	}
+	if path := m.cfg.Xray.BaseRoutingFile; path != "" {
+		current, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		planned, err := m.patchedBaseRoute(path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, planned) {
+			return m.installManaged(ctx, managed, desired.Selection.Tag)
+		}
+	}
 	// Ports, API and routing topology cannot be changed by outbound replacement.
 	// Refresh all generated files and runtime together when those settings change.
 	for name, desiredBytes := range map[string][]byte{
@@ -165,10 +178,7 @@ func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) err
 		}
 	}
 	if !m.cfg.Xray.DynamicAPI {
-		if e = atomicWrite(filepath.Join(m.cfg.Xray.ManagedDir, "04_90_kee_route_manager_outbounds.json"), managed.Outbounds, 0600); e != nil {
-			return e
-		}
-		return m.p.RestartXray(ctx)
+		return m.installManaged(ctx, managed, desired.Selection.Tag)
 	}
 	old := slotMap(oldSlots)
 	next := slotMap(newSlots)
@@ -268,6 +278,9 @@ func (m *Manager) replace(ctx context.Context, tag string, out map[string]any) e
 	return e
 }
 func (m *Manager) validateCandidate(ctx context.Context, v Managed) error {
+	if e := m.checkRoutingFiles(); e != nil {
+		return e
+	}
 	tmp, e := os.MkdirTemp(m.cfg.Paths.RunDir, "krm-xray-candidate-")
 	if e != nil {
 		return e
@@ -332,29 +345,23 @@ func (m *Manager) patchBaseRoute(path string) error {
 	if path == "" {
 		return nil
 	}
-	b, e := os.ReadFile(path)
+	b, e := m.patchedBaseRoute(path)
 	if e != nil {
 		return e
 	}
-	var root map[string]any
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-	if e = dec.Decode(&root); e != nil {
-		return fmt.Errorf("base routing file must be strict JSON: %w", e)
-	}
-	var extra any
-	if e = dec.Decode(&extra); !errors.Is(e, io.EOF) {
-		return fmt.Errorf("base routing file contains trailing JSON content")
-	}
+	return atomicWrite(path, b, 0600)
+}
 
-	routing, ok := root["routing"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("routing object missing")
+func (m *Manager) patchedBaseRoute(path string) ([]byte, error) {
+	root, e := readRoutingRoot(path)
+	if e != nil {
+		return nil, e
 	}
-	rules, ok := routing["rules"].([]any)
-	if !ok {
-		return fmt.Errorf("routing.rules missing")
+	if e = m.prepareBaseRouting(root); e != nil {
+		return nil, e
 	}
+	routing := root["routing"].(map[string]any)
+	rules := routing["rules"].([]any)
 	replace := map[string]bool{}
 	for _, x := range m.cfg.Xray.Route.ReplaceOutboundTags {
 		replace[x] = true
@@ -380,9 +387,13 @@ func (m *Manager) patchBaseRoute(path string) error {
 		}
 	}
 	if changed == 0 && !already {
-		return fmt.Errorf("no matching routing rule to adopt")
+		return nil, fmt.Errorf("no matching routing rule to adopt")
 	}
-	return atomicWrite(path, pretty(root), 0600)
+	generated := managedRouting(m.cfg)
+	routing["rules"] = append(generated["rules"].([]any), rules...)
+	balancers, _ := routing["balancers"].([]any)
+	routing["balancers"] = append(balancers, generated["balancers"].([]any)...)
+	return pretty(root), nil
 }
 func (m *Manager) waitAPI(ctx context.Context, d time.Duration) error {
 	end := time.Now().Add(d)
@@ -607,7 +618,10 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if e != nil {
 		return e
 	}
-	return os.Rename(n, dst)
+	if e = os.Rename(n, dst); e != nil {
+		return e
+	}
+	return syncDirectory(filepath.Dir(dst))
 }
 func atomicWrite(path string, b []byte, mode os.FileMode) error {
 	if e := os.MkdirAll(filepath.Dir(path), 0755); e != nil {
@@ -735,6 +749,8 @@ func (m *Manager) HealthEndpoint() (*url.URL, error) { return url.Parse(m.Health
 func (m *Manager) Ready(ctx context.Context) error   { return m.WaitReady(ctx, 3*time.Second) }
 func (m *Manager) Restore(ctx context.Context) error { return m.RestoreOriginal(ctx) }
 func (m *Manager) ActualState(ctx context.Context) (tunnel.ActualCoreState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	v := tunnel.ActualCoreState{Running: m.p.XrayRunning(ctx)}
 	path := filepath.Join(m.cfg.Xray.ManagedDir, "04_90_kee_route_manager_outbounds.json")
 	b, err := os.ReadFile(path)
@@ -860,20 +876,11 @@ func routeIdentity(rule map[string]any) string {
 	return string(pretty(identity))
 }
 func (m *Manager) reverseBaseRoute(originalPath, currentPath string) error {
-	load := func(path string) (map[string]any, error) {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var root map[string]any
-		err = json.Unmarshal(b, &root)
-		return root, err
-	}
-	original, err := load(originalPath)
+	original, err := readRoutingRoot(originalPath)
 	if err != nil {
 		return err
 	}
-	current, err := load(currentPath)
+	current, err := readRoutingRoot(currentPath)
 	if err != nil {
 		return err
 	}
@@ -884,6 +891,22 @@ func (m *Manager) reverseBaseRoute(originalPath, currentPath string) error {
 	curRouting, ok := current["routing"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("current routing missing")
+	}
+	if err = m.rejectOriginalRoutingCollision(original); err != nil {
+		return err
+	}
+	removed, err := m.stripManagedRouting(curRouting, false)
+	if err != nil {
+		return err
+	}
+	if removed && len(curRouting["balancers"].([]any)) == 0 {
+		if originalBalancers, existed := origRouting["balancers"]; existed {
+			if values, _ := originalBalancers.([]any); len(values) == 0 {
+				curRouting["balancers"] = originalBalancers
+			}
+		} else {
+			delete(curRouting, "balancers")
+		}
 	}
 	originals := map[string][]map[string]any{}
 	origRules, ok := origRouting["rules"].([]any)
@@ -957,40 +980,38 @@ func (m *Manager) reverseBaseRoute(originalPath, currentPath string) error {
 }
 
 func (m *Manager) checkAdoptedRouting() error {
+	if err := m.checkRoutingFiles(); err != nil {
+		return err
+	}
 	if m.cfg.Xray.BaseRoutingFile == "" {
 		return nil
 	}
-	originalDir := filepath.Join(m.cfg.Paths.StateDir, "xray-original")
-	b, err := os.ReadFile(filepath.Join(originalDir, "paths.json"))
+	originalRoot, err := m.originalBaseRouting()
 	if err != nil {
 		return fmt.Errorf("routing ownership snapshot unavailable: %w", err)
 	}
-	var paths []string
-	if err = json.Unmarshal(b, &paths); err != nil {
+	if originalRoot == nil {
+		return fmt.Errorf("original routing ownership missing")
+	}
+	if err = m.rejectOriginalRoutingCollision(originalRoot); err != nil {
 		return err
 	}
-	targets, err := m.snapshotTargets(paths)
+	currentRoot, err := readRoutingRoot(m.cfg.Xray.BaseRoutingFile)
 	if err != nil {
 		return err
 	}
-	originalPath := ""
-	for i, path := range targets {
-		if path == m.cfg.Xray.BaseRoutingFile {
-			originalPath = filepath.Join(originalDir, fmt.Sprint(i))
-		}
+	currentRouting, ok := currentRoot["routing"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("routing missing")
 	}
-	if originalPath == "" {
-		return fmt.Errorf("original routing ownership missing")
+	owned, err := m.stripManagedRouting(currentRouting, true)
+	if err != nil {
+		return err
 	}
-	rules := func(path string) ([]any, error) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var root map[string]any
-		if err = json.Unmarshal(data, &root); err != nil {
-			return nil, err
-		}
+	if !owned {
+		return fmt.Errorf("managed routing additions missing")
+	}
+	rules := func(root map[string]any) ([]any, error) {
 		routing, ok := root["routing"].(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("routing missing")
@@ -1001,11 +1022,11 @@ func (m *Manager) checkAdoptedRouting() error {
 		}
 		return values, nil
 	}
-	original, err := rules(originalPath)
+	original, err := rules(originalRoot)
 	if err != nil {
 		return err
 	}
-	current, err := rules(m.cfg.Xray.BaseRoutingFile)
+	current, err := rules(currentRoot)
 	if err != nil {
 		return err
 	}
@@ -1017,23 +1038,35 @@ func (m *Manager) checkAdoptedRouting() error {
 	for _, tag := range m.cfg.Xray.Route.ReplaceOutboundTags {
 		replacements[tag] = true
 	}
+	identities := map[string]int{}
 	for _, raw := range original {
 		originalRule, ok := raw.(map[string]any)
 		if !ok || !replacements[stringValue(originalRule["outboundTag"])] || !overlap(originalRule["inboundTag"], wanted) {
 			continue
 		}
-		matched := false
-		for _, rawCurrent := range current {
-			rule, ok := rawCurrent.(map[string]any)
-			if ok && routeIdentity(rule) == routeIdentity(originalRule) {
-				if stringValue(rule["balancerTag"]) != m.cfg.Xray.BalancerTag || stringValue(rule["outboundTag"]) != "" {
-					return fmt.Errorf("adopted routing target drift detected")
-				}
-				matched = true
-			}
+		identities[routeIdentity(originalRule)]++
+	}
+	counts := map[string]int{}
+	for _, raw := range current {
+		rule, ok := raw.(map[string]any)
+		if !ok {
+			continue
 		}
-		if !matched {
-			return fmt.Errorf("adopted routing rule drift detected")
+		key := routeIdentity(rule)
+		if identities[key] == 0 {
+			if stringValue(rule["balancerTag"]) == m.cfg.Xray.BalancerTag {
+				return fmt.Errorf("unexpected adopted routing rule detected")
+			}
+			continue
+		}
+		if stringValue(rule["balancerTag"]) != m.cfg.Xray.BalancerTag || stringValue(rule["outboundTag"]) != "" {
+			return fmt.Errorf("adopted routing target drift detected")
+		}
+		counts[key]++
+	}
+	for key, want := range identities {
+		if counts[key] != want {
+			return fmt.Errorf("adopted routing rule multiplicity drift detected")
 		}
 	}
 	return nil

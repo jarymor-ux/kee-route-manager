@@ -53,7 +53,10 @@ verify_file manifest-rc.json.sig
 version=$(awk -F '"' '/^  "version": / {print $4}' manifest-rc.json)
 channel=$(awk -F '"' '/^  "channel": / {print $4}' manifest-rc.json)
 schema=$(awk '/^  "schema_version": / {gsub(/,/,"",$2);print $2}' manifest-rc.json)
-[ "$version" = "@VERSION@" ] && [ "$channel" = rc ] && [ "$schema" = 1 ] || fail 'signed manifest version/channel/schema does not match pinned bootstrap'
+protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' manifest-rc.json)
+[ "$version" = "@VERSION@" ] && [ "$channel" = rc ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
+MODE=${KRM_MODE:-local-ui}
+case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
 fetch release-files.tar.gz release-files.tar.gz
 verify_file release-files.tar.gz
 mkdir payload
@@ -63,9 +66,11 @@ if tar -tzf release-files.tar.gz | awk 'BEGIN {bad=0} /^\// || /(^|\/)\.\.(\/|$)
 if tar -tvzf release-files.tar.gz | awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive entry types'; fi
 tar -xzf release-files.tar.gz -C payload
 mkdir -p payload/dist
-MODE=${KRM_MODE:-local-ui}
-for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui; do
- case "$MODE:$component" in core:kee-route-manager-ui|ui:kee-route-managerd|ui:kee-route-managerctl) continue;; esac
+cp manifest-rc.json manifest-rc.json.sig SHA256SUMS SHA256SUMS.sig payload/dist/
+# The launcher verifies and installs a complete daemon/UI/ctl slot, including
+# the dormant UI binary in core-only mode. The launcher itself remains stable.
+for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do
+ case "$MODE:$component" in ui:kee-route-managerd|ui:kee-route-managerctl|ui:kee-route-manager-launcher) continue;; esac
  name=$component-linux-$ARCH
  fetch "$name" "$name"
  verify_file "$name"

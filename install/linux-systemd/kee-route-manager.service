@@ -1,5 +1,5 @@
 [Unit]
-Description=Kee Route Manager controller
+Description=Kee Route Manager controller launcher
 After=network-online.target xray.service
 Wants=network-online.target
 
@@ -7,10 +7,10 @@ Wants=network-online.target
 Type=simple
 RuntimeDirectory=kee-route-manager
 RuntimeDirectoryMode=0700
-ExecStart=/usr/local/bin/kee-route-managerd serve --config /etc/kee-route-manager/config.yaml
+ExecStart=/usr/local/bin/kee-route-manager-launcher serve --config /etc/kee-route-manager/config.yaml
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=30
+TimeoutStopSec=70
 LimitNOFILE=8192
 NoNewPrivileges=true
 PrivateTmp=true

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -215,7 +216,10 @@ func (g *generic) DirectBypassActive(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	exists, err := g.tableExists(ctx)
-	return owner.Bypass && !exists, err
+	if err != nil {
+		return false, err
+	}
+	return owner.Bypass && !exists, nil
 }
 func (g *generic) RemoveFirewall(ctx context.Context) error {
 	g.firewallMu.Lock()
@@ -289,6 +293,26 @@ func renderFirewallTable(c firewallConfig, tableName string) string {
 }
 
 func isMissingRuleError(err error) bool {
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "no such file") || strings.Contains(text, "no such process") || strings.Contains(text, "not found") || strings.Contains(text, "does not exist")
+	// Missing binaries and execution failures do not prove a kernel resource is
+	// absent. Only a tool that actually ran can report a missing table or rule.
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return false
+	}
+	if exit.ExitCode() != 1 && exit.ExitCode() != 2 {
+		return false
+	}
+	line := strings.ToLower(strings.SplitN(err.Error(), "\n", 2)[0])
+	line = strings.TrimSuffix(line, fmt.Sprintf(": exit status %d", exit.ExitCode()))
+	switch line {
+	case "nft: no such file or directory",
+		"nft: error: no such file or directory",
+		"nft: error: could not process rule: no such file or directory",
+		"ip: rtnetlink answers: no such file or directory",
+		"ip: rtnetlink answers: no such process",
+		"ip: error: ipv4: fib table does not exist.":
+		return true
+	default:
+		return false
+	}
 }

@@ -68,7 +68,7 @@ func manifest(args []string) error {
 		return e
 	}
 	base, err := url.Parse(*baseURL)
-	if *version == "" || err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
+	if *version == "" || err != nil || base.Scheme != "https" || base.Hostname() == "" || base.User != nil || base.RawQuery != "" || base.ForceQuery || strings.Contains(*baseURL, "#") {
 		return fmt.Errorf("--version and an HTTPS --base-url required")
 	}
 	entries, e := os.ReadDir(*dist)
@@ -84,11 +84,11 @@ func manifest(args []string) error {
 			return fmt.Errorf("symlink asset rejected")
 		}
 		name := x.Name()
-		if strings.ContainsAny(name, " \t\r\n\\") {
+		if strings.ContainsAny(name, " \t\r\n\\?#%") {
 			return fmt.Errorf("unsafe asset name")
 		}
 		component, arch, goarm := "file", "", ""
-		for _, kind := range []string{"kee-route-managerd", "kee-route-manager-ui", "kee-route-managerctl", "krm-release-tool"} {
+		for _, kind := range []string{"kee-route-managerd", "kee-route-manager-ui", "kee-route-managerctl", "kee-route-manager-launcher", "krm-release-tool"} {
 			prefix := kind + "-linux-"
 			if strings.HasPrefix(name, prefix) {
 				var ok bool
@@ -96,7 +96,7 @@ func manifest(args []string) error {
 				if !ok {
 					return fmt.Errorf("invalid binary asset architecture")
 				}
-				component = map[string]string{"kee-route-managerd": "daemon", "kee-route-manager-ui": "ui", "kee-route-managerctl": "ctl", "krm-release-tool": "release-tool"}[kind]
+				component = map[string]string{"kee-route-managerd": "daemon", "kee-route-manager-ui": "ui", "kee-route-managerctl": "ctl", "kee-route-manager-launcher": "launcher", "krm-release-tool": "release-tool"}[kind]
 			}
 		}
 		h, size, e := hashFile(filepath.Join(*dist, name))
@@ -113,7 +113,7 @@ func manifest(args []string) error {
 		return fmt.Errorf("no release binaries found")
 	}
 	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
-	m := update.Manifest{SchemaVersion: 1, Version: *version, Channel: *channel, PublishedAt: time.Now().UTC(), MinConfigSchema: 1, Assets: assets}
+	m := update.Manifest{SchemaVersion: 1, UpdateProtocol: 1, Version: *version, Channel: *channel, PublishedAt: time.Now().UTC(), MinConfigSchema: 1, Assets: assets}
 	b, e := json.MarshalIndent(m, "", "  ")
 	if e != nil {
 		return e

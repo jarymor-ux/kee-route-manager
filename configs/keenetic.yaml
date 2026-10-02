@@ -1,4 +1,4 @@
-# Kee Route Manager 1.0.0-rc.2 — Keenetic/Entware/XKeen
+# Kee Route Manager 1.1.0-rc.1 — Keenetic/Entware/XKeen
 # Replace every *.example.invalid URL before installation.
 schema_version: 1
 instance:
@@ -33,6 +33,7 @@ web:
 platform:
   kind: keenetic
   command_timeout: 30s
+  xray_status_command: [/opt/etc/kee-route-manager/xray-status.sh]
   keenetic:
     rci_base_url: "http://127.0.0.1:79/rci/"
     ndmc_binary: ndmc
@@ -132,13 +133,13 @@ benchmark:
     target_duration: 6s
     repetitions: 3
 update:
-  enabled: false
+  enabled: true
   channel: rc
   github_repository: jarymor-ux/kee-route-manager
-  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/manifest-rc.json"
-  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2/manifest-rc.json.sig"
-  public_key: "aQ84vvvQU0w/i/Op99rz4pT/FodfHLbhxdVaMCdqNF8"
-  check_interval: 24h
+  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.1/manifest-rc.json"
+  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.1/manifest-rc.json.sig"
+  public_key: "t8ZyoMK5zMz2vTBuWaH8HIwMOo+E1nJXydOak0RWKAE"
+  check_interval: 30m
   auto_apply: false
   health_grace_period: 30s
   allow_downgrade: false

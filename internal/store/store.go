@@ -2,6 +2,7 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -176,7 +177,7 @@ func (s *Store) Update(fn func(*model.State) error) error {
 		return err
 	}
 	sanitizeState(&v)
-	if reflect.DeepEqual(v, s.state) {
+	if reflect.DeepEqual(v, s.state) && !s.dirty {
 		return nil
 	}
 	if err := s.validate(v); err != nil {
@@ -230,6 +231,9 @@ func (s *Store) ReplaceNodes(xs []model.Node) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	xs = append([]model.Node(nil), xs...)
+	for i := range xs {
+		xs[i] = cloneNode(xs[i])
+	}
 	sort.Slice(xs, func(i, j int) bool { return xs[i].ID < xs[j].ID })
 	current := make([]model.Node, 0, len(s.nodes))
 	for _, node := range s.nodes {
@@ -254,7 +258,7 @@ func (s *Store) Nodes() []model.Node {
 	defer s.mu.RUnlock()
 	xs := make([]model.Node, 0, len(s.nodes))
 	for _, x := range s.nodes {
-		xs = append(xs, x)
+		xs = append(xs, cloneNode(x))
 	}
 	sort.Slice(xs, func(i, j int) bool { return xs[i].ID < xs[j].ID })
 	return xs
@@ -264,10 +268,25 @@ func (s *Store) Node(id string) (model.Node, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v, ok := s.nodes[id]
-	return v, ok
+	return cloneNode(v), ok
 }
 
 func (s *Store) Append(e event.Event) (event.Event, error) {
+	// Normalize caller-provided structs and typed containers to the JSON shapes
+	// also used when reading the log, before traversing diagnostic fields.
+	if e.Fields != nil {
+		b, err := json.Marshal(e.Fields)
+		if err != nil {
+			return e, err
+		}
+		var fields map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(b))
+		decoder.UseNumber()
+		if err := decoder.Decode(&fields); err != nil {
+			return e, err
+		}
+		e.Fields = fields
+	}
 	e.Message = redact.Text(e.Message)
 	e.Fields = redactFields(e.Fields)
 	s.mu.Lock()
@@ -295,9 +314,9 @@ func (s *Store) Append(e event.Event) (event.Event, error) {
 	if err != nil {
 		return e, err
 	}
-	e.Message = redact.Text(e.Message)
-	e.Fields = redactFields(e.Fields)
-	s.events = append(s.events, e)
+	stored := e
+	stored.Fields = redactFields(e.Fields)
+	s.events = append(s.events, stored)
 	if len(s.events) > maxEvents {
 		s.events = append([]event.Event(nil), s.events[len(s.events)-maxEvents:]...)
 	}
@@ -318,6 +337,7 @@ func (s *Store) Events(after uint64, limit int) []event.Event {
 	out := []event.Event{}
 	for _, e := range s.events {
 		if e.Sequence > after {
+			e.Fields = redactFields(e.Fields)
 			out = append(out, e)
 			if len(out) >= limit {
 				break
@@ -480,9 +500,15 @@ type previousState struct {
 func copyNodes(nodes map[string]model.Node) map[string]model.Node {
 	out := make(map[string]model.Node, len(nodes))
 	for id, node := range nodes {
-		out[id] = node
+		out[id] = cloneNode(node)
 	}
 	return out
+}
+
+func cloneNode(node model.Node) model.Node {
+	node.Sources = append([]string(nil), node.Sources...)
+	node.ALPN = append([]string(nil), node.ALPN...)
+	return node
 }
 func (s *Store) persist(v model.State) error {
 	if b, err := os.ReadFile(filepath.Join(s.stateDir, "state.json")); err == nil {
@@ -531,28 +557,28 @@ func redactFields(fields map[string]any) map[string]any {
 	for key, value := range fields {
 		normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
 		switch normalized {
-		case "authorization", "cookie", "setcookie", "uuid", "password", "publickey", "shortid", "secret", "token":
+		case "authorization", "proxyauthorization", "cookie", "setcookie", "uuid", "password", "publickey", "pbk", "shortid", "sid", "secret", "token":
 			out[key] = "<redacted>"
 			continue
 		}
-		switch v := value.(type) {
-		case string:
-			out[key] = redact.Text(v)
-		case map[string]any:
-			out[key] = redactFields(v)
-		case []any:
-			xs := make([]any, len(v))
-			for i, item := range v {
-				if text, ok := item.(string); ok {
-					xs[i] = redact.Text(text)
-				} else {
-					xs[i] = item
-				}
-			}
-			out[key] = xs
-		default:
-			out[key] = value
-		}
+		out[key] = redactValue(value)
 	}
 	return out
+}
+
+func redactValue(value any) any {
+	switch v := value.(type) {
+	case string:
+		return redact.Text(v)
+	case map[string]any:
+		return redactFields(v)
+	case []any:
+		xs := make([]any, len(v))
+		for i, item := range v {
+			xs[i] = redactValue(item)
+		}
+		return xs
+	default:
+		return value
+	}
 }

@@ -4,6 +4,7 @@ on:
     branches: [main, 'release/**']
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -42,8 +43,79 @@ jobs:
         run: ./scripts/cross-build.sh
       - name: Container installer lifecycle and real nftables
         run: |
-          docker build -t krm-rc2-test -f scripts/test.Dockerfile .
-          docker run --rm -v "$PWD:/src:ro" krm-rc2-test ./scripts/test-install.sh
-          docker run --rm --cap-add NET_ADMIN -e KRM_TEST_REAL_NFT=1 -v "$PWD:/src:ro" krm-rc2-test go test -v ./internal/platform -run TestRealNftManagedFirewallLifecycle
+          docker build -t krm-test -f scripts/test.Dockerfile .
+          docker run --rm --network none -v "$PWD:/src:ro" krm-test python3 scripts/test-bootstrap.py
+          docker run --rm --network none -v "$PWD:/src:ro" krm-test ./scripts/test-install.sh
+          docker run --rm --network none --cap-add NET_ADMIN -e KRM_TEST_REAL_NFT=1 -v "$PWD:/src:ro" krm-test go test -v ./internal/platform -run TestRealNftManagedFirewallLifecycle
       - name: Signed release fixture and all artifact digests
         run: ./scripts/test-release.sh
+  publish:
+    needs: check
+    if: github.repository == 'jarymor-ux/kee-route-manager' && github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Bind the release to the tested merged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
+          [[ "$GITHUB_REF_NAME" == "v$(tr -d '[:space:]' < VERSION)" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ "$(git rev-parse "$GITHUB_REF^{commit}")" == "$GITHUB_SHA" ]]
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          if grep -Fxq "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-tags"; then
+            echo 'This release already exists; published tags and assets are never replaced.' >&2
+            exit 1
+          fi
+      - name: Build and verify signed release artifacts
+        env:
+          KRM_RELEASE_SIGNING_KEY: ${{ secrets.KRM_RELEASE_SIGNING_KEY }}
+          KRM_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ -n "$KRM_RELEASE_SIGNING_KEY" ]] || { echo 'Release signing secret is not configured' >&2; exit 1; }
+          key_file=$(mktemp "$RUNNER_TEMP/krm-signing.XXXXXX")
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$KRM_RELEASE_SIGNING_KEY" > "$key_file"
+          unset KRM_RELEASE_SIGNING_KEY
+          KRM_RELEASE_PRIVATE_KEY="$key_file" ./scripts/build-release.sh
+          python3 scripts/verify-release.py release/dist
+      - name: Verify uploaded draft and publish immutable prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n\n%s\n\n%s\n' \
+            "Kee Route Manager $GITHUB_REF_NAME — experimental prerelease." \
+            "Signed daemon, UI, CLI and stable launcher artifacts. Update protocol 1 supports explicit updates through the separately installed launcher; platform limits remain documented in docs/KNOWN_LIMITATIONS.md and docs/RELEASE.md." \
+            "Built from tested commit $GITHUB_SHA. Hardware acceptance remains separate from CI. Existing release tags and assets are unchanged." > "$notes_file"
+          gh release create "$GITHUB_REF_NAME" release/dist/* --verify-tag --draft --prerelease --latest=false --notes-file "$notes_file"
+          uploaded=$(mktemp -d "$RUNNER_TEMP/krm-uploaded.XXXXXX")
+          trap 'rm -rf "$uploaded"' EXIT
+          gh release download "$GITHUB_REF_NAME" --dir "$uploaded"
+          python3 scripts/verify-release.py "$uploaded"
+          [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
+          gh release edit "$GITHUB_REF_NAME" --verify-tag --draft=false --prerelease --latest=false

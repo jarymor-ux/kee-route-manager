@@ -115,6 +115,9 @@ func (s *Store) RestartTransaction(tx Transaction) error {
 }
 
 func (s *Store) validateTransaction(tx Transaction) error {
+	if tx.Schema != 1 || tx.ID == "" {
+		return fmt.Errorf("invalid transaction journal")
+	}
 	if tx.Kind != "pool" && tx.Kind != "select" && tx.Kind != "restore" && tx.Kind != "reconcile" {
 		return fmt.Errorf("invalid transaction kind")
 	}

@@ -24,6 +24,8 @@ type Batch struct {
 	cmd     *exec.Cmd
 	dir     string
 	logs    *commandOutput
+	done    chan struct{}
+	waitErr error
 	once    sync.Once
 }
 
@@ -63,6 +65,13 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 	}
 	cmd := exec.CommandContext(ctx, r.cfg.Xray.Binary, "run", "-c", path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = time.Second
 	logs := &commandOutput{}
 	cmd.Stdout = logs
 	cmd.Stderr = logs
@@ -73,10 +82,29 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 		os.RemoveAll(dir)
 		return nil, e
 	}
-	b := &Batch{Proxies: proxies, cmd: cmd, dir: dir, logs: logs}
+	b := &Batch{Proxies: proxies, cmd: cmd, dir: dir, logs: logs, done: make(chan struct{})}
+	go func() {
+		b.waitErr = cmd.Wait()
+		// A wrapper may exit while descendants retain its output pipes. Finish
+		// group cleanup now; once done closes, this PID must never be signaled.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		close(b.done)
+	}()
 	deadline := time.Now().Add(r.cfg.Benchmark.TemporaryStartupTimeout.Duration)
 	for _, p := range proxies {
 		for {
+			select {
+			case <-b.done:
+				b.Stop()
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("temporary xray exited before readiness: %v: %s", b.waitErr, b.Logs())
+			case <-ctx.Done():
+				b.Stop()
+				return nil, ctx.Err()
+			default:
+			}
 			c, e := net.DialTimeout("tcp", p.Host, 200*time.Millisecond)
 			if e == nil {
 				_ = c.Close()
@@ -84,7 +112,7 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 			}
 			if time.Now().After(deadline) {
 				b.Stop()
-				return nil, fmt.Errorf("temporary xray did not start %s: %s", p.Host, logs.String())
+				return nil, fmt.Errorf("temporary xray did not start %s: %s", p.Host, b.Logs())
 			}
 			select {
 			case <-ctx.Done():
@@ -99,14 +127,20 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 func (b *Batch) Stop() {
 	b.once.Do(func() {
 		if b.cmd != nil && b.cmd.Process != nil {
-			_ = syscall.Kill(-b.cmd.Process.Pid, syscall.SIGTERM)
-			done := make(chan struct{})
-			go func() { _ = b.cmd.Wait(); close(done) }()
+			signal := func(sig syscall.Signal) {
+				select {
+				case <-b.done:
+					return
+				default:
+					_ = syscall.Kill(-b.cmd.Process.Pid, sig)
+				}
+			}
+			signal(syscall.SIGTERM)
 			select {
-			case <-done:
+			case <-b.done:
 			case <-time.After(2 * time.Second):
-				_ = syscall.Kill(-b.cmd.Process.Pid, syscall.SIGKILL)
-				<-done
+				signal(syscall.SIGKILL)
+				<-b.done
 			}
 		}
 		_ = os.RemoveAll(b.dir)
@@ -119,10 +153,13 @@ func (b *Batch) Logs() string {
 	return redact.Text(b.logs.String())
 }
 func freeBlock(start, count int) (int, error) {
+	if count <= 0 || count > 65535 {
+		return 0, fmt.Errorf("invalid port block size")
+	}
 	if start < 1024 {
 		start = 20000
 	}
-	for base := start; base+count < 65535; base += count + 1 {
+	for base := start; base <= 65536-count; base += count + 1 {
 		ls := []net.Listener{}
 		ok := true
 		for i := 0; i < count; i++ {
