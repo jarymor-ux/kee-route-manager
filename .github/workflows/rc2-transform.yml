@@ -1,6 +1,7 @@
 name: RC2 phase 2 transform
 
 on:
+  workflow_dispatch:
   push:
     branches: [rc2-hardening]
     paths:
