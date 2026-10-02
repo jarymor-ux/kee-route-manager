@@ -5,7 +5,7 @@ on:
   push:
     branches: [rc2-hardening]
     paths:
-      - scripts/rc2_phase2.py.gz
+      - scripts/rc2_parts/**
       - .github/workflows/rc2-transform.yml
 
 permissions:
@@ -27,9 +27,9 @@ jobs:
       - name: Apply failover hardening transform
         run: |
           set -euo pipefail
-          gzip -dc scripts/rc2_phase2.py.gz > scripts/rc2_phase2.py
+          cat scripts/rc2_parts/* | tr -d '\n' | base64 -d | gzip -dc > scripts/rc2_phase2.py
           python3 scripts/rc2_phase2.py
-          rm scripts/rc2_phase2.py
+          rm -rf scripts/rc2_phase2.py scripts/rc2_phase2.py.gz scripts/rc2_parts .github/workflows/rc2-transform.yml
           gofmt -w cmd internal
           go test ./...
           go vet ./...
