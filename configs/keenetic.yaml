@@ -1,4 +1,4 @@
-# Kee Route Manager 1.1.0-rc.4 — Keenetic/Entware/XKeen
+# Kee Route Manager 1.1.0-rc.5 — Keenetic/Entware/XKeen
 # Replace every *.example.invalid URL before installation.
 schema_version: 1
 instance:
@@ -136,8 +136,8 @@ update:
   enabled: true
   channel: rc
   github_repository: jarymor-ux/kee-route-manager
-  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.4/manifest-rc.json"
-  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.4/manifest-rc.json.sig"
+  manifest_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.5/manifest-rc.json"
+  signature_url: "https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.5/manifest-rc.json.sig"
   public_key: "t8ZyoMK5zMz2vTBuWaH8HIwMOo+E1nJXydOak0RWKAE"
   check_interval: 30m
   auto_apply: false

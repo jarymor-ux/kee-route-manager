@@ -42,6 +42,11 @@ func TestRejectExposedSocketDirectory(t *testing.T) {
 	if e := os.Mkdir(d, 0755); e != nil {
 		t.Fatal(e)
 	}
+	// The signed release workflow uses umask 077. Make this intentionally
+	// exposed fixture explicit instead of relying on creation permissions.
+	if e := os.Chmod(d, 0755); e != nil {
+		t.Fatal(e)
+	}
 	if _, e := ListenUnix(filepath.Join(d, "control.sock")); e == nil {
 		t.Fatal("accepted public socket directory")
 	}

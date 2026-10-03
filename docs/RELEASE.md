@@ -26,7 +26,7 @@ Enable [GitHub release immutability](https://docs.github.com/en/code-security/ho
 A manual run uses the same gates and requires an existing tag:
 
 ```sh
-gh workflow run ci.yml --ref v1.1.0-rc.4 --repo jarymor-ux/kee-route-manager
+gh workflow run ci.yml --ref v1.1.0-rc.5 --repo jarymor-ux/kee-route-manager
 ```
 
 Artifact signing and immutable tags are separate controls. The workflow signs release content with Ed25519; it does not generate or validate an additional GPG/SSH Git-tag signature.

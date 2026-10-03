@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.4 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.5 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
 
 Runtime components:
 
@@ -22,7 +22,7 @@ For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.m
 Example after preparing private config as described in the runbook:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.4/bootstrap-keenetic.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.5/bootstrap-keenetic.sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 

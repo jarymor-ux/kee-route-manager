@@ -5,11 +5,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,6 +58,32 @@ func isolatedDaemonConfig(t *testing.T) config.Config {
 }
 
 func TestDaemonNetworkAPIRequiresSessionAndStops(t *testing.T) {
+	testDaemonNetworkAPIRequiresSessionAndStops(t, false)
+}
+
+func TestDaemonNetworkShutdownWithCanceledStartupDial(t *testing.T) {
+	testDaemonNetworkAPIRequiresSessionAndStops(t, true)
+}
+
+type unusedTLSRead struct {
+	net.Conn
+	reading, closed     chan struct{}
+	readOnce, closeOnce sync.Once
+}
+
+func (c *unusedTLSRead) Read(b []byte) (int, error) {
+	c.readOnce.Do(func() { close(c.reading) })
+	return c.Conn.Read(b)
+}
+
+func (c *unusedTLSRead) Close() error {
+	err := c.Conn.Close()
+	c.closeOnce.Do(func() { close(c.closed) })
+	return err
+}
+
+func testDaemonNetworkAPIRequiresSessionAndStops(t *testing.T, canceledStartupDial bool) {
+	t.Helper()
 	c := isolatedDaemonConfig(t)
 	c.API.Enabled = true
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -80,6 +109,44 @@ func TestDaemonNetworkAPIRequiresSessionAndStops(t *testing.T) {
 	}
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, Proxy: nil}
 	defer transport.CloseIdleConnections()
+	finishStartupDial := func() {}
+	checkStartupDialClosed := func() {}
+	if canceledStartupDial {
+		// Complete TLS but delay returning the first connection until its request
+		// has timed out. The retry succeeds on another connection; the transport
+		// then parks the late first connection without sending an HTTP request.
+		release, reading, closed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		var once sync.Once
+		unblock := func() { once.Do(func() { close(release) }) }
+		defer unblock()
+		var held atomic.Bool
+		transport.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := (&tls.Dialer{Config: transport.TLSClientConfig}).DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			if held.CompareAndSwap(false, true) {
+				<-release
+				return &unusedTLSRead{Conn: conn, reading: reading, closed: closed}, nil
+			}
+			return conn, nil
+		}
+		finishStartupDial = func() {
+			unblock()
+			select {
+			case <-reading:
+			case <-time.After(3 * time.Second):
+				t.Fatal("unused startup TLS connection was not parked")
+			}
+		}
+		checkStartupDialClosed = func() {
+			select {
+			case <-closed:
+			case <-time.After(3 * time.Second):
+				t.Fatal("client retained unused startup TLS connection")
+			}
+		}
+	}
 	cl := &http.Client{Transport: transport, Timeout: 500 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -107,6 +174,10 @@ func TestDaemonNetworkAPIRequiresSessionAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("API failed to start: %v", err)
 	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		_ = response.Body.Close()
+		t.Fatal(err)
+	}
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("network API exposed unauthenticated state: %d", response.StatusCode)
@@ -115,10 +186,20 @@ func TestDaemonNetworkAPIRequiresSessionAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		_ = response.Body.Close()
+		t.Fatal(err)
+	}
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("health returned %d", response.StatusCode)
 	}
+	// Startup retries can leave an unused TLS connection in the client pool.
+	// Finish this client's work before asserting prompt server shutdown: Go's
+	// graceful shutdown intentionally gives StateNew connections over 5 seconds.
+	finishStartupDial()
+	transport.CloseIdleConnections()
+	checkStartupDialClosed()
 	cancel()
 	select {
 	case err := <-done:
