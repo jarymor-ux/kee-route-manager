@@ -115,7 +115,7 @@ func parallelTestConfig(nodes int) config.Config {
 }
 
 func parallelTestEngine(c config.Config, runner *parallelTestRunner) *Engine {
-	return &Engine{cfg: c, runner: runner, prober: NewProber(c.Health.RequestTimeout.Duration, int64(c.Health.MaxResponseBytes))}
+	return &Engine{cfg: RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, runner: runner, prober: NewProber(c.Health.RequestTimeout.Duration, int64(c.Health.MaxResponseBytes))}
 }
 
 type parallelTestResult struct {
