@@ -5,9 +5,7 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
-	"github.com/jarymor-ux/kee-route-manager/internal/platform"
 	"github.com/jarymor-ux/kee-route-manager/internal/redact"
-	"github.com/jarymor-ux/kee-route-manager/internal/store"
 )
 
 func (m *Manager) healthLoop() {
