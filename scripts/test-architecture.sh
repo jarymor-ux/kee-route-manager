@@ -20,7 +20,8 @@ assert_excludes() {
   done
 }
 
-assert_excludes ./cmd/kee-route-managerd internal/web/ui
+assert_excludes ./cmd/kee-route-managerd internal/web/ui internal/control/cli
+assert_excludes ./cmd/kee-route-manager-launcher internal/control/cli
 assert_excludes ./cmd/kee-route-manager-ui internal/core internal/xray internal/platform internal/store internal/bench internal/control
 assert_excludes ./cmd/kee-route-managerctl internal/core internal/xray internal/platform internal/store internal/bench
 
