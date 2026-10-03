@@ -56,7 +56,7 @@ func TestGitHubDiscoveryVerifiesSignedVersionAndDowngradePolicy(t *testing.T) {
 		wantErr, available bool
 	}{{"upgrade", "1.0.0-rc.10", "v1.0.0-rc.10", false, true}, {"tag mismatch", "1.0.0-rc.11", "v1.0.0-rc.10", true, false}, {"downgrade", "1.0.0-rc.8", "v1.0.0-rc.8", false, false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			u := New(cfg, t.TempDir(), "1.0.0-rc.9")
+			u := New(cfg, "1.0.0-rc.9")
 			m := Manifest{SchemaVersion: 1, Version: tc.version, Channel: "rc", MinConfigSchema: 1, Assets: []Asset{{OS: runtime.GOOS, Arch: runtime.GOARCH, Component: "daemon", Size: 1, SHA256: strings.Repeat("0", 64), URL: "https://github.com/owner/repo/releases/download/v1.0.0-rc.10/daemon"}}}
 			body, _ := json.Marshal(m)
 			signature := []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, body)))
