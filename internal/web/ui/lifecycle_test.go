@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 func TestTLSIdentityAndPermissionsPersistAcrossRestarts(t *testing.T) {
 	dir := t.TempDir()
 	c := config.TLS{Enabled: true, AutoGenerate: true, CertFile: filepath.Join(dir, "cert.pem"), KeyFile: filepath.Join(dir, "key.pem"), Hosts: []string{"router.test", "2001:db8::1"}}
-	if err := EnsureTLS(c, "127.0.0.1:9444"); err != nil {
+	if err := tlsutil.EnsureTLS(c, "127.0.0.1:9444"); err != nil {
 		t.Fatal(err)
 	}
 	pair, err := tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
@@ -38,7 +39,7 @@ func TestTLSIdentityAndPermissionsPersistAcrossRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureTLS(c, "127.0.0.1:9444"); err != nil {
+	if err := tlsutil.EnsureTLS(c, "127.0.0.1:9444"); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.ReadFile(c.CertFile)
@@ -51,7 +52,7 @@ func TestTLSIdentityAndPermissionsPersistAcrossRestarts(t *testing.T) {
 	}
 	c.AutoGenerate = false
 	c.CertFile = filepath.Join(dir, "missing.pem")
-	if err := EnsureTLS(c, "127.0.0.1:9444"); err == nil {
+	if err := tlsutil.EnsureTLS(c, "127.0.0.1:9444"); err == nil {
 		t.Fatal("missing externally managed TLS identity accepted")
 	}
 }
