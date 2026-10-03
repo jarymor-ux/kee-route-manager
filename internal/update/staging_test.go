@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -222,10 +223,19 @@ func TestStageChecksStreamLengthWithoutContentLength(t *testing.T) {
 func TestStageCancellationCleansPartialFilesAndSerializesWriters(t *testing.T) {
 	f := newStagingFixture(t)
 	entered := make(chan struct{})
-	f.assetHandler = func(w http.ResponseWriter, r *http.Request, component string) {
+	releaseHandler := make(chan struct{})
+	t.Cleanup(func() { close(releaseHandler) })
+	partial := f.payloads["ui"][:len(f.payloads["ui"])/2]
+	f.assetHandler = func(w http.ResponseWriter, _ *http.Request, component string) {
 		if component == "ui" {
+			w.Header().Set("Content-Length", strconv.Itoa(len(f.payloads[component])))
+			_, _ = w.Write(partial)
+			w.(http.Flusher).Flush()
 			close(entered)
-			<-r.Context().Done()
+			// Keep the response incomplete until Stage has returned. Returning
+			// on request cancellation races a server-generated EOF against the
+			// client's cancellation error and tests whichever arrives first.
+			<-releaseHandler
 			return
 		}
 		_, _ = w.Write(f.payloads[component])
@@ -239,6 +249,25 @@ func TestStageCancellationCleansPartialFilesAndSerializesWriters(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("stage did not start")
 	}
+	entries, err := os.ReadDir(filepath.Join(f.u.cfg.InstallDir, "releases"))
+	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), ".stage-") {
+		t.Fatalf("missing temporary stage: %v %v", entries, err)
+	}
+	partialPath := filepath.Join(f.u.cfg.InstallDir, "releases", entries[0].Name(), componentFiles["ui"])
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(partialPath)
+		if err == nil && bytes.Equal(data, partial) {
+			break
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("stage did not write the partial asset: %q %v", data, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
 	if _, err := f.u.Stage(context.Background()); !errors.Is(err, ErrStageBusy) {
 		t.Fatalf("concurrent writer accepted: %v", err)
 	}
@@ -250,6 +279,31 @@ func TestStageCancellationCleansPartialFilesAndSerializesWriters(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancelled stage hung")
+	}
+	assertNoPublishedStage(t, f.u.cfg.InstallDir)
+}
+
+func TestStageCancellationRacingIncompleteResponseNeverPublishes(t *testing.T) {
+	f := newStagingFixture(t)
+	f.payloads["ui"] = nil
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	transport := f.u.client.Transport
+	f.u.client.Transport = transportFunc(func(request *http.Request) (*http.Response, error) {
+		response, err := transport.RoundTrip(request)
+		if err == nil && request.URL.Path == "/ui" {
+			// A response already received by the transport may be delivered
+			// concurrently with cancellation. Its validation error need not be
+			// context.Canceled, but it must never publish an incomplete bundle.
+			cancel()
+		}
+		return response, err
+	})
+	if _, err := f.u.Stage(ctx); err == nil {
+		t.Fatal("incomplete response won cancellation and published a release")
+	}
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatal("fixture did not cancel at the response boundary")
 	}
 	assertNoPublishedStage(t, f.u.cfg.InstallDir)
 }
