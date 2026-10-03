@@ -9,8 +9,6 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/operation"
-	"github.com/jarymor-ux/kee-route-manager/internal/platform"
-	"github.com/jarymor-ux/kee-route-manager/internal/store"
 )
 
 func (m *Manager) queueBenchmark(mode string) {
