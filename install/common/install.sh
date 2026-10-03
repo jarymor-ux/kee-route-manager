@@ -132,7 +132,7 @@ fi
 case "$PLATFORM" in
  linux-systemd)
   if [ "$MODE" != ui ]; then cp "$ROOT/install/linux-systemd/kee-route-manager.service" /etc/systemd/system/; fi
-  if [ "$MODE" != core ]; then cp "$ROOT/install/ui-proxy/kee-route-manager-ui.service" /etc/systemd/system/; fi
+  if [ "$MODE" != core ]; then cp "$ROOT/install/linux-systemd/kee-route-manager-ui.service" /etc/systemd/system/; fi
   systemctl daemon-reload
   [ "$MODE" = ui ] || systemctl enable --now kee-route-manager
   [ "$MODE" = core ] || systemctl enable --now kee-route-manager-ui;;
