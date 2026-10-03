@@ -33,7 +33,7 @@ func TestSignedManifest(t *testing.T) {
 	c.ManifestURL = srv.URL + "/manifest"
 	c.SignatureURL = srv.URL + "/sig"
 	c.PublicKey = base64.RawStdEncoding.EncodeToString(pub)
-	u := New(c, t.TempDir(), "1.0.0-rc.1")
+	u := New(c, "1.0.0-rc.1")
 	u.client = srv.Client()
 	r, e := u.Check(context.Background())
 	if e != nil {
