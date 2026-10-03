@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
+MODULE=github.com/jarymor-ux/kee-route-manager
+
 deps() {
   go list -deps "$1"
 }
@@ -13,10 +15,15 @@ assert_excludes() {
   shift
   graph="$(deps "$target")"
   for forbidden in "$@"; do
-    if printf '%s\n' "$graph" | grep -Fxq "github.com/jarymor-ux/kee-route-manager/$forbidden"; then
-      printf '%s must not depend on %s\n' "$target" "$forbidden" >&2
-      exit 1
-    fi
+    forbidden_path="$MODULE/$forbidden"
+    while IFS= read -r dependency; do
+      case "$dependency" in
+        "$forbidden_path"|"$forbidden_path"/*)
+          printf '%s must not depend on %s or its subpackages\n' "$target" "$forbidden" >&2
+          exit 1
+          ;;
+      esac
+    done <<< "$graph"
   done
 }
 
