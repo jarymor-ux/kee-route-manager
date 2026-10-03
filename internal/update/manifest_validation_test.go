@@ -74,7 +74,7 @@ func TestSignedManifestValidationAndAvailability(t *testing.T) {
 			if current == "" {
 				current = "1.0.0-rc.1"
 			}
-			u := New(cfg, t.TempDir(), current)
+			u := New(cfg, current)
 			u.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 				data := body
 				if r.URL.Path == "/sig" {
