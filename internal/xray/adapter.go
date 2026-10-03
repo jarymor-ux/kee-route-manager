@@ -92,6 +92,7 @@ func (m *Manager) ActualState(ctx context.Context) (tunnel.ActualCoreState, erro
 }
 
 var _ tunnel.TunnelCore = (*Manager)(nil)
+
 func (m *Manager) reverseRestore(snapshot string) error {
 	var paths []string
 	var meta map[string]bool
