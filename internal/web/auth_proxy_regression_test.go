@@ -4,6 +4,7 @@ import (
 	"encoding/pem"
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	webui "github.com/jarymor-ux/kee-route-manager/internal/web/ui"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ func TestRegressionProxyClientLoginBudgets(t *testing.T) {
 	uc.UIProxy.Upstream = upstream.URL
 	uc.UIProxy.UpstreamCAFile = ca
 	uc.Web.TLS.Enabled = false
-	proxy, err := ProxyHandler(uc)
+	proxy, err := webui.ProxyHandler(uc)
 	if err != nil {
 		t.Fatal(err)
 	}
