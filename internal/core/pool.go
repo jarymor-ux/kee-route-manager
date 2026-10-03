@@ -6,8 +6,6 @@ import (
 	"sort"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
-	"github.com/jarymor-ux/kee-route-manager/internal/platform"
-	"github.com/jarymor-ux/kee-route-manager/internal/subscription"
 	"github.com/jarymor-ux/kee-route-manager/internal/tunnel"
 )
 
