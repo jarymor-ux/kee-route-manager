@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
 	"github.com/jarymor-ux/kee-route-manager/internal/logging"
 	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"io/fs"
@@ -60,22 +61,6 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-func Security(next http.Handler, tlsEnabled bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
-		if tlsEnabled && r.TLS != nil {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
-		}
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			w.Header().Set("Cache-Control", "no-store")
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 func ProxyHandler(c config.Config) (http.Handler, error) {
 	target, e := url.Parse(c.UIProxy.Upstream)
@@ -159,7 +144,7 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	}))
 	mux.HandleFunc("/healthz", serveProxy)
 	mux.Handle("/", files)
-	return Security(mux, c.Web.TLS.Enabled), nil
+	return httpsec.Security(mux, c.Web.TLS.Enabled), nil
 }
 
 func minDuration(a, b time.Duration) time.Duration {
