@@ -9,7 +9,7 @@
 5. Router local-ui uses one launcher service; a second standalone UI supervisor must be removed during migration. Linux local-ui retains its separate unprivileged DynamicUser UI service, and standalone UI is updated separately.
 6. Legacy installations need a verified one-time migration or backup → restore routing → uninstall → clean signed install. Existing configurations are never silently overwritten. Pin the new release public key through a trusted channel; published legacy tags, keys and assets are unchanged. Follow the [installation runbook](AGENT_INSTALL.md) and [release procedure](RELEASE.md).
 
-This release remains experimental. A prior private build ran on one Keenetic; hardware acceptance of the new updater is still pending. Container tests do not establish router power-loss, rollback or independent-bypass acceptance.
+This release remains experimental. Signed launcher migration and a manual GitHub update through the panel API passed on one Keenetic while preserving the Xray process and device policy. Router reboot, power-loss, deliberately broken candidate rollback and independent-bypass acceptance remain unverified.
 
 ## Historical: v1.0.0-rc.2
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-KRM 管理 Xray 节点池、订阅与故障切换。**1.1.0-rc.6 是实验性预发布版本。** 先前的私有构建已在一台 Keenetic 上运行，但新更新器的硬件验证尚未完成。既有版本的标签和发布文件保持不变。
+KRM 管理 Xray 节点池、订阅与故障切换。**1.1.0-rc.6 是实验性预发布版本。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
 - `kee-route-managerd`：唯一的状态、Xray 与防火墙控制进程；可独立运行，提供 HTTPS 与 Unix socket API。
 - `kee-route-manager-ui`：独立 Web/PWA 与经过 TLS 验证的 API 代理，没有路由器控制逻辑。
