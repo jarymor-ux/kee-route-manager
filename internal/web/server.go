@@ -16,7 +16,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/platform"
 	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"github.com/jarymor-ux/kee-route-manager/internal/update"
-	"github.com/jarymor-ux/kee-route-manager/internal/web/ui"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"io"
 	"log"
 	"net"
@@ -79,7 +79,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		_ = srv.Shutdown(shutdown)
 	}()
 	if s.cfg.API.TLS.Enabled {
-		if e := EnsureTLS(s.cfg.API.TLS, s.cfg.API.Listen); e != nil {
+		if e := tlsutil.EnsureTLS(s.cfg.API.TLS, s.cfg.API.Listen); e != nil {
 			return e
 		}
 		e := srv.ListenAndServeTLS(s.cfg.API.TLS.CertFile, s.cfg.API.TLS.KeyFile)
@@ -518,8 +518,6 @@ func sameOrigin(r *http.Request, tls bool) bool {
 	return strings.EqualFold(u.Scheme, scheme) && strings.EqualFold(u.Host, r.Host)
 }
 
-func EnsureTLS(c config.TLS, listen string) error        { return ui.EnsureTLS(c, listen) }
-func ProxyHandler(c config.Config) (http.Handler, error) { return ui.ProxyHandler(c) }
 
 // LocalHandler is served exclusively on the owner-only Unix socket. Never mount
 // it on a TCP listener; filesystem permissions provide local authorization.
