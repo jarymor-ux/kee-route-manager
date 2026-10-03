@@ -2,33 +2,27 @@ package ui
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/logging"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"io/fs"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -83,104 +77,6 @@ func Security(next http.Handler, tlsEnabled bool) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-func EnsureTLS(c config.TLS, listen string) error {
-	if !c.Enabled {
-		return nil
-	}
-	if _, e := os.Stat(c.CertFile); e == nil {
-		if _, e = os.Stat(c.KeyFile); e == nil {
-			return nil
-		}
-	}
-	if !c.AutoGenerate {
-		return fmt.Errorf("TLS files missing")
-	}
-	if e := os.MkdirAll(filepath.Dir(c.CertFile), 0700); e != nil {
-		return e
-	}
-	key, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if e != nil {
-		return e
-	}
-	serial, e := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if e != nil {
-		return e
-	}
-	hosts := append([]string(nil), c.Hosts...)
-	host, _, _ := net.SplitHostPort(listen)
-	if host != "" && host != "0.0.0.0" && host != "::" {
-		hosts = append(hosts, host)
-	}
-	hosts = append(hosts, "localhost", "127.0.0.1", "::1")
-	if ifaces, err := net.Interfaces(); err == nil {
-		for _, iface := range ifaces {
-			addrs, err := iface.Addrs()
-			if err != nil {
-				continue
-			}
-			for _, addr := range addrs {
-				host := addr.String()
-				if h, _, err := net.ParseCIDR(host); err == nil {
-					host = h.String()
-				}
-				if ip := net.ParseIP(host); ip != nil && !ip.IsUnspecified() {
-					hosts = append(hosts, ip.String())
-				}
-			}
-		}
-	}
-	tmpl := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "Kee Route Manager"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(5, 0, 0), KeyUsage: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
-	seenHosts := map[string]bool{}
-	for _, h := range hosts {
-		h = strings.TrimSpace(h)
-		if h == "" || seenHosts[strings.ToLower(h)] {
-			continue
-		}
-		seenHosts[strings.ToLower(h)] = true
-		if ip := net.ParseIP(h); ip != nil {
-			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
-		} else {
-			tmpl.DNSNames = append(tmpl.DNSNames, h)
-		}
-	}
-	der, e := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
-	if e != nil {
-		return e
-	}
-	keyDER, e := x509.MarshalPKCS8PrivateKey(key)
-	if e != nil {
-		return e
-	}
-	cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	priv := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	if e = writeSecret(c.CertFile, cert, 0644); e != nil {
-		return e
-	}
-	return writeSecret(c.KeyFile, priv, 0600)
-}
-func writeSecret(path string, b []byte, mode os.FileMode) error {
-	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-		return e
-	}
-	f, e := os.CreateTemp(filepath.Dir(path), ".tls-*")
-	if e != nil {
-		return e
-	}
-	n := f.Name()
-	defer os.Remove(n)
-	_ = f.Chmod(mode)
-	if _, e = f.Write(b); e == nil {
-		e = f.Sync()
-	}
-	if e2 := f.Close(); e == nil {
-		e = e2
-	}
-	if e != nil {
-		return e
-	}
-	return os.Rename(n, path)
-}
-
 func ProxyHandler(c config.Config) (http.Handler, error) {
 	target, e := url.Parse(c.UIProxy.Upstream)
 	if e != nil || target.Host == "" || target.User != nil || target.Fragment != "" || target.RawQuery != "" || (target.Scheme != "http" && target.Scheme != "https") {
@@ -327,7 +223,7 @@ func Serve(ctx context.Context, c config.Config) error {
 	if e != nil {
 		return e
 	}
-	if e = EnsureTLS(c.Web.TLS, c.Web.Listen); e != nil {
+	if e = tlsutil.EnsureTLS(c.Web.TLS, c.Web.Listen); e != nil {
 		return e
 	}
 	srv := &http.Server{Addr: c.Web.Listen, Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 5 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
