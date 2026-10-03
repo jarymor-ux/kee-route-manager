@@ -42,7 +42,8 @@ type CheckResult struct {
 	Asset          Asset            `json:"asset"`
 	Assets         map[string]Asset `json:"assets,omitempty"`
 	StageSupported bool             `json:"stage_supported"`
-}type Updater struct {
+}
+type Updater struct {
 	cfg               config.Update
 	current           string
 	client            *http.Client
