@@ -2,27 +2,12 @@ package web
 
 import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	webui "github.com/jarymor-ux/kee-route-manager/internal/web/ui"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestEnsureTLS(t *testing.T) {
-	d := t.TempDir()
-	c := config.TLS{Enabled: true, AutoGenerate: true, CertFile: filepath.Join(d, "cert.pem"), KeyFile: filepath.Join(d, "key.pem"), Hosts: []string{"krm.local"}}
-	if e := EnsureTLS(c, "127.0.0.1:9443"); e != nil {
-		t.Fatal(e)
-	}
-	if _, e := os.Stat(c.CertFile); e != nil {
-		t.Fatal(e)
-	}
-	if _, e := os.Stat(c.KeyFile); e != nil {
-		t.Fatal(e)
-	}
-}
 
 func TestUIProxyRewritesOriginAndReferer(t *testing.T) {
 	var gotOrigin, gotReferer string
@@ -39,7 +24,7 @@ func TestUIProxyRewritesOriginAndReferer(t *testing.T) {
 	cfg.UIProxy.Upstream = upstream.URL
 	cfg.UIProxy.InsecureTLS = true
 	cfg.Web.TLS.Enabled = false
-	handler, err := ProxyHandler(cfg)
+	handler, err := webui.ProxyHandler(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +52,7 @@ func TestUIProxyRewritesOriginAndReferer(t *testing.T) {
 
 func TestEmbeddedAssetContract(t *testing.T) {
 	c := config.Default()
-	h, err := ProxyHandler(func() config.Config { c.UIProxy.Upstream = "http://127.0.0.1:1"; return c }())
+	h, err := webui.ProxyHandler(func() config.Config { c.UIProxy.Upstream = "http://127.0.0.1:1"; return c }())
 	if err != nil {
 		t.Fatal(err)
 	}
