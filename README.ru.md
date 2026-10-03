@@ -2,7 +2,7 @@
 
 [English](README.md) | **Русский** | [简体中文](README.zh-CN.md)
 
-KRM управляет проверенным горячим пулом Xray, подписками и переключением маршрутов. **1.1.0-rc.5 — экспериментальный prerelease.** Предыдущая приватная сборка работала на одном Keenetic; аппаратная проверка нового updater ещё не завершена. Опубликованные теги и assets прежних версий неизменны.
+KRM управляет проверенным горячим пулом Xray, подписками и переключением маршрутов. **1.1.0-rc.6 — экспериментальный prerelease.** Предыдущая приватная сборка работала на одном Keenetic; аппаратная проверка нового updater ещё не завершена. Опубликованные теги и assets прежних версий неизменны.
 
 - `kee-route-managerd` — единственный владелец state, Xray и firewall; работает без UI, HTTPS API и локальный Unix socket.
 - `kee-route-manager-ui` — отдельный процесс Web/PWA и proxy; без router-specific логики, shell и пароля администратора.
@@ -20,7 +20,7 @@ KRM управляет проверенным горячим пулом Xray, п
 После публикации подписанного release и подготовки приватной конфигурации:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.5/bootstrap-keenetic.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.6/bootstrap-keenetic.sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 

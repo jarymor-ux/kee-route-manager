@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-KRM 管理 Xray 节点池、订阅与故障切换。**1.1.0-rc.5 是实验性预发布版本。** 先前的私有构建已在一台 Keenetic 上运行，但新更新器的硬件验证尚未完成。既有版本的标签和发布文件保持不变。
+KRM 管理 Xray 节点池、订阅与故障切换。**1.1.0-rc.6 是实验性预发布版本。** 先前的私有构建已在一台 Keenetic 上运行，但新更新器的硬件验证尚未完成。既有版本的标签和发布文件保持不变。
 
 - `kee-route-managerd`：唯一的状态、Xray 与防火墙控制进程；可独立运行，提供 HTTPS 与 Unix socket API。
 - `kee-route-manager-ui`：独立 Web/PWA 与经过 TLS 验证的 API 代理，没有路由器控制逻辑。
@@ -17,6 +17,6 @@ Linux/OpenWrt 的 `firewall_mode: managed` 仍支持全新安装和普通运行�
 
 AI 代理应先阅读 [AGENTS.md](AGENTS.md)，再按照 [完整安装流程](docs/AGENT_INSTALL.md) 执行 SSH、备份、配置、core/UI 安装、TLS、验证、卸载及回滚。
 
-安装时使用已发布的签名版本 `v1.1.0-rc.5`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
+安装时使用已发布的签名版本 `v1.1.0-rc.6`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
 
 参见 [限制](docs/KNOWN_LIMITATIONS.md) 与 [发布流程](docs/RELEASE.md)。自动化验证见 [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions)。许可证：[Apache-2.0](LICENSE)。
