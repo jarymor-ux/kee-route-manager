@@ -8,12 +8,9 @@ go test ./...
 go vet ./...
 while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \))
 for script in scripts/*.sh; do bash -n "$script"; done
-node --check web/app.js
-node --check web/sw.js
+node --check internal/web/ui/static/app.js
+node --check internal/web/ui/static/sw.js
 node scripts/test-ui.js
-for name in index.html app.css app.js manifest.webmanifest sw.js; do
- cmp -s "web/$name" "internal/web/ui/static/$name" || { echo "embedded asset differs: $name" >&2; exit 1; }
-done
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TMP/ctl" ./cmd/kee-route-managerctl
