@@ -12,6 +12,42 @@ import (
 
 const configImportPath = "github.com/jarymor-ux/kee-route-manager/internal/config"
 
+func rootConfigUsage(filename string, source []byte) (usesRootConfig, dotImport bool, err error) {
+	file, err := parser.ParseFile(token.NewFileSet(), filename, source, 0)
+	if err != nil {
+		return false, false, err
+	}
+	aliases := map[string]bool{}
+	for _, spec := range file.Imports {
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || path != configImportPath {
+			continue
+		}
+		if spec.Name != nil && spec.Name.Name == "." {
+			return false, true, nil
+		}
+		alias := "config"
+		if spec.Name != nil {
+			alias = spec.Name.Name
+		}
+		if alias != "_" {
+			aliases[alias] = true
+		}
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "Config" {
+			return true
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if ok && aliases[pkg.Name] {
+			usesRootConfig = true
+		}
+		return true
+	})
+	return usesRootConfig, false, nil
+}
+
 func TestProductionDoesNotUseRootConfig(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -22,68 +58,73 @@ func TestProductionDoesNotUseRootConfig(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		usesRoot, dotImport, err := rootConfigUsage(name, source)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
-		aliases := map[string]bool{}
-		for _, spec := range file.Imports {
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || path != configImportPath {
-				continue
-			}
-			if spec.Name != nil && spec.Name.Name == "." {
-				t.Fatalf("%s: dot-import of internal/config bypasses the root-config boundary", name)
-			}
-			alias := "config"
-			if spec.Name != nil {
-				alias = spec.Name.Name
-			}
-			if alias != "_" {
-				aliases[alias] = true
-			}
+		if dotImport {
+			t.Errorf("%s: dot-import of internal/config bypasses the root-config boundary", name)
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			selector, ok := node.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "Config" {
-				return true
-			}
-			pkg, ok := selector.X.(*ast.Ident)
-			if ok && aliases[pkg.Name] {
-				t.Errorf("%s: internal/bench production code must not use root config.Config", name)
-			}
-			return true
-		})
+		if usesRoot {
+			t.Errorf("%s: internal/bench production code must not use root config.Config", name)
+		}
 	}
 }
 
-func TestRootConfigBoundaryDetectsAliasedImport(t *testing.T) {
-	source := `package bench
+func TestRootConfigBoundaryAnalyzer(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantRoot bool
+		wantDot  bool
+	}{
+		{
+			name: "default import",
+			source: `package bench
+import "github.com/jarymor-ux/kee-route-manager/internal/config"
+var forbidden config.Config
+`,
+			wantRoot: true,
+		},
+		{
+			name: "aliased import",
+			source: `package bench
 import cfg "github.com/jarymor-ux/kee-route-manager/internal/config"
 var forbidden cfg.Config
-`
-	file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", source, 0)
-	if err != nil {
-		t.Fatal(err)
+`,
+			wantRoot: true,
+		},
+		{
+			name: "allowed narrow types",
+			source: `package bench
+import cfg "github.com/jarymor-ux/kee-route-manager/internal/config"
+var benchmark cfg.Benchmark
+var health cfg.Health
+var targets []cfg.Target
+`,
+		},
+		{
+			name: "dot import",
+			source: `package bench
+import . "github.com/jarymor-ux/kee-route-manager/internal/config"
+var forbidden Config
+`,
+			wantDot: true,
+		},
 	}
-	alias := ""
-	for _, spec := range file.Imports {
-		path, _ := strconv.Unquote(spec.Path.Value)
-		if path == configImportPath && spec.Name != nil {
-			alias = spec.Name.Name
-		}
-	}
-	found := false
-	ast.Inspect(file, func(node ast.Node) bool {
-		selector, ok := node.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != "Config" {
-			return true
-		}
-		pkg, ok := selector.X.(*ast.Ident)
-		found = found || ok && pkg.Name == alias
-		return true
-	})
-	if !found {
-		t.Fatal("architecture guard did not detect aliased root config.Config reference")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotRoot, gotDot, err := rootConfigUsage("fixture.go", []byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotRoot != tc.wantRoot || gotDot != tc.wantDot {
+				t.Fatalf("root=%v dot=%v, want root=%v dot=%v", gotRoot, gotDot, tc.wantRoot, tc.wantDot)
+			}
+		})
 	}
 }
