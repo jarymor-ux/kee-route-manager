@@ -25,7 +25,7 @@ func TestManagedFirewallStageRefusesBeforeNetworkOrFilesystem(t *testing.T) {
 			c := config.Default()
 			c.Platform.Kind = kind
 			c.Platform.Linux.FirewallMode, c.Platform.OpenWrt.FirewallMode = "managed", "managed"
-			c.Update, c.Paths.StateDir = f.u.cfg, f.u.stateDir
+			c.Update = f.u.cfg
 			u := NewForConfig(c, f.u.current)
 			u.client = f.u.client
 			checked, err := u.Check(context.Background())
