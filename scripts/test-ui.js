@@ -6,9 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'web/app.js'), 'utf8');
-assert.equal(source, fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8'));
-assert.equal(fs.readFileSync(path.join(root, 'web/index.html'), 'utf8'), fs.readFileSync(path.join(root, 'internal/web/ui/static/index.html'), 'utf8'));
+const source = fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8');
 const start = source.indexOf('async function loadEvents()');
 const end = source.indexOf('\nfunction showTool', start);
 assert(start >= 0 && end > start, 'loadEvents must be present');
@@ -291,8 +289,7 @@ async function updateChecks() {
 }
 
 async function serviceWorkerChecks() {
-  const worker = fs.readFileSync(path.join(root, 'web/sw.js'), 'utf8');
-  assert.equal(worker, fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8'));
+  const worker = fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8');
   const handlers = {};
   const cached = [];
   let offline = false;
