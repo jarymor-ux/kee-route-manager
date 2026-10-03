@@ -11,12 +11,13 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
+	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/operation"
 	"github.com/jarymor-ux/kee-route-manager/internal/platform"
 	"github.com/jarymor-ux/kee-route-manager/internal/redact"
-	"github.com/jarymor-ux/kee-route-manager/internal/update"
 	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
+	"github.com/jarymor-ux/kee-route-manager/internal/update"
 	"io"
 	"log"
 	"net"
@@ -140,7 +141,7 @@ func (w *auditResponse) Write(p []byte) (int, error) {
 	return w.ResponseWriter.Write(p)
 }
 func (s *Server) security(next http.Handler) http.Handler {
-	return ui.Security(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpsec.Security(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b := make([]byte, 16)
 		if _, e := rand.Read(b); e != nil {
 			jsonError(w, 503, "request unavailable")
@@ -517,7 +518,6 @@ func sameOrigin(r *http.Request, tls bool) bool {
 	}
 	return strings.EqualFold(u.Scheme, scheme) && strings.EqualFold(u.Host, r.Host)
 }
-
 
 // LocalHandler is served exclusively on the owner-only Unix socket. Never mount
 // it on a TCP listener; filesystem permissions provide local authorization.
