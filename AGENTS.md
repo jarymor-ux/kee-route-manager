@@ -10,7 +10,7 @@ This contract applies to the entire repository. Product name: **Kee Route Manage
 - Benchmark cannot enable direct routing. Only explicit control operations and the failover state machine may change route; inconclusive target/WAN monitoring preserves the route.
 - Platform bypass requires an explicit adapter capability. Do not claim Keenetic fail-open without a real device test.
 - Persist journal intent before effects; startup reconciles unfinished work against runtime/files/firewall. Preserve user routing changes on restore; refuse drift that cannot be safely reversed.
-- `update.apply` stays disabled until a separate A/B launcher with process/API/reconciliation readiness and rollback has been implemented and tested.
+- In-process update activation is forbidden. Explicit update application goes only through the separately installed stable launcher after signed staging and process/API/reconciliation trial readiness; `auto_apply` remains false.
 
 ## Execution and verification
 
@@ -24,7 +24,7 @@ Run targeted tests, then `./scripts/check.sh`, race, vet, Staticcheck, Govulnche
 
 - Credentials, subscription headers/URLs, node UUIDs/Reality data and router backups stay outside Git, PRs and logs. Redact diagnostics centrally.
 - Never read or print private signing-key contents. Keep key files outside this checkout with mode 0600. Production bootstrap verifies native Ed25519 signatures and SHA-256 before executing any downloaded program; all files come from one immutable release tag.
-- Do not rewrite published tags/assets. RC1 is immutable. RC2 is a prerelease, never latest stable. Keep hardware limitations and failed/unrun checks visible.
+- Do not rewrite published tags/assets. Legacy releases remain immutable; the current release line is experimental until its documented hardware acceptance is complete. Keep hardware limitations and failed/unrun checks visible.
 - Do not automatically change a router address, SSH keys, existing firewall, WAN policy, credentials or another scheduler without task authorization. Maintain a working independent SSH/recovery path and private backups before routing changes.
 - Never recommend disabling SSH host verification or upstream certificate verification. For remote UI use an authenticated SSH tunnel with trusted CA/SPKI.
 
