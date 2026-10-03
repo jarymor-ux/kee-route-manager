@@ -175,4 +175,3 @@ func (m *Manager) SystemLogs(ctx context.Context, lines int) (string, error) {
 func (m *Manager) Diagnostics(ctx context.Context) (string, error) {
 	return m.platform.Diagnostics(ctx)
 }
-
