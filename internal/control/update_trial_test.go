@@ -23,7 +23,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 func TestTrialDaemonHelper(t *testing.T) {
@@ -71,7 +71,7 @@ func trialFixture(t *testing.T) (config.Config, string, *http.Client) {
 	if err = auth.CreateCredentials(c.Web.CredentialsFile, "admin", "trial-fixture-password"); err != nil {
 		t.Fatal(err)
 	}
-	if err = web.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
+	if err = tlsutil.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(c.API.TLS.CertFile)
