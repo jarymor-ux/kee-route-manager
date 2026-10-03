@@ -30,8 +30,8 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/store"
-	"github.com/jarymor-ux/kee-route-manager/internal/update"
 	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
+	"github.com/jarymor-ux/kee-route-manager/internal/update"
 	webui "github.com/jarymor-ux/kee-route-manager/internal/web/ui"
 )
 
