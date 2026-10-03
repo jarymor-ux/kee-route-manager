@@ -32,9 +32,8 @@ assert_excludes ./cmd/kee-route-manager-launcher internal/control/cli
 assert_excludes ./cmd/kee-route-manager-ui internal/core internal/xray internal/platform internal/store internal/bench internal/control
 assert_excludes ./cmd/kee-route-managerctl internal/core internal/xray internal/platform internal/store internal/bench
 
-if grep -R --include='*.go' -n 'config\.Config' internal/bench | grep -v '_test.go:'; then
-  echo 'internal/bench must not depend on the root config.Config type' >&2
-  exit 1
-fi
+go test ./internal/bench -run '^TestProductionDoesNotUseRootConfig
+printf 'Architecture dependency boundaries passed.\n'
+ -count=1
 
 printf 'Architecture dependency boundaries passed.\n'
