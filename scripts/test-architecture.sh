@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT"
+
+deps() {
+  go list -deps "$1"
+}
+
+assert_excludes() {
+  target=$1
+  shift
+  graph="$(deps "$target")"
+  for forbidden in "$@"; do
+    if printf '%s\n' "$graph" | grep -Fxq "github.com/jarymor-ux/kee-route-manager/$forbidden"; then
+      printf '%s must not depend on %s\n' "$target" "$forbidden" >&2
+      exit 1
+    fi
+  done
+}
+
+assert_excludes ./cmd/kee-route-managerd internal/web/ui
+assert_excludes ./cmd/kee-route-manager-ui internal/core internal/xray internal/platform internal/store internal/bench internal/control
+assert_excludes ./cmd/kee-route-managerctl internal/core internal/xray internal/platform internal/store internal/bench
+
+printf 'Architecture dependency boundaries passed.\n'
