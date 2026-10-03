@@ -105,7 +105,7 @@ func TestUpdateDownloadLimitsStatusAndCancellation(t *testing.T) {
 		_, _ = w.Write([]byte("12345"))
 	}))
 	defer server.Close()
-	u := New(config.Default().Update, t.TempDir(), "1.0.0-rc.2")
+	u := New(config.Default().Update, "1.0.0-rc.2")
 	u.client.Transport = server.Client().Transport
 	for _, tc := range []struct {
 		path    string
