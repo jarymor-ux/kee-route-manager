@@ -72,7 +72,7 @@ func newStagingFixture(t *testing.T) *stagingFixture {
 	c := config.Default().Update
 	c.Enabled, c.PublicKey, c.ManifestURL, c.SignatureURL = true, f.public, server.URL+"/manifest", server.URL+"/sig"
 	c.InstallDir = filepath.Join(t.TempDir(), "updates")
-	f.u = New(c, t.TempDir(), "1.1.0-rc.1")
+	f.u = New(c, "1.1.0-rc.1")
 	f.u.client.Transport = server.Client().Transport
 	return f
 }
@@ -143,9 +143,6 @@ func TestStagePublishesCompleteVerifiedBundleWithoutActivating(t *testing.T) {
 	data, _ := os.ReadFile(current)
 	if string(data) != "previous-release" {
 		t.Fatal("staging activated a release")
-	}
-	if _, err = os.Stat(f.u.pendingPath()); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("staging created legacy apply intent")
 	}
 }
 
