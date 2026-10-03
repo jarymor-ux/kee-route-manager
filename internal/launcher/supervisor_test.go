@@ -156,7 +156,7 @@ func TestApplyRefusesChangedConfirmationAndTamperedStageWithoutStoppingOwner(t *
 			want := "1.2.0"
 			if mode == "tampered-stage" {
 				want = "1.1.0"
-				release, err := update.New(f.c.Update, f.c.Paths.StateDir, "1.0.0").Stage(context.Background())
+				release, err := update.New(f.c.Update, "1.0.0").Stage(context.Background())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -254,7 +254,7 @@ func TestRestartRecoversTrialButHonorsCommittedDecision(t *testing.T) {
 	for _, phase := range []string{"trial", "committed"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newReleaseFixture(t)
-			newRelease, err := update.New(f.c.Update, f.c.Paths.StateDir, "1.0.0").Stage(context.Background())
+			newRelease, err := update.New(f.c.Update, "1.0.0").Stage(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
