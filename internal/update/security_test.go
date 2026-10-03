@@ -55,7 +55,7 @@ func TestUpdateRejectsHTTPSDowngradeRedirect(t *testing.T) {
 	cfg := config.Default().Update
 	cfg.Enabled = true
 	cfg.ManifestURL = secure.URL
-	u := New(cfg, t.TempDir(), "1.0.0-rc.2")
+	u := New(cfg, "1.0.0-rc.2")
 	u.client.Transport = secure.Client().Transport
 	if _, err := u.Check(context.Background()); err == nil {
 		t.Fatal("downgrade redirect accepted")
