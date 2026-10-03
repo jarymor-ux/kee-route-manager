@@ -239,7 +239,7 @@ func TestUpdateCheckFallbackDiscoversSignedReleaseWithoutApplyCapability(t *test
 	s.cfg.Update.GitHubRepository = ""
 	s.cfg.Update.ManifestURL, s.cfg.Update.SignatureURL = server.URL+"/manifest", server.URL+"/signature"
 	s.cfg.Update.LauncherSocket = filepath.Join(t.TempDir(), "missing.sock")
-	s.updater = update.New(s.cfg.Update, t.TempDir(), "1.1.0")
+	s.updater = update.New(s.cfg.Update, "1.1.0")
 	r := actionRequest("/api/v1/update/check", "", session)
 	r.Method = "GET"
 	w := httptest.NewRecorder()
