@@ -44,10 +44,10 @@ type CheckResult struct {
 	StageSupported bool             `json:"stage_supported"`
 }
 type Updater struct {
-	cfg               config.Update
-	current           string
-	client            *http.Client
-	applySupportErr   error
+	cfg             config.Update
+	current         string
+	client          *http.Client
+	applySupportErr error
 }
 
 func New(c config.Update, current string) *Updater {
