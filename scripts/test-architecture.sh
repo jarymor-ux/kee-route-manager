@@ -32,8 +32,6 @@ assert_excludes ./cmd/kee-route-manager-launcher internal/control/cli
 assert_excludes ./cmd/kee-route-manager-ui internal/core internal/xray internal/platform internal/store internal/bench internal/control
 assert_excludes ./cmd/kee-route-managerctl internal/core internal/xray internal/platform internal/store internal/bench
 
-go test ./internal/bench -run '^TestProductionDoesNotUseRootConfig
-printf 'Architecture dependency boundaries passed.\n'
- -count=1
+go test ./internal/bench -run '^TestProductionDoesNotUseRootConfig$' -count=1
 
 printf 'Architecture dependency boundaries passed.\n'
