@@ -1,4 +1,4 @@
-const CACHE = 'krm-ui-rc2';
+const CACHE = 'krm-ui-static-v1';
 const ASSETS = ['/', '/assets/app.css', '/assets/app.js', '/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
