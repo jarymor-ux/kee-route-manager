@@ -160,7 +160,7 @@ func (r failedBatchRunner) Start(context.Context, []model.Node) (*xray.Batch, er
 
 func TestBenchmarkRejectsEmptyInputAndReportsBatchFailure(t *testing.T) {
 	cfg := config.Default()
-	engine := New(cfg, nil)
+	engine := New(RuntimeConfig{Benchmark: cfg.Benchmark, Health: cfg.Health, Targets: cfg.Targets}, nil)
 	if results, err := engine.Run(context.Background(), nil, nil); err == nil || len(results) != 0 {
 		t.Fatalf("empty benchmark accepted: %+v %v", results, err)
 	}
