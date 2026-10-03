@@ -104,7 +104,7 @@ Bootstrap проверяет native Ed25519 signatures manifest и SHA256SUMS, �
 
 ## 6. Core + UI на одном устройстве
 
-Дополнительно подготовьте UI YAML из `configs/ui-keenetic.yaml`, `configs/ui-openwrt.yaml` или `configs/ui-proxy.yaml`. В нём `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`, upstream `https://127.0.0.1:9443`, TLS включён, `insecure_tls: false`. Проверьте пути под платформу и upstream CA `/.../etc/kee-route-manager-ui/controller-ca.crt`.
+Дополнительно подготовьте UI YAML из `configs/ui-keenetic.yaml`, `configs/ui-linux-openwrt.yaml` или `configs/ui-linux-openwrt.yaml`. В нём `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`, upstream `https://127.0.0.1:9443`, TLS включён, `insecure_tls: false`. Проверьте пути под платформу и upstream CA `/.../etc/kee-route-manager-ui/controller-ca.crt`.
 
 С нуля:
 

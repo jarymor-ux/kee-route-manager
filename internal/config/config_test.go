@@ -106,3 +106,20 @@ func TestDuplicateKeyRejected(t *testing.T) {
 		t.Fatal("expected duplicate key error")
 	}
 }
+
+func TestShippedControllerTemplatesUseRepositoryDiscovery(t *testing.T) {
+	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := Load(filepath.Join("..", "..", "configs", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Update.GitHubRepository == "" {
+				t.Fatal("shipped update template must select a GitHub repository")
+			}
+			if cfg.Update.ManifestURL != "" || cfg.Update.SignatureURL != "" {
+				t.Fatalf("repository discovery must not ship redundant pinned manifest URLs: manifest=%q signature=%q", cfg.Update.ManifestURL, cfg.Update.SignatureURL)
+			}
+		})
+	}
+}
