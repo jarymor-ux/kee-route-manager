@@ -11,7 +11,7 @@ for script in scripts/*.sh; do bash -n "$script"; done
 node --check internal/web/ui/static/app.js
 node --check internal/web/ui/static/sw.js
 node scripts/test-ui.js
-./scripts/test-architecture.sh
+bash scripts/test-architecture.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TMP/ctl" ./cmd/kee-route-managerctl
