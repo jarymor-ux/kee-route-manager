@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 // Closing sockets does not join net/http handlers. Fence admission separately
@@ -45,7 +45,7 @@ func serveHTTP(ctx context.Context, c config.Config, local, public http.Handler,
 	var err error
 	if c.API.Enabled && c.API.TLS.Enabled {
 		if generateTLS {
-			if err = web.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
+			if err = tlsutil.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
 				return false, err
 			}
 		}
