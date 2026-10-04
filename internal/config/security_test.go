@@ -91,7 +91,6 @@ func TestUIPlaintextUpstreamRejectsTLSOptions(t *testing.T) {
 	}
 }
 
-
 func TestSubscriptionHeaderNameUsesHTTPTokenGrammar(t *testing.T) {
 	for _, name := range []string{"X:Bad", "Bad Header", "Bad\\Header", "Bad\"Header"} {
 		t.Run(name, func(t *testing.T) {
