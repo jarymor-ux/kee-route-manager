@@ -26,8 +26,8 @@ func main() {
 		fmt.Printf("kee-route-manager-ui %s (%s, %s, %s/%s)\n", version, commit, buildTime, runtime.GOOS, runtime.GOARCH)
 		return
 	}
-	if args[0] != "serve" && args[0] != "validate" && args[0] != "ready" {
-		log.Fatal("usage: kee-route-manager-ui <serve|validate|ready|version> [--config PATH]")
+	if args[0] != "serve" && args[0] != "validate" && args[0] != "ready" && args[0] != "upstream-ca-path" {
+		log.Fatal("usage: kee-route-manager-ui <serve|validate|ready|upstream-ca-path|version> [--config PATH]")
 	}
 	f := flag.NewFlagSet(args[0], flag.ExitOnError)
 	p := f.String("config", "/etc/kee-route-manager-ui/config.yaml", "configuration path")
@@ -44,6 +44,12 @@ func main() {
 	}
 	if args[0] == "validate" {
 		fmt.Println("UI configuration is valid")
+		return
+	}
+	if args[0] == "upstream-ca-path" {
+		if c.UIProxy.UpstreamCAFile != "" {
+			fmt.Println(c.UIProxy.UpstreamCAFile)
+		}
 		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
