@@ -254,7 +254,7 @@ func (c Config) validateController() []error {
 			}
 		}
 		for k, v := range s.Headers {
-			if strings.ContainsAny(k+v, "\r\n") || k == "" || len(k) > 128 || len(v) > 8192 {
+			if !httpHeaderNameRE.MatchString(k) || strings.ContainsAny(v, "\r\n") || len(k) > 128 || len(v) > 8192 {
 				add(fmt.Errorf("subscription %q header invalid", s.ID))
 			}
 		}
