@@ -46,7 +46,7 @@ type BenchmarkOptions struct {
 	SpeedEnabled        bool
 	SpeedWorkers        int
 	SpeedURLTemplate    string
-	SpeedWarmupBytes    config.ByteSize
+	SpeedWarmupBytes    *config.ByteSize
 	SpeedMinSampleBytes config.ByteSize
 	SpeedMaxSampleBytes config.ByteSize
 	SpeedTargetDuration config.Duration
@@ -204,8 +204,8 @@ func applyBenchmarkOptions(dst *config.Benchmark, src BenchmarkOptions) {
 	if src.SpeedURLTemplate != "" {
 		dst.Speed.URLTemplate = src.SpeedURLTemplate
 	}
-	if src.SpeedWarmupBytes != 0 {
-		dst.Speed.WarmupBytes = src.SpeedWarmupBytes
+	if src.SpeedWarmupBytes != nil {
+		dst.Speed.WarmupBytes = *src.SpeedWarmupBytes
 	}
 	if src.SpeedMinSampleBytes != 0 {
 		dst.Speed.MinSampleBytes = src.SpeedMinSampleBytes
