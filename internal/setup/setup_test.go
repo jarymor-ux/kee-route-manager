@@ -249,8 +249,9 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 	opts := validOptions(PlatformLinuxSystemd)
 	special := "name: # ' \" & ?"
 	secret := "token: # ' \" & ?"
+	headerName := "X:#'\"&?"
 	opts.Subscriptions[0].Name = special
-	opts.Subscriptions[0].Headers = map[string]string{"X-Secret": secret}
+	opts.Subscriptions[0].Headers = map[string]string{headerName: secret}
 	opts.ScoreTargets[0].Name = special
 	opts.HealthTargets[0].Name = special
 
@@ -270,8 +271,8 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 	if loaded.Subscriptions.Sources[0].Name != special {
 		t.Fatalf("name = %q", loaded.Subscriptions.Sources[0].Name)
 	}
-	if loaded.Subscriptions.Sources[0].Headers["X-Secret"] != secret {
-		t.Fatalf("header did not round-trip")
+	if loaded.Subscriptions.Sources[0].Headers[headerName] != secret {
+		t.Fatalf("header did not round-trip: %#v", loaded.Subscriptions.Sources[0].Headers)
 	}
 }
 
