@@ -45,6 +45,41 @@ func TestProxyTrustAndPin(t *testing.T) {
 		}
 	}
 }
+func TestProxyMarksSessionCookieSecureAtHTTPSBoundary(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "krm_session",
+			Value:    "session-id",
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+		})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	c := config.Default()
+	c.UIProxy.Upstream = upstream.URL
+	c.Web.TLS.Enabled = true
+	h, err := ProxyHandler(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "https://krm.local/api/v1/auth/login", strings.NewReader("{}"))
+	req.Host = "krm.local"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "krm_session" || !cookies[0].Secure {
+		t.Fatalf("session cookie not secured at HTTPS boundary: %#v", cookies)
+	}
+}
+
 func TestProxyRejectsForeignOriginBeforeRewrite(t *testing.T) {
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
