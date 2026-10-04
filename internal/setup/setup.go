@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -90,6 +91,14 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 	cfg.ApplyPlatformDefaults()
 
 	cfg.Web.Enabled = false
+	// The controller API is loopback-only, so the split UI talks to it over
+	// local HTTP. HTTPS remains on the browser-facing UI listener.
+	cfg.API.TLS = config.TLS{}
+	cfg.UIProxy.Enabled = false
+	cfg.UIProxy.Upstream = "http://127.0.0.1:9443"
+	cfg.UIProxy.UpstreamCAFile = ""
+	cfg.UIProxy.UpstreamSPKISHA256 = ""
+	cfg.UIProxy.InsecureTLS = false
 	cfg.Subscriptions.Sources = cloneSources(opts.Subscriptions)
 	cfg.Targets = appendTargets(nil, opts.ScoreTargets, "score")
 	cfg.Targets = appendTargets(cfg.Targets, opts.HealthTargets, "health")
@@ -150,11 +159,25 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	cfg.Web.TLS.AutoGenerate = true
 	cfg.Web.TLS.Hosts = []string{"localhost"}
 
+	upstream := opts.Upstream
+	if upstream == "" {
+		upstream = "http://127.0.0.1:9443"
+	}
+	u, parseErr := url.Parse(upstream)
+	if parseErr == nil && u.Scheme == "http" &&
+		(opts.InsecureTLS || opts.UpstreamCAFile != "" || opts.UpstreamSPKISHA256 != "") {
+		return config.Config{}, fmt.Errorf("TLS trust options require an HTTPS UI upstream")
+	}
+
 	cfg.UIProxy.Enabled = true
-	cfg.UIProxy.Upstream = opts.Upstream
+	cfg.UIProxy.Upstream = upstream
 	cfg.UIProxy.InsecureTLS = opts.InsecureTLS
 	cfg.UIProxy.UpstreamSPKISHA256 = opts.UpstreamSPKISHA256
-	if !opts.InsecureTLS {
+	if parseErr == nil && u.Scheme == "http" {
+		cfg.UIProxy.InsecureTLS = false
+		cfg.UIProxy.UpstreamSPKISHA256 = ""
+		cfg.UIProxy.UpstreamCAFile = ""
+	} else if !opts.InsecureTLS {
 		if opts.UpstreamCAFile != "" {
 			cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
 		} else if opts.Platform == PlatformKeenetic {
