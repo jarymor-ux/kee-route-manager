@@ -112,14 +112,8 @@ if [ "$MODE" != ui ]; then
  mkdir -p "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
  chmod 0700 "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
 fi
-if [ "$MODE" = local-ui ]; then
- # API auto TLS must be generated before copying its public CA to the unprivileged UI.
- api_cert=$("$BIN/kee-route-managerd" tls-init --config "$CONFIG")
- [ -f "$api_cert" ] || fail 'tls-init did not return an existing public API certificate'
- cp "$api_cert" "$UI_DIR/controller-ca.crt"; chmod 0644 "$UI_DIR/controller-ca.crt"
-fi
-if [ "$MODE" = ui ]; then
- [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] && [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'remote UI requires KRM_UPSTREAM_CA_FILE obtained through authenticated SSH'
+if [ "$MODE" = ui ] && [ -n "${KRM_UPSTREAM_CA_FILE:-}" ]; then
+ [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'KRM_UPSTREAM_CA_FILE does not exist'
  cp "$KRM_UPSTREAM_CA_FILE" "$UI_DIR/controller-ca.crt"; chmod 0644 "$UI_DIR/controller-ca.crt"
 fi
 if [ "$MODE" != ui ]; then
