@@ -197,7 +197,6 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 }
 
 func applyControllerTemplate(cfg *config.Config, platform Platform) {
-	cfg.API.TLS.Hosts = []string{"127.0.0.1", "localhost"}
 	cfg.Web.TLS.Hosts = nil
 	cfg.Update.CheckInterval = config.Dur(30 * time.Minute)
 
@@ -207,8 +206,6 @@ func applyControllerTemplate(cfg *config.Config, platform Platform) {
 		cfg.Paths.CacheDir = "/opt/var/cache/kee-route-manager"
 		cfg.Paths.LogFile = "/opt/var/log/kee-route-manager.log"
 		cfg.Paths.RunDir = "/opt/var/run/kee-route-manager"
-		cfg.API.TLS.CertFile = "/opt/etc/kee-route-manager/api.crt"
-		cfg.API.TLS.KeyFile = "/opt/etc/kee-route-manager/api.key"
 		cfg.Web.CredentialsFile = "/opt/etc/kee-route-manager/credentials.json"
 		cfg.Web.TLS.CertFile = "/opt/etc/kee-route-manager/tls.crt"
 		cfg.Web.TLS.KeyFile = "/opt/etc/kee-route-manager/tls.key"
@@ -222,14 +219,10 @@ func applyControllerTemplate(cfg *config.Config, platform Platform) {
 		cfg.Platform.OpenWrt.AllowReboot = true
 		cfg.Paths.LogFile = "/var/log/kee-route-manager.log"
 		cfg.Paths.RunDir = "/var/run/kee-route-manager"
-		cfg.API.TLS.CertFile = "/etc/kee-route-manager/api.crt"
-		cfg.API.TLS.KeyFile = "/etc/kee-route-manager/api.key"
 		cfg.Xray.AssetDir = "/usr/share/xray"
 		cfg.Xray.BaseRoutingFile = "/etc/xray/configs/05_routing.json"
 	case PlatformLinuxSystemd:
 		cfg.Paths.LogFile = "/var/log/kee-route-manager.log"
-		cfg.API.TLS.CertFile = "/etc/kee-route-manager/api.crt"
-		cfg.API.TLS.KeyFile = "/etc/kee-route-manager/api.key"
 		cfg.Xray.AssetDir = "/usr/share/xray"
 		cfg.Xray.BaseRoutingFile = "/etc/xray/configs/05_routing.json"
 	}
