@@ -9,6 +9,8 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 )
 
+func byteSizePtr(v config.ByteSize) *config.ByteSize { return &v }
+
 func validOptions(platform Platform) SetupOptions {
 	return SetupOptions{
 		Platform: platform,
@@ -58,7 +60,7 @@ func validOptions(platform Platform) SetupOptions {
 			SpeedEnabled:        true,
 			SpeedWorkers:        3,
 			SpeedURLTemplate:    "https://speed.example.test/download?bytes={bytes}",
-			SpeedWarmupBytes:    4 << 20,
+			SpeedWarmupBytes:    byteSizePtr(4 << 20),
 			SpeedMinSampleBytes: 32 << 20,
 			SpeedMaxSampleBytes: 128 << 20,
 			SpeedRepetitions:    2,
@@ -274,6 +276,20 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 	if loaded.Subscriptions.Sources[0].Headers[headerName] != secret {
 		t.Fatalf("header did not round-trip: %#v", loaded.Subscriptions.Sources[0].Headers)
 	}
+}
+
+func TestBuildControllerConfigAllowsExplicitZeroSpeedWarmup(t *testing.T) {
+	opts := validOptions(PlatformLinuxSystemd)
+	opts.Benchmark.SpeedWarmupBytes = byteSizePtr(0)
+
+	cfg, err := BuildControllerConfig(opts)
+	if err != nil {
+		t.Fatalf("BuildControllerConfig: %v", err)
+	}
+	if cfg.Benchmark.Speed.WarmupBytes != 0 {
+		t.Fatalf("warmup_bytes = %s, want 0B", cfg.Benchmark.Speed.WarmupBytes)
+	}
+	roundTrip(t, cfg)
 }
 
 func TestInvalidOptionsUseConfigValidation(t *testing.T) {
