@@ -107,6 +107,39 @@ func TestDuplicateKeyRejected(t *testing.T) {
 	}
 }
 
+func TestYAMLSubsetRejectsUnsupportedSyntax(t *testing.T) {
+	tests := map[string]string{
+		"document marker": "---\na: 1\n",
+		"anchor":          "a: &shared value\n",
+		"alias":           "a: &shared value\nb: *shared\n",
+		"merge key":       "a:\n  <<: {}\n",
+		"explicit tag":    "a: !!str value\n",
+		"literal block":   "a: |\n  value\n",
+		"folded block":    "a: >\n  value\n",
+		"flow mapping":    "a: {b: value}\n",
+		"odd indentation": "a:\n   b: value\n",
+		"tab indentation": "a:\n\tb: value\n",
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseYAMLSubset([]byte(input)); err == nil {
+				t.Fatalf("unsupported YAML syntax accepted: %q", input)
+			}
+		})
+	}
+}
+
+func TestYAMLSubsetKeepsPlainTimestampLikeValuesAsStrings(t *testing.T) {
+	value, err := parseYAMLSubset([]byte("date: 2026-10-05\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.(map[string]any)["date"].(string)
+	if !ok || got != "2026-10-05" {
+		t.Fatalf("date = %#v", value)
+	}
+}
+
 func TestShippedControllerTemplatesUseRepositoryDiscovery(t *testing.T) {
 	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
 		t.Run(name, func(t *testing.T) {
