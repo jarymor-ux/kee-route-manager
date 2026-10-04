@@ -308,7 +308,6 @@ func TestInvalidOptionsUseConfigValidation(t *testing.T) {
 	}
 }
 
-
 func TestBuildControllerConfigRejectsEmptyRoutingTags(t *testing.T) {
 	tests := []struct {
 		name string
