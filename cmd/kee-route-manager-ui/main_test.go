@@ -38,6 +38,13 @@ func TestEntrypoint(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
+	caDir := t.TempDir()
+	caFile := filepath.Join(caDir, "controller-ca.crt")
+	caConfig := filepath.Join(caDir, "ui.yaml")
+	caBody := strings.Replace(body, "ui:\n  upstream:", "ui:\n  upstream_ca_file: "+caFile+"\n  upstream:", 1)
+	if err := os.WriteFile(caConfig, []byte(caBody), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		args    []string
 		success bool
@@ -45,6 +52,7 @@ func TestEntrypoint(t *testing.T) {
 	}{
 		{[]string{"version"}, true, "kee-route-manager-ui " + version},
 		{[]string{"validate", "--config", path}, true, "UI configuration is valid"},
+		{[]string{"upstream-ca-path", "--config", caConfig}, true, caFile},
 		{[]string{"ready", "--config", path}, true, "UI and controller are ready"},
 		{[]string{"serve", "--config", path, "extra"}, false, "unexpected arguments"},
 		{[]string{"validate", "--config", "/missing/config.yaml"}, false, "read config"},
