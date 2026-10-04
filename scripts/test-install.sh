@@ -92,8 +92,14 @@ for platform in ('linux-systemd','openwrt','keenetic'):
  if platform=='keenetic':
   ui=ui.replace('/var/', '/opt/var/').replace('/run/', '/opt/var/run/').replace('/etc/kee-route-manager-ui/', '/opt/etc/kee-route-manager-ui/')
  (w/('private/'+platform+'-ui.yaml')).write_text(ui)
+ managed_ca=('/opt' if platform=='keenetic' else '')+'/etc/kee-route-manager-ui/controller-ca.crt'
+ custom=ui.replace('  upstream: "http://127.0.0.1:9443"\n', '  upstream: "https://127.0.0.1:9443"\n  upstream_ca_file: '+managed_ca+'\n')
+ (w/('private/'+platform+'-ui-custom.yaml')).write_text(custom)
+ wrong=custom.replace(managed_ca, '/tmp/krm-wrong-controller-ca.crt')
+ (w/('private/'+platform+'-ui-wrong-ca.yaml')).write_text(wrong)
 (w/'private/password').write_text('integration-only-long-password\n')
 PYCONFIG
+openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=krm-installer-test -keyout "$WORK/private/ca.key" -out "$WORK/private/ca.crt" -days 1 >/dev/null 2>&1
 for platform in linux-systemd openwrt keenetic; do
  case "$platform" in
   keenetic) prefix=/opt; bin=/opt/bin; core_service=/opt/etc/init.d/S99kee-route-manager; ui_service=/opt/etc/init.d/S98kee-route-manager-ui;;
@@ -108,6 +114,14 @@ for platform in linux-systemd openwrt keenetic; do
  [[ -L "$bin/kee-route-managerd" && -L "$bin/kee-route-managerctl" && -f "$bin/kee-route-manager-launcher" ]]
  [[ ! -e "$ui_service" ]]
  "$bin/kee-route-managerctl" ready --config "$core_config"
+ # Custom-CA mistakes must fail during preflight, before UI files or services are installed.
+ export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui-custom.yaml"
+ unset KRM_UPSTREAM_CA_FILE
+ if sh "install/$platform/install.sh"; then echo 'custom CA accepted without KRM_UPSTREAM_CA_FILE' >&2; exit 1; fi
+ [[ ! -e "$ui_config" && ! -e "$bin/kee-route-manager-ui" && ! -e "$ui_service" ]]
+ export KRM_CONFIG_FILE="$WORK/private/$platform-ui-wrong-ca.yaml" KRM_UPSTREAM_CA_FILE="$WORK/private/ca.crt"
+ if sh "install/$platform/install.sh"; then echo 'unmanaged custom CA path accepted' >&2; exit 1; fi
+ [[ ! -e "$ui_config" && ! -e "$bin/kee-route-manager-ui" && ! -e "$ui_service" ]]
  # Standalone UI remains installable beside a controller and removable alone.
  export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui.yaml"
  unset KRM_UPSTREAM_CA_FILE
