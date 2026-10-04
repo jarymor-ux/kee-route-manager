@@ -12,11 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jarymor-ux/kee-route-manager/internal/auth"
-	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
-	"github.com/jarymor-ux/kee-route-manager/internal/logging"
-	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"io/fs"
 	"log"
 	"net"
@@ -26,6 +21,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/jarymor-ux/kee-route-manager/internal/auth"
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
+	"github.com/jarymor-ux/kee-route-manager/internal/logging"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 //go:embed static/*
