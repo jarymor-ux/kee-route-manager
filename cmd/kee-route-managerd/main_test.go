@@ -55,6 +55,16 @@ func TestEntrypoint(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
+	tlsPath := filepath.Join(dir, "controller-tls.yaml")
+	tlsBlock := "    enabled: false\n    auto_generate: false\n    cert_file: \"\"\n    key_file: \"\"\n    hosts: []"
+	tlsEnabledBlock := "    enabled: true\n    auto_generate: true\n    cert_file: " + filepath.Join(dir, "config", "api.crt") + "\n    key_file: " + filepath.Join(dir, "config", "api.key") + "\n    hosts: [127.0.0.1, localhost]"
+	tlsBody := strings.Replace(body, tlsBlock, tlsEnabledBlock, 1)
+	if tlsBody == body {
+		t.Fatal("controller API TLS fixture block not found")
+	}
+	if err := os.WriteFile(tlsPath, []byte(tlsBody), 0600); err != nil {
+		t.Fatal(err)
+	}
 	uiPath := filepath.Join(dir, "ui.yaml")
 	if err := os.WriteFile(uiPath, []byte("instance:\n  role: ui\nui:\n  upstream: https://127.0.0.1:9443\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -66,7 +76,7 @@ func TestEntrypoint(t *testing.T) {
 	}{
 		{[]string{"version"}, true, "kee-route-managerd " + version},
 		{[]string{"validate", "--config", path}, true, "Controller configuration is valid"},
-		{[]string{"tls-init", "--config", path}, true, filepath.Join(dir, "config", "api.crt")},
+		{[]string{"tls-init", "--config", tlsPath}, true, filepath.Join(dir, "config", "api.crt")},
 		{[]string{"serve", "--config", uiPath}, false, "daemon requires instance.role=controller"},
 		{[]string{"validate", "--config", "/missing/config.yaml"}, false, "read config"},
 		{[]string{"unsupported"}, false, "usage: kee-route-managerd"},
