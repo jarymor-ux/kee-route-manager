@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.1.0-rc.7 — 2026-10-04
+
+Experimental prerelease. Hardware acceptance remains separate from CI.
+
+- Remove the dead legacy CLI and obsolete UI installer wrappers; keep one embedded UI asset source.
+- Remove the legacy in-process updater path and retain the signed stable-launcher staging/trial/rollback flow.
+- Enforce core/UI and daemon/launcher/CLI dependency boundaries with regression guards.
+- Move shared TLS, HTTP security, build-info and config-flag helpers to neutral packages.
+- Clean shipped update templates/documentation and cover service-worker cache migration.
+- Split `core.Manager` and `xray.Manager` into focused files without changing runtime algorithms.
+- Narrow benchmark runtime configuration to `Benchmark`, `Health` and `Targets`, with an alias-safe AST guard against root `config.Config`.
+
+## 1.1.0-rc.6 — 2026-10-03
+
 - Run download benchmarks with bounded parallel node workers (`benchmark.speed.workers`, default 2, range 1..16); retain sequential warmup/repetitions per node and support isolated sampling with 1 worker. Cancellation stops the speed stage without reporting successful completion.
 - Preserve completed restore intent when recovering damaged state; release finished operations after persistence failures and report those failures.
 - Reserve the persistent Xray selection prefix and accept equivalent directory aliases for snapshot restore, rollback and journal replay without relaxing file identity checks.
