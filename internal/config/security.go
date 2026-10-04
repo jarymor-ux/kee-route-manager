@@ -80,8 +80,13 @@ func (c Config) validateCommon() []error {
 			es = append(es, fmt.Errorf("ui.upstream must be an HTTP(S) URL without credentials or fragment"))
 		} else {
 			u, _ := url.Parse(c.UIProxy.Upstream)
-			if u.Scheme == "http" && !loopback(u.Hostname()) {
-				es = append(es, fmt.Errorf("plaintext UI upstream must be loopback"))
+			if u.Scheme == "http" {
+				if !loopback(u.Hostname()) {
+					es = append(es, fmt.Errorf("plaintext UI upstream must be loopback"))
+				}
+				if c.UIProxy.InsecureTLS || c.UIProxy.UpstreamCAFile != "" || c.UIProxy.UpstreamSPKISHA256 != "" {
+					es = append(es, fmt.Errorf("UI TLS trust options require an HTTPS upstream"))
+				}
 			}
 			if u.RawQuery != "" || (u.Path != "" && u.Path != "/") {
 				es = append(es, fmt.Errorf("ui.upstream must be an origin URL"))
