@@ -91,9 +91,6 @@ func TestBuildControllerConfigPlatforms(t *testing.T) {
 				if c.Paths.RunDir != "/opt/var/run/kee-route-manager" {
 					t.Fatalf("run_dir = %q", c.Paths.RunDir)
 				}
-				if c.API.TLS.CertFile != "/opt/etc/kee-route-manager/api.crt" {
-					t.Fatalf("api cert = %q", c.API.TLS.CertFile)
-				}
 				if c.Xray.Binary != "/opt/sbin/xray" || c.Xray.AssetDir != "/opt/share/xray" {
 					t.Fatalf("unexpected xray paths: %#v", c.Xray)
 				}
@@ -115,9 +112,6 @@ func TestBuildControllerConfigPlatforms(t *testing.T) {
 				if c.Paths.RunDir != "/var/run/kee-route-manager" {
 					t.Fatalf("run_dir = %q", c.Paths.RunDir)
 				}
-				if c.API.TLS.CertFile != "/etc/kee-route-manager/api.crt" {
-					t.Fatalf("api cert = %q", c.API.TLS.CertFile)
-				}
 				if c.Xray.AssetDir != "/usr/share/xray" || c.Xray.BaseRoutingFile != "/etc/xray/configs/05_routing.json" {
 					t.Fatalf("unexpected xray paths: %#v", c.Xray)
 				}
@@ -135,9 +129,6 @@ func TestBuildControllerConfigPlatforms(t *testing.T) {
 				}
 				if c.Paths.RunDir != "/run/kee-route-manager" {
 					t.Fatalf("run_dir = %q", c.Paths.RunDir)
-				}
-				if c.API.TLS.CertFile != "/etc/kee-route-manager/api.crt" {
-					t.Fatalf("api cert = %q", c.API.TLS.CertFile)
 				}
 				if c.Xray.AssetDir != "/usr/share/xray" || c.Xray.BaseRoutingFile != "/etc/xray/configs/05_routing.json" {
 					t.Fatalf("unexpected xray paths: %#v", c.Xray)
@@ -184,8 +175,8 @@ func assertGeneratedFields(t *testing.T, cfg config.Config) {
 	if cfg.Pool.Size != 7 {
 		t.Fatalf("pool size = %d", cfg.Pool.Size)
 	}
-	if cfg.API.TLS.Enabled {
-		t.Fatal("controller loopback API must not use TLS")
+	if cfg.API.TLS.Enabled || cfg.API.TLS.AutoGenerate || cfg.API.TLS.CertFile != "" || cfg.API.TLS.KeyFile != "" {
+		t.Fatalf("controller loopback API must not carry TLS configuration: %#v", cfg.API.TLS)
 	}
 	if cfg.UIProxy.Enabled {
 		t.Fatal("controller config must not enable UI proxy")
