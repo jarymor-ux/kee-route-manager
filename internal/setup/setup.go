@@ -181,6 +181,7 @@ func applyControllerTemplate(cfg *config.Config, platform Platform) {
 		cfg.Xray.BaseRoutingFile = "/opt/etc/xray/configs/05_routing.json"
 		cfg.Platform.XrayStatusCommand = []string{"/opt/etc/kee-route-manager/xray-status.sh"}
 	case PlatformOpenWrt:
+		cfg.Platform.OpenWrt.AllowReboot = true
 		cfg.Paths.LogFile = "/var/log/kee-route-manager.log"
 		cfg.Paths.RunDir = "/var/run/kee-route-manager"
 		cfg.API.TLS.CertFile = "/etc/kee-route-manager/api.crt"
