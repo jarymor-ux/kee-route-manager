@@ -364,3 +364,70 @@ func TestBuildUIConfig(t *testing.T) {
 		})
 	}
 }
+
+
+func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
+	_, err := BuildUIConfig(UIOptions{
+		Platform: Platform("open-wrt"),
+		Upstream: "https://127.0.0.1:9443",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported platform error")
+	}
+	if !strings.Contains(err.Error(), "unsupported platform") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteUIConfigOmitsControllerOnlySections(t *testing.T) {
+	cfg, err := BuildUIConfig(UIOptions{
+		Platform: PlatformLinuxSystemd,
+		Listen:   "0.0.0.0:9444",
+		Upstream: "https://127.0.0.1:9443",
+	})
+	if err != nil {
+		t.Fatalf("BuildUIConfig: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "ui.yaml")
+	if err := WriteConfig(path, cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+
+	for _, section := range []string{
+		"failover:",
+		"xray:",
+		"subscriptions:",
+		"targets:",
+		"health:",
+		"pool:",
+		"benchmark:",
+		"update:",
+		"xray_restart_command:",
+		"xray_status_command:",
+		"krm_restart_command:",
+		"keenetic:",
+		"openwrt:",
+		"linux:",
+		"credentials_file:",
+		"session_ttl:",
+		"unix_socket:",
+	} {
+		if strings.Contains(text, section) {
+			t.Fatalf("UI config contains controller-only field %q:\n%s", section, text)
+		}
+	}
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("config.Load: %v\n%s", err, text)
+	}
+	if loaded.Instance.Role != "ui" || loaded.Platform.Kind != string(PlatformLinuxSystemd) {
+		t.Fatalf("loaded UI identity = role %q platform %q", loaded.Instance.Role, loaded.Platform.Kind)
+	}
+}
