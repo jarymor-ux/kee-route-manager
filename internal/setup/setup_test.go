@@ -290,7 +290,7 @@ func TestBuildControllerConfigAllowsExplicitZeroSpeedWarmup(t *testing.T) {
 		t.Fatalf("BuildControllerConfig: %v", err)
 	}
 	if cfg.Benchmark.Speed.WarmupBytes != 0 {
-		t.Fatalf("warmup_bytes = %s, want 0B", cfg.Benchmark.Speed.WarmupBytes)
+		t.Fatalf("warmup_bytes = %v, want 0B", cfg.Benchmark.Speed.WarmupBytes)
 	}
 	roundTrip(t, cfg)
 }
