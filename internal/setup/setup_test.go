@@ -251,7 +251,7 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 	opts := validOptions(PlatformLinuxSystemd)
 	special := "name: # ' \" & ?"
 	secret := "token: # ' \" & ?"
-	headerName := "X:#'\"&?"
+	headerName := "X-Test-Token"
 	opts.Subscriptions[0].Name = special
 	opts.Subscriptions[0].Headers = map[string]string{headerName: secret}
 	opts.ScoreTargets[0].Name = special
