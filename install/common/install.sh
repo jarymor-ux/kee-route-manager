@@ -80,8 +80,8 @@ if [ "$MODE" != core ]; then
  "$src" validate --config "$UI_INPUT"
  cp "$UI_INPUT" "$STAGE/ui.yaml"
 fi
-if [ "$MODE" = ui ]; then
- [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] && [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'UI requires a public upstream CA obtained through authenticated SSH'
+if [ "$MODE" = ui ] && [ -n "${KRM_UPSTREAM_CA_FILE:-}" ]; then
+ [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'KRM_UPSTREAM_CA_FILE does not exist'
  openssl x509 -in "$KRM_UPSTREAM_CA_FILE" -noout >/dev/null || fail 'invalid public upstream CA'
 fi
 # Preserve existing installations; reinstall requires explicit uninstall first.
