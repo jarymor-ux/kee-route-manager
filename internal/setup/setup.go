@@ -178,13 +178,9 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 		cfg.UIProxy.UpstreamSPKISHA256 = ""
 		cfg.UIProxy.UpstreamCAFile = ""
 	} else if !opts.InsecureTLS {
-		if opts.UpstreamCAFile != "" {
-			cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
-		} else if opts.Platform == PlatformKeenetic {
-			cfg.UIProxy.UpstreamCAFile = "/opt/etc/kee-route-manager-ui/controller-ca.crt"
-		} else {
-			cfg.UIProxy.UpstreamCAFile = "/etc/kee-route-manager-ui/controller-ca.crt"
-		}
+		// Empty custom CA means standard system trust. A private controller CA
+		// is configured only when the operator explicitly supplies its path.
+		cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
 	}
 	if opts.RequestTimeout.Duration > 0 {
 		cfg.UIProxy.RequestTimeout = opts.RequestTimeout
