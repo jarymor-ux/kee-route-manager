@@ -21,7 +21,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
@@ -150,7 +149,6 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	mux.Handle("/", files)
 	return httpsec.Security(mux, c.Web.TLS.Enabled), nil
 }
-
 
 func secureSessionCookie(response *http.Response) {
 	values := response.Header.Values("Set-Cookie")
