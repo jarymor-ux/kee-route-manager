@@ -111,8 +111,9 @@ async function loadStatus() {
     statusData = data;
     renderStatus(data);
   } catch {
-    $('#status-dot').className = 'dot bad';
-    $('#status-text').textContent = 'Нет связи';
+    const reconnecting = Boolean(updateState?.applying);
+    $('#status-dot').className = reconnecting ? 'dot warn' : 'dot bad';
+    $('#status-text').textContent = reconnecting ? 'Переподключение после обновления…' : 'Нет связи';
   }
 }
 
@@ -361,7 +362,11 @@ function renderUpdate() {
   $('#update-check').disabled = busy || updateChecking;
   const phases = { downloading: 'Загрузка обновления', preparing: 'Подготовка обновления', trial: 'Проверка новой версии', activating: 'Запуск новой версии' };
   const results = { updated: 'Обновление установлено', installed: 'Установка завершена', rolled_back: 'Восстановлена предыдущая версия' };
-  let text = updateChecking ? 'Проверка обновлений…' : phases[updateState?.phase];
+  let text = updateChecking
+    ? 'Проверка обновлений…'
+    : updateState?.reconnecting && updateState?.applying
+      ? 'Проверка новой версии… Панель временно переподключается.'
+      : phases[updateState?.phase];
   if (!text && updateState?.last_error) text = `Обновление не выполнено: ${updateState.last_error}`;
   if (!text && updateState?.enabled === false) text = 'Обновления отключены';
   if (!text && pendingUpdate) text = pendingUpdate.available
@@ -382,7 +387,11 @@ async function loadUpdateStatus() {
     if (!updateChecking) pendingUpdate = state.check || null;
     renderUpdate();
   } catch (error) {
-    updateState = { launcher: false, last_error: error.message };
+    if (updateState?.applying) {
+      updateState = { ...updateState, reconnecting: true, last_error: '' };
+    } else {
+      updateState = { launcher: false, last_error: error.message };
+    }
     renderUpdate();
   } finally {
     updateStatusLoading = false;
@@ -397,7 +406,7 @@ async function applyUpdate() {
   renderUpdate();
   try {
     await api('/api/v1/update/apply', { method: 'POST', body: JSON.stringify({ version }) });
-    updateState = { ...updateState, launcher: true, enabled: true, applying: true, phase: 'downloading', last_error: '' };
+    updateState = { ...updateState, launcher: true, enabled: true, applying: true, reconnecting: false, phase: 'downloading', last_error: '' };
     toast('Установка обновления запущена');
   } catch (error) {
     toast(error.message, true);

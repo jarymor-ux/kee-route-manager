@@ -288,6 +288,71 @@ async function updateChecks() {
   assert.equal(h.requests.length, count, 'logged-out status calls must not create an authentication storm');
 }
 
+
+async function updateTrialReconnectChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run("authenticated = true; csrf = 'update-csrf'");
+  const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
+  const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
+  const controllerStatus = (version) => ({
+    version,
+    xray_running: true,
+    capabilities: {},
+    state: { pool: [], sources: {}, xray_configured: true, automatic_routing_paused: false, direct_mode: false, active_slot: -1 },
+  });
+
+  h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/update/status') ? state : controllerStatus('1.1.0') }));
+  await h.run('loadUpdateStatus()');
+  await h.run('loadStatus()');
+
+  h.respond((url) => url.endsWith('/update/apply')
+    ? { status: 202, ok: true, data: { accepted: true } }
+    : { status: 200, ok: true, data: state });
+  await h.select('#update-apply').onclick();
+  assert.equal(h.run('Boolean(updateState?.applying)'), true, '202 Accepted must establish a local applying state');
+
+  h.respond({ status: 503, ok: false, data: { error: 'temporary controller transition' } });
+  await h.run('loadUpdateStatus()');
+  await h.run('loadStatus()');
+
+  const transitionalText = h.select('#update-status').textContent;
+  assert(!transitionalText.includes('Обновление не выполнено'), 'temporary controller unavailability must not become an update failure');
+  assert.match(transitionalText, /Проверка|переподключ/i, 'trial transition must keep a neutral reconnecting status');
+  assert.equal(h.select('#update-apply').disabled, true, 'retry must stay disabled while the accepted update is transitional');
+  assert.equal(h.run('Boolean(updateState?.applying)'), true, 'temporary polling failures must preserve the applying lifecycle');
+  assert.equal(h.reloads(), 0);
+
+  const recovered = { ...state, applying: false, phase: 'idle', current_version: '1.2.0', check: undefined, last_result: 'updated' };
+  h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/update/status') ? recovered : controllerStatus('1.2.0') }));
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.run('updateState.current_version'), '1.2.0', 'polling must accept launcher status again after the transition');
+  await h.run('loadStatus()');
+  assert.equal(h.reloads(), 1, 'new active controller version must trigger the normal UI reload flow');
+}
+
+async function updateFailureAfterReconnectChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run("authenticated = true; csrf = 'update-csrf'");
+  const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
+  const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
+
+  h.respond({ status: 200, ok: true, data: state });
+  await h.run('loadUpdateStatus()');
+  h.respond({ status: 202, ok: true, data: { accepted: true } });
+  await h.select('#update-apply').onclick();
+
+  h.respond({ status: 503, ok: false, data: { error: 'temporary controller transition' } });
+  await h.run('loadUpdateStatus()');
+  assert(!h.select('#update-status').textContent.includes('Обновление не выполнено'));
+
+  h.respond({ status: 200, ok: true, data: { ...state, phase: 'failed', last_error: 'candidate readiness failed' } });
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.select('#update-status').textContent, 'Обновление не выполнено: candidate readiness failed', 'real launcher failure must remain visible after reconnect');
+  assert.equal(h.select('#update-apply').disabled, false, 'retry may be offered only after launcher reports a terminal failure');
+}
+
 async function serviceWorkerChecks() {
   const worker = fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8');
   const handlers = {};
@@ -343,6 +408,8 @@ async function main() {
   await appChecks();
   await versionReloadChecks();
   await updateChecks();
+  await updateTrialReconnectChecks();
+  await updateFailureAfterReconnectChecks();
   await serviceWorkerChecks();
   statusChecks();
   for (const count of [0, 301, 1000, 2000]) {
