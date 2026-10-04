@@ -109,8 +109,10 @@ for platform in linux-systemd openwrt keenetic; do
  [[ ! -e "$ui_service" ]]
  "$bin/kee-route-managerctl" ready --config "$core_config"
  # Standalone UI remains installable beside a controller and removable alone.
- export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui.yaml" KRM_UPSTREAM_CA_FILE="$prefix/etc/kee-route-manager/api.crt"
+ export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui.yaml"
+ unset KRM_UPSTREAM_CA_FILE
  sh "install/$platform/install.sh"
+ [[ ! -e "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
  "$bin/kee-route-manager-ui" ready --config "$ui_config"
  sh "install/$platform/uninstall.sh" --purge
  "$bin/kee-route-managerctl" ready --config "$core_config"
