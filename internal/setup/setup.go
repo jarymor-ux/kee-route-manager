@@ -77,6 +77,13 @@ type UIOptions struct {
 }
 
 func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
+	if len(opts.Xray.InboundTags) == 0 {
+		return config.Config{}, fmt.Errorf("xray.inbound_tags requires at least one tag")
+	}
+	if len(opts.Xray.ReplaceOutboundTags) == 0 {
+		return config.Config{}, fmt.Errorf("xray.replace_outbound_tags requires at least one tag")
+	}
+
 	cfg := config.Default()
 	cfg.Platform.Kind = string(opts.Platform)
 	applyControllerTemplate(&cfg, opts.Platform)
@@ -147,12 +154,14 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	cfg.UIProxy.Upstream = opts.Upstream
 	cfg.UIProxy.InsecureTLS = opts.InsecureTLS
 	cfg.UIProxy.UpstreamSPKISHA256 = opts.UpstreamSPKISHA256
-	if opts.UpstreamCAFile != "" {
-		cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
-	} else if opts.Platform == PlatformKeenetic {
-		cfg.UIProxy.UpstreamCAFile = "/opt/etc/kee-route-manager-ui/controller-ca.crt"
-	} else {
-		cfg.UIProxy.UpstreamCAFile = "/etc/kee-route-manager-ui/controller-ca.crt"
+	if !opts.InsecureTLS {
+		if opts.UpstreamCAFile != "" {
+			cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
+		} else if opts.Platform == PlatformKeenetic {
+			cfg.UIProxy.UpstreamCAFile = "/opt/etc/kee-route-manager-ui/controller-ca.crt"
+		} else {
+			cfg.UIProxy.UpstreamCAFile = "/etc/kee-route-manager-ui/controller-ca.crt"
+		}
 	}
 	if opts.RequestTimeout.Duration > 0 {
 		cfg.UIProxy.RequestTimeout = opts.RequestTimeout
