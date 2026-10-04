@@ -122,6 +122,12 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 }
 
 func BuildUIConfig(opts UIOptions) (config.Config, error) {
+	switch opts.Platform {
+	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	default:
+		return config.Config{}, fmt.Errorf("unsupported platform %q", opts.Platform)
+	}
+
 	cfg := config.Default()
 	cfg.Instance = config.Instance{Name: "Kee Route Manager UI", Role: "ui"}
 	cfg.Platform.Kind = string(opts.Platform)
