@@ -184,6 +184,12 @@ func assertGeneratedFields(t *testing.T, cfg config.Config) {
 	if cfg.Pool.Size != 7 {
 		t.Fatalf("pool size = %d", cfg.Pool.Size)
 	}
+	if cfg.API.TLS.Enabled {
+		t.Fatal("controller loopback API must not use TLS")
+	}
+	if cfg.UIProxy.Enabled {
+		t.Fatal("controller config must not enable UI proxy")
+	}
 	if !cfg.Benchmark.Speed.Enabled || cfg.Benchmark.Speed.Workers != 3 ||
 		cfg.Benchmark.Speed.WarmupBytes != 4<<20 ||
 		cfg.Benchmark.Speed.MinSampleBytes != 32<<20 ||
@@ -391,6 +397,73 @@ func TestBuildUIConfig(t *testing.T) {
 				t.Fatalf("Validate: %v", err)
 			}
 			roundTrip(t, cfg)
+		})
+	}
+}
+
+func TestBuildUIConfigDefaultsToLoopbackHTTPUpstream(t *testing.T) {
+	cfg, err := BuildUIConfig(UIOptions{
+		Platform: PlatformLinuxSystemd,
+		Listen:   "0.0.0.0:9444",
+	})
+	if err != nil {
+		t.Fatalf("BuildUIConfig: %v", err)
+	}
+	if cfg.UIProxy.Upstream != "http://127.0.0.1:9443" {
+		t.Fatalf("ui.upstream = %q", cfg.UIProxy.Upstream)
+	}
+	if cfg.UIProxy.InsecureTLS || cfg.UIProxy.UpstreamCAFile != "" || cfg.UIProxy.UpstreamSPKISHA256 != "" {
+		t.Fatalf("loopback HTTP upstream must not carry TLS trust settings: %#v", cfg.UIProxy)
+	}
+	if !cfg.Web.TLS.Enabled {
+		t.Fatal("browser-facing UI must keep HTTPS enabled")
+	}
+	roundTrip(t, cfg)
+}
+
+func TestBuildUIConfigRejectsTLSOptionsForHTTPUpstream(t *testing.T) {
+	tests := []UIOptions{
+		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", UpstreamCAFile: "/tmp/ca.crt"},
+		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", UpstreamSPKISHA256: strings.Repeat("00", 32)},
+		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", InsecureTLS: true},
+	}
+	for _, opts := range tests {
+		if _, err := BuildUIConfig(opts); err == nil {
+			t.Fatalf("expected TLS-only HTTP upstream options to be rejected: %#v", opts)
+		}
+	}
+}
+
+func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
+	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
+		t.Run("controller/"+name, func(t *testing.T) {
+			cfg, err := config.Load(filepath.Join("..", "..", "configs", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.API.Listen != "127.0.0.1:9443" || cfg.API.TLS.Enabled {
+				t.Fatalf("controller API must be loopback HTTP: listen=%q tls=%t", cfg.API.Listen, cfg.API.TLS.Enabled)
+			}
+			if cfg.UIProxy.Enabled {
+				t.Fatal("controller template must not enable UI proxy")
+			}
+		})
+	}
+	for _, name := range []string{"ui-keenetic.yaml", "ui-linux-openwrt.yaml"} {
+		t.Run("ui/"+name, func(t *testing.T) {
+			cfg, err := config.Load(filepath.Join("..", "..", "configs", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !cfg.Web.TLS.Enabled {
+				t.Fatal("browser-facing UI must keep HTTPS enabled")
+			}
+			if cfg.UIProxy.Upstream != "http://127.0.0.1:9443" {
+				t.Fatalf("UI upstream = %q", cfg.UIProxy.Upstream)
+			}
+			if cfg.UIProxy.InsecureTLS || cfg.UIProxy.UpstreamCAFile != "" || cfg.UIProxy.UpstreamSPKISHA256 != "" {
+				t.Fatalf("loopback HTTP upstream must not carry TLS trust settings: %#v", cfg.UIProxy)
+			}
 		})
 	}
 }
