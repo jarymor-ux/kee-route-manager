@@ -91,6 +91,19 @@ func TestUIPlaintextUpstreamRejectsTLSOptions(t *testing.T) {
 	}
 }
 
+
+func TestSubscriptionHeaderNameUsesHTTPTokenGrammar(t *testing.T) {
+	for _, name := range []string{"X:Bad", "Bad Header", "Bad\\Header", "Bad\"Header"} {
+		t.Run(name, func(t *testing.T) {
+			c := validConfig(t)
+			c.Subscriptions.Sources[0].Headers = map[string]string{name: "value"}
+			if err := c.Validate(); err == nil {
+				t.Fatalf("invalid HTTP header name %q accepted", name)
+			}
+		})
+	}
+}
+
 func TestUpdateRejectsMutableLatest(t *testing.T) {
 	c := validConfig(t)
 	c.Update.Enabled = true
