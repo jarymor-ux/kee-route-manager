@@ -112,7 +112,7 @@ Bootstrap проверяет native Ed25519 signatures manifest и SHA256SUMS, �
 KRM_MODE=local-ui KRM_CONFIG_FILE=/root/krm-install/config.yaml KRM_UI_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-Installer больше не генерирует отдельный API TLS/CA для локальной связи UI→controller. На Keenetic/OpenWrt один сервис launcher запускает daemon и локальный UI; отдельный `S98kee-route-manager-ui`/UI procd-сервис не устанавливается. На Linux UI сохраняет отдельный DynamicUser-сервис и обновляется вручную; launcher не запускает его с правами root. `KRM_UPSTREAM_CA_FILE` остаётся опциональным только для явно настроенного HTTPS upstream. UI не хранит admin пароль и не получает private API key.
+Installer больше не генерирует отдельный API TLS/CA для локальной связи UI→controller. На Keenetic/OpenWrt один сервис launcher запускает daemon и локальный UI; отдельный `S98kee-route-manager-ui`/UI procd-сервис не устанавливается. На Linux UI сохраняет отдельный DynamicUser-сервис и обновляется вручную; launcher не запускает его с правами root. `KRM_UPSTREAM_CA_FILE` опционален: для HTTPS upstream без него используется системное хранилище доверия; файл нужен только для private/custom CA. UI не хранит admin пароль и не получает private API key.
 
 Откройте `https://ROUTER_ADDRESS:9444/`. Сверьте SHA256 fingerprint сертификата через SSH, затем добавьте его в доверенные браузера либо используйте собственный trusted cert. Не отключайте TLS проверки. Login/session/CSRF обрабатываются core. Проверить `/`, `/assets/app.css`, `/assets/app.js`, `/sw.js`, `/manifest.webmanifest`: HTTP 200; PWA на доверенном HTTPS origin.
 
@@ -124,7 +124,7 @@ Core API слушает только loopback. Используйте посто
 ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:9445:127.0.0.1:9443 -p SSH_PORT USER@ROUTER_ADDRESS
 ```
 
-SSH tunnel уже шифрует межмашинный участок. В UI YAML используйте upstream `http://127.0.0.1:9445`; отдельный API cert/CA для этого туннеля не нужен. Не открывайте controller API напрямую в LAN/WAN. Если вместо SSH tunnel намеренно используется HTTPS upstream, тогда задайте доверенный `upstream_ca_file` и при необходимости `ui.upstream_spki_sha256`.
+SSH tunnel уже шифрует межмашинный участок. В UI YAML используйте upstream `http://127.0.0.1:9445`; отдельный API cert/CA для этого туннеля не нужен. Не открывайте controller API напрямую в LAN/WAN. Если вместо SSH tunnel намеренно используется HTTPS upstream, по умолчанию используется системное хранилище доверия. Для private/custom CA задайте `upstream_ca_file`; при необходимости дополнительно задайте `ui.upstream_spki_sha256`.
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-linux.sh
