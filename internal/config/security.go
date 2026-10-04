@@ -17,6 +17,8 @@ import (
 // XraySelectionTag owns its entire prefix because balancer selectors use prefix matching.
 const XraySelectionTag = "krm-persisted-selection"
 
+var httpHeaderNameRE = regexp.MustCompile("^[!#$%&\'*+\\-.^_`|~0-9A-Za-z]+$")
+
 func loopback(host string) bool { ip := net.ParseIP(host); return ip != nil && ip.IsLoopback() }
 func listenPort(addr string) (string, int, error) {
 	host, raw, err := net.SplitHostPort(addr)
