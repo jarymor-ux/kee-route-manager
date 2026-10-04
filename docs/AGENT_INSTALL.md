@@ -124,11 +124,13 @@ Core API слушает только loopback. Используйте посто
 ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:9445:127.0.0.1:9443 -p SSH_PORT USER@ROUTER_ADDRESS
 ```
 
-SSH tunnel уже шифрует межмашинный участок. В UI YAML используйте upstream `http://127.0.0.1:9445`; отдельный API cert/CA для этого туннеля не нужен. Не открывайте controller API напрямую в LAN/WAN. Если вместо SSH tunnel намеренно используется HTTPS upstream, по умолчанию используется системное хранилище доверия. Для private/custom CA задайте `upstream_ca_file`; при необходимости дополнительно задайте `ui.upstream_spki_sha256`.
+SSH tunnel уже шифрует межмашинный участок. В UI YAML используйте upstream `http://127.0.0.1:9445`; отдельный API cert/CA для этого туннеля не нужен. Не открывайте controller API напрямую в LAN/WAN. Если вместо SSH tunnel намеренно используется HTTPS upstream, по умолчанию используется системное хранилище доверия. Для installer-managed private/custom CA задайте `upstream_ca_file: /etc/kee-route-manager-ui/controller-ca.crt` на Linux/OpenWrt или `/opt/etc/kee-route-manager-ui/controller-ca.crt` на Keenetic и передайте исходный PEM через `KRM_UPSTREAM_CA_FILE`. Installer проверяет соответствие пути и валидность сертификата до записи системных файлов. При необходимости дополнительно задайте `ui.upstream_spki_sha256`.
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-linux.sh
 KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
+# Для HTTPS upstream с private/custom CA:
+KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt sh /tmp/krm-bootstrap.sh
 ```
 
 Скачивание выше выполнять на Linux-компьютере с UI. Для UI на OpenWrt/Keenetic выбрать bootstrap соответствующей платформы, не переносить Keenetic bootstrap на Linux-хост.
