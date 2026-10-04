@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 func fixtureUI(t *testing.T, f *releaseFixture) string {
@@ -22,7 +22,7 @@ func fixtureUI(t *testing.T, f *releaseFixture) string {
 	c.Paths.LogFile = filepath.Join(f.root, "ui.log")
 	c.Web.TLS.CertFile, c.Web.TLS.KeyFile = filepath.Join(f.root, "ui.crt"), filepath.Join(f.root, "ui.key")
 	c.UIProxy.Upstream, c.UIProxy.UpstreamCAFile = "https://"+f.c.API.Listen, f.c.API.TLS.CertFile
-	if err := web.EnsureTLS(c.Web.TLS, c.Web.Listen); err != nil {
+	if err := tlsutil.EnsureTLS(c.Web.TLS, c.Web.Listen); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(f.root, "ui.yaml")

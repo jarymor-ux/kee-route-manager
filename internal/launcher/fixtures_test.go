@@ -30,8 +30,8 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/store"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"github.com/jarymor-ux/kee-route-manager/internal/update"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
 	webui "github.com/jarymor-ux/kee-route-manager/internal/web/ui"
 )
 
@@ -153,7 +153,7 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 	if err = auth.CreateCredentials(c.Web.CredentialsFile, "admin", "launcher-test-password"); err != nil {
 		t.Fatal(err)
 	}
-	if err = web.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
+	if err = tlsutil.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
 		t.Fatal(err)
 	}
 	writeFixtureConfig(t, f.configFile, c)

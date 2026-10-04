@@ -88,7 +88,7 @@ for platform in ('linux-systemd','openwrt','keenetic'):
  s=pathlib.Path('configs/'+platform+'.yaml').read_text().replace('enabled: true\n      headers:', 'enabled: false\n      headers:')
  s=re.sub(r'^  public_key:.*$', '  public_key: "'+key+'"', s, flags=re.M)
  (w/('private/'+platform+'.yaml')).write_text(s)
- ui=pathlib.Path('configs/ui-proxy.yaml').read_text()
+ ui=pathlib.Path('configs/ui-linux-openwrt.yaml').read_text()
  if platform=='keenetic':
   ui=ui.replace('/var/', '/opt/var/').replace('/run/', '/opt/var/run/').replace('/etc/kee-route-manager-ui/', '/opt/etc/kee-route-manager-ui/')
  (w/('private/'+platform+'-ui.yaml')).write_text(ui)

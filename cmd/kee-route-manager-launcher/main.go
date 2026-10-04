@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/jarymor-ux/kee-route-manager/internal/buildinfo"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/control/cli"
 	"github.com/jarymor-ux/kee-route-manager/internal/launcher"
 )
 
@@ -30,7 +30,7 @@ func run(args []string) error {
 		args = []string{"serve"}
 	}
 	if args[0] == "version" || args[0] == "--version" {
-		cli.Version("kee-route-manager-launcher", version, commit, buildTime)
+		buildinfo.Print("kee-route-manager-launcher", version, commit, buildTime)
 		return nil
 	}
 	if args[0] != "serve" && args[0] != "install" {

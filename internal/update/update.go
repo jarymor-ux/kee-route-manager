@@ -9,8 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,24 +43,15 @@ type CheckResult struct {
 	Assets         map[string]Asset `json:"assets,omitempty"`
 	StageSupported bool             `json:"stage_supported"`
 }
-type Pending struct {
-	SchemaVersion  int       `json:"schema_version"`
-	FromVersion    string    `json:"from_version"`
-	ToVersion      string    `json:"to_version"`
-	BackupPath     string    `json:"backup_path"`
-	ExecutablePath string    `json:"executable_path"`
-	InstalledAt    time.Time `json:"installed_at"`
-	Attempts       int       `json:"attempts"`
-}
 type Updater struct {
-	cfg               config.Update
-	stateDir, current string
-	client            *http.Client
-	applySupportErr   error
+	cfg             config.Update
+	current         string
+	client          *http.Client
+	applySupportErr error
 }
 
-func New(c config.Update, stateDir, current string) *Updater {
-	return &Updater{cfg: c, stateDir: stateDir, current: current, client: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+func New(c config.Update, current string) *Updater {
+	return &Updater{cfg: c, current: current, client: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || !secureURL(req.URL.String()) {
 			return errors.New("unsafe update redirect")
 		}
@@ -73,7 +62,7 @@ func New(c config.Update, stateDir, current string) *Updater {
 // NewForConfig binds update eligibility to the controller platform. Production
 // discovery/staging must use this constructor; New remains a signed-bundle client.
 func NewForConfig(c config.Config, current string) *Updater {
-	u := New(c.Update, c.Paths.StateDir, current)
+	u := New(c.Update, current)
 	u.applySupportErr = c.UpdateApplySupport()
 	return u
 }
@@ -148,23 +137,6 @@ func (u *Updater) checkSigned(ctx context.Context) (checkedRelease, error) {
 	return checkedRelease{result: result, manifest: manifestBytes, signature: sig}, nil
 }
 
-// In-process apply remains forbidden: only the separate launcher may activate
-// a verified staged release and supervise readiness/rollback.
-var ErrApplyDisabled = errors.New("in-process update apply is disabled; use the separately installed signed-release launcher")
-
-func (u *Updater) Apply(ctx context.Context, r CheckResult) (Pending, error) {
-	return Pending{}, ErrApplyDisabled
-}
-func (u *Updater) PrepareStartup() (bool, error) {
-	if _, err := os.Stat(u.pendingPath()); errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	// RC1 journals contain executable paths. Never trust them to copy files as root.
-	return false, errors.New("legacy pending update found; recover manually using the verified installer")
-}
-func (u *Updater) MarkHealthy() error { return nil }
 func (u *Updater) download(ctx context.Context, raw string, max int64) ([]byte, error) {
 	if !secureURL(raw) {
 		return nil, errors.New("update URL must use HTTPS without credentials")
@@ -195,7 +167,6 @@ func (u *Updater) download(ctx context.Context, raw string, max int64) ([]byte, 
 	}
 	return b, nil
 }
-func (u *Updater) pendingPath() string { return filepath.Join(u.stateDir, "update-pending.json") }
 func decodeKey(s string, n int) ([]byte, error) {
 	s = strings.TrimSpace(s)
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {

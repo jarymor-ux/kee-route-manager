@@ -33,7 +33,7 @@ func TestSignedManifest(t *testing.T) {
 	c.ManifestURL = srv.URL + "/manifest"
 	c.SignatureURL = srv.URL + "/sig"
 	c.PublicKey = base64.RawStdEncoding.EncodeToString(pub)
-	u := New(c, t.TempDir(), "1.0.0-rc.1")
+	u := New(c, "1.0.0-rc.1")
 	u.client = srv.Client()
 	r, e := u.Check(context.Background())
 	if e != nil {
@@ -63,7 +63,7 @@ func TestRejectsTamperedManifest(t *testing.T) {
 	cfg.ManifestURL = server.URL + "/manifest"
 	cfg.SignatureURL = server.URL + "/sig"
 	cfg.PublicKey = base64.RawStdEncoding.EncodeToString(pub)
-	u := New(cfg, t.TempDir(), "1.0.0-rc.1")
+	u := New(cfg, "1.0.0-rc.1")
 	u.client = server.Client()
 	if _, err := u.Check(context.Background()); err == nil {
 		t.Fatal("tampered manifest accepted")

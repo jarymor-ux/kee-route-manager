@@ -22,13 +22,29 @@ type Progress func(stage string, current, total int, message string)
 type batchRunner interface {
 	Start(context.Context, []model.Node) (*xray.Batch, error)
 }
+type RuntimeConfig struct {
+	Benchmark config.Benchmark
+	Health    config.Health
+	Targets   []config.Target
+}
+
+func (c RuntimeConfig) TargetsByRole(role string) []config.Target {
+	out := []config.Target{}
+	for _, target := range c.Targets {
+		if target.Role == role {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
 type Engine struct {
-	cfg    config.Config
+	cfg    RuntimeConfig
 	runner batchRunner
 	prober *Prober
 }
 
-func New(c config.Config, r *xray.BatchRunner) *Engine {
+func New(c RuntimeConfig, r *xray.BatchRunner) *Engine {
 	return &Engine{c, r, NewProber(c.Health.RequestTimeout.Duration, int64(c.Health.MaxResponseBytes))}
 }
 func (e *Engine) Run(ctx context.Context, nodes []model.Node, progress Progress) ([]model.Measurement, error) {

@@ -2,12 +2,9 @@ package update
 
 import (
 	"context"
-	"errors"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -23,28 +20,6 @@ func TestSemVerPrecedence(t *testing.T) {
 		if got := compareVersions(tc.a, tc.b); got != tc.want {
 			t.Errorf("%s vs %s: %d", tc.a, tc.b, got)
 		}
-	}
-}
-func TestApplyDisabledWithoutLauncher(t *testing.T) {
-	u := New(config.Default().Update, t.TempDir(), "1.0.0-rc.2")
-	if _, err := u.Apply(context.Background(), CheckResult{Available: true}); !errors.Is(err, ErrApplyDisabled) {
-		t.Fatalf("got %v", err)
-	}
-}
-func TestLegacyPendingCannotOverwriteArbitraryPath(t *testing.T) {
-	dir := t.TempDir()
-	victim := filepath.Join(dir, "victim")
-	backup := filepath.Join(dir, "backup")
-	os.WriteFile(victim, []byte("untouched"), 0600)
-	os.WriteFile(backup, []byte("injected"), 0600)
-	os.WriteFile(filepath.Join(dir, "update-pending.json"), []byte(`{"attempts":1,"backup_path":"`+backup+`","executable_path":"`+victim+`"}`), 0600)
-	u := New(config.Default().Update, dir, "1.0.0-rc.2")
-	if _, err := u.PrepareStartup(); err == nil {
-		t.Fatal("legacy pending accepted")
-	}
-	b, _ := os.ReadFile(victim)
-	if string(b) != "untouched" {
-		t.Fatal("victim overwritten")
 	}
 }
 
@@ -80,7 +55,7 @@ func TestUpdateRejectsHTTPSDowngradeRedirect(t *testing.T) {
 	cfg := config.Default().Update
 	cfg.Enabled = true
 	cfg.ManifestURL = secure.URL
-	u := New(cfg, t.TempDir(), "1.0.0-rc.2")
+	u := New(cfg, "1.0.0-rc.2")
 	u.client.Transport = secure.Client().Transport
 	if _, err := u.Check(context.Background()); err == nil {
 		t.Fatal("downgrade redirect accepted")

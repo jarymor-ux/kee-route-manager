@@ -8,33 +8,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
+	"github.com/jarymor-ux/kee-route-manager/internal/buildinfo"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/configflag"
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
 )
 
-func DefaultConfigPath() string {
-	if _, e := os.Stat("/opt/etc/ndm"); e == nil {
-		return "/opt/etc/kee-route-manager/config.yaml"
-	}
-	return "/etc/kee-route-manager/config.yaml"
-}
-func Load(args []string, name string) (config.Config, error) {
-	f := flag.NewFlagSet(name, flag.ContinueOnError)
-	p := f.String("config", DefaultConfigPath(), "configuration path")
-	if e := f.Parse(args); e != nil {
-		return config.Config{}, e
-	}
-	if f.NArg() != 0 {
-		return config.Config{}, fmt.Errorf("unexpected argument %q", f.Arg(0))
-	}
-	return config.Load(*p)
-}
 func Validate(args []string) error {
-	c, e := Load(args, "validate")
+	c, e := configflag.Load(args, "validate")
 	if e != nil {
 		return e
 	}
@@ -45,9 +29,6 @@ func Validate(args []string) error {
 	fmt.Printf("Configuration is valid\n%s\n", b)
 	return nil
 }
-func Version(name, version, commit, buildTime string) {
-	fmt.Printf("%s %s (%s, %s, %s/%s)\n", name, version, commit, buildTime, runtime.GOOS, runtime.GOARCH)
-}
 
 func Run(ctx context.Context, args []string, version, commit, buildTime string) error {
 	if len(args) == 0 {
@@ -56,7 +37,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 	command, args := args[0], args[1:]
 	switch command {
 	case "version", "--version", "-version":
-		Version("kee-route-managerctl", version, commit, buildTime)
+		buildinfo.Print("kee-route-managerctl", version, commit, buildTime)
 		return nil
 	case "validate":
 		return Validate(args)
@@ -66,7 +47,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 		return routeCandidates(args)
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
-	p := f.String("config", DefaultConfigPath(), "configuration path")
+	p := f.String("config", configflag.DefaultPath(), "configuration path")
 	socket := f.String("socket", "", "daemon Unix socket (overrides config)")
 	slot := f.Int("slot", -1, "slot index for switch")
 	var targetVersion string
@@ -136,7 +117,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 }
 func password(args []string) error {
 	f := flag.NewFlagSet("passwd", flag.ContinueOnError)
-	p := f.String("config", DefaultConfigPath(), "configuration path")
+	p := f.String("config", configflag.DefaultPath(), "configuration path")
 	username := f.String("username", "", "administrator username")
 	stdin := f.Bool("password-stdin", false, "read password from standard input")
 	if e := f.Parse(args); e != nil {

@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/buildinfo"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/configflag"
 	"github.com/jarymor-ux/kee-route-manager/internal/control"
-	"github.com/jarymor-ux/kee-route-manager/internal/control/cli"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"log"
 	"os"
 	"os/signal"
@@ -26,7 +27,7 @@ func main() {
 	var e error
 	switch args[0] {
 	case "version", "--version", "-version":
-		cli.Version("kee-route-managerd", version, commit, buildTime)
+		buildinfo.Print("kee-route-managerd", version, commit, buildTime)
 		return
 	case "validate":
 		c, err := controllerConfig(args[1:], "validate")
@@ -65,7 +66,7 @@ func main() {
 }
 
 func controllerConfig(args []string, command string) (config.Config, error) {
-	c, e := cli.Load(args, command)
+	c, e := configflag.Load(args, command)
 	if e == nil && c.Instance.Role != "controller" {
 		e = fmt.Errorf("daemon requires instance.role=controller")
 	}
@@ -75,7 +76,7 @@ func initTLS(c config.Config) (string, error) {
 	if !c.API.Enabled || !c.API.TLS.Enabled {
 		return "", fmt.Errorf("tls-init requires api.enabled and api.tls.enabled")
 	}
-	if e := web.EnsureTLS(c.API.TLS, c.API.Listen); e != nil {
+	if e := tlsutil.EnsureTLS(c.API.TLS, c.API.Listen); e != nil {
 		return "", e
 	}
 	return c.API.TLS.CertFile, nil

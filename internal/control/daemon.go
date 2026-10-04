@@ -72,7 +72,7 @@ func serveActive(ctx context.Context, c config.Config, version string) error {
 		return e
 	}
 	xm := xray.NewManager(c, r, p)
-	mgr := core.New(c, version, st, ops, p, xm, subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir), bench.New(c, xray.NewBatchRunner(c)))
+	mgr := core.New(c, version, st, ops, p, xm, subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir), bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
 	srv, e := web.New(c, mgr, update.NewForConfig(c, version), nil)
 	if e != nil {
 		return e

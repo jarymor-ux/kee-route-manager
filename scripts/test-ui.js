@@ -6,9 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'web/app.js'), 'utf8');
-assert.equal(source, fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8'));
-assert.equal(fs.readFileSync(path.join(root, 'web/index.html'), 'utf8'), fs.readFileSync(path.join(root, 'internal/web/ui/static/index.html'), 'utf8'));
+const source = fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8');
 const start = source.indexOf('async function loadEvents()');
 const end = source.indexOf('\nfunction showTool', start);
 assert(start >= 0 && end > start, 'loadEvents must be present');
@@ -291,18 +289,23 @@ async function updateChecks() {
 }
 
 async function serviceWorkerChecks() {
-  const worker = fs.readFileSync(path.join(root, 'web/sw.js'), 'utf8');
-  assert.equal(worker, fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8'));
+  const worker = fs.readFileSync(path.join(root, 'internal/web/ui/static/sw.js'), 'utf8');
   const handlers = {};
   const cached = [];
+  const openedCaches = [];
+  const deletedCaches = [];
   let offline = false;
   const response = { ok: true, clone: () => ({ cached: true }) };
   const context = vm.createContext({
     URL,
     self: { location: { origin: 'https://ui.test' }, addEventListener: (name, handler) => { handlers[name] = handler; } },
     caches: {
-      open: async () => ({ addAll: async (assets) => cached.push(...assets), put: async (request) => cached.push(request.url) }),
-      keys: async () => ['krm-ui-old', 'krm-ui-rc2'], delete: async () => true,
+      open: async (name) => {
+        openedCaches.push(name);
+        return { addAll: async (assets) => cached.push(...assets), put: async (request) => cached.push(request.url) };
+      },
+      keys: async () => ['krm-ui-old', 'krm-ui-rc2', 'krm-ui-static-v1'],
+      delete: async (name) => { deletedCaches.push(name); return true; },
       match: async () => ({ offline: true }),
     },
     fetch: async () => { if (offline) throw new Error('offline'); return response; },
@@ -312,6 +315,14 @@ async function serviceWorkerChecks() {
   handlers.install({ waitUntil: (promise) => { installation = promise; } });
   await installation;
   assert.deepEqual(cached, ['/', '/assets/app.css', '/assets/app.js', '/manifest.webmanifest']);
+  assert.deepEqual(openedCaches, ['krm-ui-static-v1']);
+
+  let activation;
+  handlers.activate({ waitUntil: (promise) => { activation = promise; } });
+  await activation;
+  assert.deepEqual(deletedCaches.sort(), ['krm-ui-old', 'krm-ui-rc2']);
+  assert(!deletedCaches.includes('krm-ui-static-v1'), 'active service-worker cache must be preserved');
+
   for (const [method, url] of [['GET', 'https://ui.test/api/v1/status'], ['POST', 'https://ui.test/'], ['GET', 'https://other.test/'], ['GET', 'https://ui.test/?secret=value']]) {
     let intercepted = false;
     handlers.fetch({ request: { method, url }, respondWith: () => { intercepted = true; } });

@@ -22,7 +22,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/store"
-	"github.com/jarymor-ux/kee-route-manager/internal/web"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 func isolatedDaemonConfig(t *testing.T) config.Config {
@@ -96,7 +96,7 @@ func testDaemonNetworkAPIRequiresSessionAndStops(t *testing.T, canceledStartupDi
 	if err := auth.CreateCredentials(c.Web.CredentialsFile, "admin", "lifecycle-fixture-password"); err != nil {
 		t.Fatal(err)
 	}
-	if err := web.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
+	if err := tlsutil.EnsureTLS(c.API.TLS, c.API.Listen); err != nil {
 		t.Fatal(err)
 	}
 	cert, err := os.ReadFile(c.API.TLS.CertFile)

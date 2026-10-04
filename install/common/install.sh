@@ -20,18 +20,17 @@ trap 'exit 143' TERM HUP
 case "$PLATFORM" in
  keenetic) PREFIX=/opt; BIN=/opt/bin; RUN=/opt/var/run/kee-route-manager; [ -d /opt ] || fail 'Entware /opt is not mounted';;
  openwrt) PREFIX=; BIN=/usr/bin; RUN=/var/run/kee-route-manager;;
- linux-systemd|ui-proxy) PREFIX=; BIN=/usr/local/bin; RUN=/run/kee-route-manager;;
+ linux-systemd) PREFIX=; BIN=/usr/local/bin; RUN=/run/kee-route-manager;;
  *) fail 'unsupported platform';;
 esac
 case "$PLATFORM" in
- linux-systemd|ui-proxy) command -v systemctl >/dev/null 2>&1 || fail 'systemd is required';;
+ linux-systemd) command -v systemctl >/dev/null 2>&1 || fail 'systemd is required';;
  openwrt) [ -f /etc/rc.common ] || fail 'OpenWrt rc.common/procd is required';;
 esac
 CONFIG_DIR=$PREFIX/etc/kee-route-manager
 UI_DIR=$PREFIX/etc/kee-route-manager-ui
 CONFIG=$CONFIG_DIR/config.yaml
 UI_CONFIG=$UI_DIR/config.yaml
-[ "$PLATFORM" != ui-proxy ] || MODE=ui
 # Linux UI keeps its DynamicUser service; only router platforms already running
 # the UI as root combine it with the launcher-owned controller process tree.
 MANAGED_UI=0
@@ -131,9 +130,9 @@ if [ "$MODE" != ui ]; then
  fi
 fi
 case "$PLATFORM" in
- linux-systemd|ui-proxy)
+ linux-systemd)
   if [ "$MODE" != ui ]; then cp "$ROOT/install/linux-systemd/kee-route-manager.service" /etc/systemd/system/; fi
-  if [ "$MODE" != core ]; then cp "$ROOT/install/ui-proxy/kee-route-manager-ui.service" /etc/systemd/system/; fi
+  if [ "$MODE" != core ]; then cp "$ROOT/install/linux-systemd/kee-route-manager-ui.service" /etc/systemd/system/; fi
   systemctl daemon-reload
   [ "$MODE" = ui ] || systemctl enable --now kee-route-manager
   [ "$MODE" = core ] || systemctl enable --now kee-route-manager-ui;;
