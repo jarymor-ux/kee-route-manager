@@ -121,6 +121,9 @@ func TestBuildControllerConfigPlatforms(t *testing.T) {
 				if c.Xray.AssetDir != "/usr/share/xray" || c.Xray.BaseRoutingFile != "/etc/xray/configs/05_routing.json" {
 					t.Fatalf("unexpected xray paths: %#v", c.Xray)
 				}
+				if !c.Platform.OpenWrt.AllowReboot {
+					t.Fatal("openwrt allow_reboot must match shipped template")
+				}
 			},
 		},
 		{
