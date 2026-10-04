@@ -459,6 +459,33 @@ func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
 	}
 }
 
+func TestBuildUIConfigHTTPSUsesSystemTrustByDefault(t *testing.T) {
+	cfg, err := BuildUIConfig(UIOptions{
+		Platform: PlatformLinuxSystemd,
+		Upstream: "https://controller.example.com",
+	})
+	if err != nil {
+		t.Fatalf("BuildUIConfig: %v", err)
+	}
+	if cfg.UIProxy.UpstreamCAFile != "" {
+		t.Fatalf("system-trusted HTTPS upstream unexpectedly requires custom CA: %q", cfg.UIProxy.UpstreamCAFile)
+	}
+}
+
+func TestBuildUIConfigPreservesExplicitHTTPSCA(t *testing.T) {
+	cfg, err := BuildUIConfig(UIOptions{
+		Platform:       PlatformLinuxSystemd,
+		Upstream:       "https://controller.example.com",
+		UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
+	})
+	if err != nil {
+		t.Fatalf("BuildUIConfig: %v", err)
+	}
+	if cfg.UIProxy.UpstreamCAFile != "/etc/ssl/private/controller-ca.crt" {
+		t.Fatalf("custom CA = %q", cfg.UIProxy.UpstreamCAFile)
+	}
+}
+
 func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
 		Platform:    PlatformLinuxSystemd,
