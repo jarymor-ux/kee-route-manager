@@ -2,9 +2,9 @@
 
 Templates in `configs/` use strict YAML subset decoded with unknown-field rejection. Keep real subscriptions and node keys in private files outside the repository.
 
-Controller: `instance.role: controller`, `api.enabled`, `api.listen` loopback-only, `api.unix_socket` within private run_dir; credentials under `web.credentials_file`, session TTL under `web.session_ttl`, API certificate under `api.tls`. `web.enabled` controls UI runtime only; controller never embeds it.
+Controller: `instance.role: controller`, `api.enabled`, `api.listen` loopback-only, `api.unix_socket` within private run_dir; credentials under `web.credentials_file`, session TTL under `web.session_ttl`. Split-mode templates keep the controller TCP API on plaintext `127.0.0.1:9443`; it is not exposed outside the host. `api.tls` remains available for explicit deployments that require HTTPS. `web.enabled` controls UI runtime only; controller never embeds it.
 
-UI: `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`, web listen/TLS, `ui.upstream` as an origin, `upstream_ca_file` and optional `upstream_spki_sha256`. Plaintext web/upstream only permitted on loopback. `insecure_tls` is explicitly unsafe and incompatible with configured CA/pin trust. Default templates never enable it.
+UI: `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`. Browser-facing `web` keeps TLS enabled. The shipped split UI uses `ui.upstream: http://127.0.0.1:9443`, so there is no controller CA/pin to manage on the same host. `upstream_ca_file`, `upstream_spki_sha256` and `insecure_tls` apply only when an explicit HTTPS upstream is configured. Plaintext upstream is permitted only on loopback.
 
 Failover: `detection_interval: 5s`, `failure_threshold: 2`, `probe_timeout: 2s`, `overall_deadline: 5s`, `quorum: 2`. Independent health hosts are compared across VPN and WAN. Fewer independent targets yield inconclusive monitoring and preserve routing. `health.hot_pool_freshness` guards fallback freshness. Health recovery threshold, target policy/body limit and benchmark stability/improvement/cooldown remain independent.
 
