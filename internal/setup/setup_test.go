@@ -365,7 +365,6 @@ func TestBuildUIConfig(t *testing.T) {
 	}
 }
 
-
 func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
 	_, err := BuildUIConfig(UIOptions{
 		Platform: Platform("open-wrt"),
