@@ -49,8 +49,49 @@ func WriteConfig(path string, cfg config.Config) error {
 	return nil
 }
 
+type uiAPIDocument struct {
+	Enabled bool `json:"enabled"`
+}
+
+type uiWebDocument struct {
+	Enabled bool       `json:"enabled"`
+	Listen  string     `json:"listen"`
+	TLS     config.TLS `json:"tls"`
+}
+
+type uiPlatformDocument struct {
+	Kind string `json:"kind"`
+}
+
+type uiConfigDocument struct {
+	SchemaVersion int                `json:"schema_version"`
+	Instance      config.Instance    `json:"instance"`
+	Paths         config.Paths       `json:"paths"`
+	API           uiAPIDocument      `json:"api"`
+	Web           uiWebDocument      `json:"web"`
+	Platform      uiPlatformDocument `json:"platform"`
+	UI            config.UIProxy     `json:"ui"`
+}
+
 func marshalYAML(cfg config.Config) ([]byte, error) {
-	raw, err := json.Marshal(cfg)
+	document := any(cfg)
+	if cfg.Instance.Role == "ui" || cfg.Instance.Role == "ui-proxy" {
+		document = uiConfigDocument{
+			SchemaVersion: cfg.SchemaVersion,
+			Instance:      cfg.Instance,
+			Paths:         cfg.Paths,
+			API:           uiAPIDocument{Enabled: cfg.API.Enabled},
+			Web: uiWebDocument{
+				Enabled: cfg.Web.Enabled,
+				Listen:  cfg.Web.Listen,
+				TLS:     cfg.Web.TLS,
+			},
+			Platform: uiPlatformDocument{Kind: cfg.Platform.Kind},
+			UI:       cfg.UIProxy,
+		}
+	}
+
+	raw, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
 	}
