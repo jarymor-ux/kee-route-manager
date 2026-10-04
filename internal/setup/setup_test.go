@@ -308,6 +308,37 @@ func TestInvalidOptionsUseConfigValidation(t *testing.T) {
 	}
 }
 
+
+func TestBuildControllerConfigRejectsEmptyRoutingTags(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*SetupOptions)
+		want string
+	}{
+		{
+			name: "inbound tags",
+			edit: func(opts *SetupOptions) { opts.Xray.InboundTags = nil },
+			want: "xray.inbound_tags requires at least one tag",
+		},
+		{
+			name: "replacement outbound tags",
+			edit: func(opts *SetupOptions) { opts.Xray.ReplaceOutboundTags = nil },
+			want: "xray.replace_outbound_tags requires at least one tag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := validOptions(PlatformLinuxSystemd)
+			tt.edit(&opts)
+			_, err := BuildControllerConfig(opts)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestAutoApplyIsNeverImplicitlyEnabled(t *testing.T) {
 	opts := validOptions(PlatformLinuxSystemd)
 	cfg, err := BuildControllerConfig(opts)
@@ -363,6 +394,28 @@ func TestBuildUIConfig(t *testing.T) {
 			roundTrip(t, cfg)
 		})
 	}
+}
+
+func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
+	cfg, err := BuildUIConfig(UIOptions{
+		Platform:    PlatformLinuxSystemd,
+		Listen:      "0.0.0.0:9444",
+		Upstream:    "https://127.0.0.1:9443",
+		InsecureTLS: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildUIConfig: %v", err)
+	}
+	if !cfg.UIProxy.InsecureTLS {
+		t.Fatal("ui.insecure_tls was not enabled")
+	}
+	if cfg.UIProxy.UpstreamCAFile != "" {
+		t.Fatalf("insecure TLS must not auto-configure CA trust: %q", cfg.UIProxy.UpstreamCAFile)
+	}
+	if cfg.UIProxy.UpstreamSPKISHA256 != "" {
+		t.Fatalf("insecure TLS must not configure SPKI pin: %q", cfg.UIProxy.UpstreamSPKISHA256)
+	}
+	roundTrip(t, cfg)
 }
 
 func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
