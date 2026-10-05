@@ -19,6 +19,13 @@ const XraySelectionTag = "krm-persisted-selection"
 
 var httpHeaderNameRE = regexp.MustCompile("^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$")
 
+func ValidSubscriptionHeader(name, value string) bool {
+	return httpHeaderNameRE.MatchString(name) &&
+		len(name) <= 128 &&
+		len(value) <= 8192 &&
+		!strings.ContainsAny(value, "\r\n")
+}
+
 func loopback(host string) bool { ip := net.ParseIP(host); return ip != nil && ip.IsLoopback() }
 func listenPort(addr string) (string, int, error) {
 	host, raw, err := net.SplitHostPort(addr)
@@ -254,7 +261,7 @@ func (c Config) validateController() []error {
 			}
 		}
 		for k, v := range s.Headers {
-			if !httpHeaderNameRE.MatchString(k) || strings.ContainsAny(v, "\r\n") || len(k) > 128 || len(v) > 8192 {
+			if !ValidSubscriptionHeader(k, v) {
 				add(fmt.Errorf("subscription %q header invalid", s.ID))
 			}
 		}
