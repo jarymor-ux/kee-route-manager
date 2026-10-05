@@ -109,7 +109,9 @@ func TestDuplicateKeyRejected(t *testing.T) {
 
 func TestYAMLSubsetRejectsUnsupportedSyntax(t *testing.T) {
 	tests := map[string]string{
-		"document marker": "---\na: 1\n",
+		"document marker":         "---\na: 1\n",
+		"document marker comment": "--- # comment\na: 1\n",
+		"document end comment":    "a: 1\n... # comment\n",
 		"anchor":          "a: &shared value\n",
 		"alias":           "a: &shared value\nb: *shared\n",
 		"merge key":       "a:\n  <<: {}\n",
