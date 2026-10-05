@@ -120,6 +120,8 @@ func TestYAMLSubsetRejectsUnsupportedSyntax(t *testing.T) {
 		"folded block":            "a: >\n  value\n",
 		"flow mapping":            "a: {b: value}\n",
 		"odd indentation":         "a:\n   b: value\n",
+		"excess map indentation":  "a:\n    b: value\n",
+		"excess list indentation": "a:\n  - b: value\n      c: value\n",
 		"tab indentation":         "a:\n\tb: value\n",
 	}
 	for name, input := range tests {
