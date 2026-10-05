@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -670,13 +670,36 @@ func (w *wizard) askURL(label string) (string, error) {
 }
 
 func validHTTPURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && u.Hostname() != "" && u.User == nil && u.Fragment == "" && (u.Scheme == "http" || u.Scheme == "https")
+	return validWebURL(raw, false)
 }
 
 func validHTTPSURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && u.Hostname() != "" && u.User == nil && u.Fragment == "" && u.Scheme == "https"
+	return validWebURL(raw, true)
+}
+
+func validWebURL(raw string, httpsOnly bool) bool {
+	req, err := http.NewRequest(http.MethodGet, raw, nil)
+	if err != nil {
+		return false
+	}
+	u := req.URL
+	if u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+		return false
+	}
+	if httpsOnly {
+		if u.Scheme != "https" {
+			return false
+		}
+	} else if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *wizard) askRequired(label string) (string, error) {
