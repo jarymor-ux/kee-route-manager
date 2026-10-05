@@ -71,6 +71,7 @@ if [ "$MODE" != ui ]; then
  printf '%s\n' "$password" > "$STAGE/password"; unset password
 
 fi
+UI_UPSTREAM_CA_PATH=
 if [ "$MODE" != core ]; then
  src=$ROOT/dist/kee-route-manager-ui-linux-$ARCH
  [ -x "$src" ] || fail 'missing UI executable'
@@ -78,11 +79,16 @@ if [ "$MODE" != core ]; then
  if [ "$MODE" = ui ]; then UI_INPUT=$INPUT; else UI_INPUT=${KRM_UI_CONFIG_FILE:-}; fi
  [ -n "$UI_INPUT" ] && [ -f "$UI_INPUT" ] || fail 'local-ui requires KRM_UI_CONFIG_FILE pointing to a prepared UI config'
  "$src" validate --config "$UI_INPUT"
+ UI_UPSTREAM_CA_PATH=$("$src" upstream-ca-path --config "$UI_INPUT")
+ if [ -n "$UI_UPSTREAM_CA_PATH" ]; then
+  [ "$UI_UPSTREAM_CA_PATH" = "$UI_DIR/controller-ca.crt" ] || fail "ui.upstream_ca_file must be $UI_DIR/controller-ca.crt for installer-managed custom CA"
+  [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'UI config requires a custom upstream CA; set KRM_UPSTREAM_CA_FILE before installation'
+  [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'KRM_UPSTREAM_CA_FILE does not exist'
+  openssl x509 -in "$KRM_UPSTREAM_CA_FILE" -noout >/dev/null || fail 'invalid public upstream CA'
+ elif [ -n "${KRM_UPSTREAM_CA_FILE:-}" ]; then
+  fail 'KRM_UPSTREAM_CA_FILE was provided but ui.upstream_ca_file is empty'
+ fi
  cp "$UI_INPUT" "$STAGE/ui.yaml"
-fi
-if [ "$MODE" = ui ]; then
- [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] && [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'UI requires a public upstream CA obtained through authenticated SSH'
- openssl x509 -in "$KRM_UPSTREAM_CA_FILE" -noout >/dev/null || fail 'invalid public upstream CA'
 fi
 # Preserve existing installations; reinstall requires explicit uninstall first.
 if [ "$MODE" != ui ]; then [ ! -e "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'; fi
@@ -112,15 +118,8 @@ if [ "$MODE" != ui ]; then
  mkdir -p "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
  chmod 0700 "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
 fi
-if [ "$MODE" = local-ui ]; then
- # API auto TLS must be generated before copying its public CA to the unprivileged UI.
- api_cert=$("$BIN/kee-route-managerd" tls-init --config "$CONFIG")
- [ -f "$api_cert" ] || fail 'tls-init did not return an existing public API certificate'
- cp "$api_cert" "$UI_DIR/controller-ca.crt"; chmod 0644 "$UI_DIR/controller-ca.crt"
-fi
-if [ "$MODE" = ui ]; then
- [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] && [ -f "$KRM_UPSTREAM_CA_FILE" ] || fail 'remote UI requires KRM_UPSTREAM_CA_FILE obtained through authenticated SSH'
- cp "$KRM_UPSTREAM_CA_FILE" "$UI_DIR/controller-ca.crt"; chmod 0644 "$UI_DIR/controller-ca.crt"
+if [ "$MODE" != core ] && [ -n "$UI_UPSTREAM_CA_PATH" ]; then
+ cp "$KRM_UPSTREAM_CA_FILE" "$UI_UPSTREAM_CA_PATH"; chmod 0644 "$UI_UPSTREAM_CA_PATH"
 fi
 if [ "$MODE" != ui ]; then
  if [ "$MANAGED_UI" = 1 ]; then

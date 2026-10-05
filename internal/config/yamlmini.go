@@ -2,359 +2,465 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
-type yamlLine struct {
-	indent, number int
-	text           string
-}
-
 func parseYAMLSubset(data []byte) (any, error) {
-	lines := []yamlLine{}
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	scanner.Buffer(make([]byte, 4096), 1<<20)
-	n := 0
-	for scanner.Scan() {
-		n++
-		raw := strings.TrimRight(scanner.Text(), " \r\t")
-		if strings.TrimSpace(raw) == "" {
-			continue
-		}
-		if strings.Contains(raw[:len(raw)-len(strings.TrimLeft(raw, " \t"))], "\t") {
-			return nil, fmt.Errorf("line %d: tabs are not allowed", n)
-		}
-		clean := stripYAMLComment(raw)
-		if strings.TrimSpace(clean) == "" {
-			continue
-		}
-		indent := len(clean) - len(strings.TrimLeft(clean, " "))
-		if indent%2 != 0 {
-			return nil, fmt.Errorf("line %d: indentation must use multiples of two spaces", n)
-		}
-		lines = append(lines, yamlLine{indent: indent, number: n, text: strings.TrimSpace(clean)})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	if len(lines) == 0 {
-		return map[string]any{}, nil
-	}
-	if lines[0].indent != 0 {
-		return nil, fmt.Errorf("line %d: top-level indentation must be zero", lines[0].number)
-	}
-	value, next, err := parseYAMLBlock(lines, 0, 0)
+	raw, err := yamlSubsetToJSON(data)
 	if err != nil {
 		return nil, err
 	}
-	if next != len(lines) {
-		return nil, fmt.Errorf("line %d: unexpected content", lines[next].number)
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
 	}
 	return value, nil
 }
 
-func parseYAMLBlock(lines []yamlLine, index, indent int) (any, int, error) {
-	if index >= len(lines) {
-		return nil, index, fmt.Errorf("missing nested value")
+func yamlSubsetToJSON(data []byte) ([]byte, error) {
+	if err := validateYAMLSubsetSource(data); err != nil {
+		return nil, err
 	}
-	if lines[index].indent != indent {
-		return nil, index, fmt.Errorf("line %d: expected indentation %d", lines[index].number, indent)
+
+	decoder := yaml.NewDecoder(bytes.NewReader(normalizeLegacyPlainMappingScalars(data)))
+	var document yaml.Node
+	if err := decoder.Decode(&document); err != nil {
+		if err == io.EOF {
+			return json.Marshal(map[string]any{})
+		}
+		return nil, err
 	}
-	if strings.HasPrefix(lines[index].text, "-") {
-		return parseYAMLList(lines, index, indent)
+
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("multiple YAML documents are not allowed")
+		}
+		return nil, err
 	}
-	return parseYAMLMap(lines, index, indent)
+	if len(document.Content) == 0 {
+		return json.Marshal(map[string]any{})
+	}
+
+	value, err := yamlSubsetNode(document.Content[0])
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
 }
 
-func parseYAMLMap(lines []yamlLine, index, indent int) (map[string]any, int, error) {
-	out := map[string]any{}
+// normalizeLegacyPlainMappingScalars preserves the previous config grammar
+// where an unquoted mapping value could contain ": ". yaml.v3 follows the
+// YAML specification and rejects that form, so quote only that legacy scalar
+// shape before decoding. Unsupported YAML constructs remain untouched and are
+// still rejected by yamlSubsetNode.
+func normalizeLegacyPlainMappingScalars(data []byte) []byte {
+	lines := bytes.Split(data, []byte{'\n'})
+	changed := false
+	for i, line := range lines {
+		normalized, ok := normalizeLegacyPlainMappingLine(string(line))
+		if !ok {
+			continue
+		}
+		lines[i] = []byte(normalized)
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	return bytes.Join(lines, []byte{'\n'})
+}
+
+func normalizeLegacyPlainMappingLine(raw string) (string, bool) {
+	cr := ""
+	if strings.HasSuffix(raw, "\r") {
+		raw = strings.TrimSuffix(raw, "\r")
+		cr = "\r"
+	}
+
+	leading := len(raw) - len(strings.TrimLeft(raw, " "))
+	prefix, body := raw[:leading], raw[leading:]
+	if body == "" || strings.HasPrefix(body, "#") {
+		return raw + cr, false
+	}
+	if strings.HasPrefix(body, "- ") {
+		prefix += "- "
+		body = body[2:]
+	}
+
+	separator := legacyMappingColon(body)
+	if separator < 0 {
+		return raw + cr, false
+	}
+	rest := body[separator+1:]
+	spaceLen := len(rest) - len(strings.TrimLeft(rest, " \t"))
+	valueAndSuffix := rest[spaceLen:]
+	if valueAndSuffix == "" {
+		return raw + cr, false
+	}
+
+	valueEnd := len(valueAndSuffix)
+	if comment := legacyPlainCommentIndex(valueAndSuffix); comment >= 0 {
+		valueEnd = comment
+	}
+	value := strings.TrimRight(valueAndSuffix[:valueEnd], " \t")
+	if !legacyPlainScalarNeedsQuote(value) {
+		return raw + cr, false
+	}
+	suffix := valueAndSuffix[len(value):]
+
+	normalized := prefix + body[:separator+1] + rest[:spaceLen] + strconv.Quote(value) + suffix + cr
+	return normalized, true
+}
+
+func legacyPlainScalarNeedsQuote(value string) bool {
+	if value == "" || (!strings.Contains(value, ": ") && !strings.Contains(value, ":\t")) {
+		return false
+	}
+	switch value[0] {
+	case '"', '\'', '{', '[', '&', '*', '!', '|', '>':
+		return false
+	default:
+		return true
+	}
+}
+
+func legacyMappingColon(s string) int {
+	inSingle, inDouble, escaped := false, false, false
+	for i, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inDouble {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if r == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if r == ':' && !inSingle && !inDouble && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
+			return i
+		}
+	}
+	return -1
+}
+
+func legacyPlainCommentIndex(s string) int {
+	inSingle, inDouble, escaped := false, false, false
+	for i, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inDouble {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if r == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if r == '#' && !inSingle && !inDouble && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+			return i
+		}
+	}
+	return -1
+}
+
+func validateYAMLSubsetSource(data []byte) error {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	line := 0
+	for scanner.Scan() {
+		line++
+		raw := strings.TrimRight(scanner.Text(), " \r\t")
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		leading := raw[:len(raw)-len(strings.TrimLeft(raw, " \t"))]
+		if strings.ContainsRune(leading, '\t') {
+			return fmt.Errorf("line %d: tabs are not allowed", line)
+		}
+		trimmed := strings.TrimSpace(raw)
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if len(leading)%2 != 0 {
+			return fmt.Errorf("line %d: indentation must use multiples of two spaces", line)
+		}
+		if isYAMLDocumentMarker(trimmed) || strings.HasPrefix(trimmed, "%") {
+			return fmt.Errorf("line %d: YAML directives and document markers are not supported", line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return validateYAMLIndentation(data)
+}
+
+type yamlIndentLine struct {
+	indent int
+	number int
+	text   string
+}
+
+func validateYAMLIndentation(data []byte) error {
+	lines := make([]yamlIndentLine, 0)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		raw := strings.TrimRight(scanner.Text(), " \r\t")
+		if comment := legacyPlainCommentIndex(raw); comment >= 0 {
+			raw = strings.TrimRight(raw[:comment], " \t")
+		}
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		lines = append(lines, yamlIndentLine{indent: indent, number: lineNumber, text: strings.TrimSpace(raw)})
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if lines[0].indent != 0 {
+		return fmt.Errorf("line %d: top-level indentation must be zero", lines[0].number)
+	}
+	_, next, err := validateYAMLIndentBlock(lines, 0, 0)
+	if err != nil {
+		return err
+	}
+	if next != len(lines) {
+		return fmt.Errorf("line %d: unexpected content", lines[next].number)
+	}
+	return nil
+}
+
+func validateYAMLIndentBlock(lines []yamlIndentLine, index, indent int) (bool, int, error) {
+	if index >= len(lines) {
+		return false, index, fmt.Errorf("missing nested value")
+	}
+	if lines[index].indent != indent {
+		return false, index, fmt.Errorf("line %d: expected indentation %d", lines[index].number, indent)
+	}
+	if strings.HasPrefix(lines[index].text, "-") {
+		next, err := validateYAMLIndentSequence(lines, index, indent)
+		return true, next, err
+	}
+	next, err := validateYAMLIndentMap(lines, index, indent)
+	return false, next, err
+}
+
+func validateYAMLIndentMap(lines []yamlIndentLine, index, indent int) (int, error) {
 	for index < len(lines) {
 		line := lines[index]
 		if line.indent < indent {
 			break
 		}
 		if line.indent > indent {
-			return nil, index, fmt.Errorf("line %d: unexpected indentation", line.number)
+			return index, fmt.Errorf("line %d: unexpected indentation", line.number)
 		}
 		if strings.HasPrefix(line.text, "-") {
 			break
 		}
-		key, rest, ok := splitYAMLKey(line.text)
-		if !ok {
-			return nil, index, fmt.Errorf("line %d: expected key: value", line.number)
+		separator := legacyMappingColon(line.text)
+		if separator < 0 {
+			return index, fmt.Errorf("line %d: expected key: value", line.number)
 		}
-		if key == "" {
-			return nil, index, fmt.Errorf("line %d: empty key", line.number)
-		}
-		if _, exists := out[key]; exists {
-			return nil, index, fmt.Errorf("line %d: duplicate key %q", line.number, key)
-		}
+		rest := strings.TrimSpace(line.text[separator+1:])
 		index++
-		if rest != "" {
-			v, err := parseYAMLScalar(rest)
-			if err != nil {
-				return nil, index, fmt.Errorf("line %d: %w", line.number, err)
-			}
-			out[key] = v
-			continue
-		}
-		if index >= len(lines) || lines[index].indent <= indent {
-			out[key] = nil
+		if rest != "" || index >= len(lines) || lines[index].indent <= indent {
 			continue
 		}
 		if lines[index].indent != indent+2 {
-			return nil, index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
+			return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
 		}
-		v, next, err := parseYAMLBlock(lines, index, indent+2)
+		_, next, err := validateYAMLIndentBlock(lines, index, indent+2)
 		if err != nil {
-			return nil, index, err
+			return index, err
 		}
-		out[key] = v
 		index = next
 	}
-	return out, index, nil
+	return index, nil
 }
 
-func parseYAMLList(lines []yamlLine, index, indent int) ([]any, int, error) {
-	out := []any{}
+func validateYAMLIndentSequence(lines []yamlIndentLine, index, indent int) (int, error) {
 	for index < len(lines) {
 		line := lines[index]
 		if line.indent < indent {
 			break
 		}
 		if line.indent > indent {
-			return nil, index, fmt.Errorf("line %d: unexpected indentation", line.number)
+			return index, fmt.Errorf("line %d: unexpected indentation", line.number)
 		}
 		if !strings.HasPrefix(line.text, "-") {
 			break
 		}
+
 		rest := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
 		index++
 		if rest == "" {
 			if index >= len(lines) || lines[index].indent <= indent {
-				return nil, index, fmt.Errorf("line %d: empty list item", line.number)
+				return index, fmt.Errorf("line %d: empty list item", line.number)
 			}
 			if lines[index].indent != indent+2 {
-				return nil, index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
+				return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
 			}
-			v, next, err := parseYAMLBlock(lines, index, indent+2)
+			_, next, err := validateYAMLIndentBlock(lines, index, indent+2)
 			if err != nil {
-				return nil, index, err
+				return index, err
 			}
-			out = append(out, v)
 			index = next
 			continue
 		}
-		if key, value, ok := splitYAMLKey(rest); ok {
-			item := map[string]any{}
-			if key == "" {
-				return nil, index, fmt.Errorf("line %d: empty key", line.number)
+
+		separator := legacyMappingColon(rest)
+		if separator < 0 {
+			continue
+		}
+		value := strings.TrimSpace(rest[separator+1:])
+		if value == "" && index < len(lines) && lines[index].indent > indent {
+			if lines[index].indent != indent+4 {
+				return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
 			}
-			if value != "" {
-				v, err := parseYAMLScalar(value)
-				if err != nil {
-					return nil, index, fmt.Errorf("line %d: %w", line.number, err)
-				}
-				item[key] = v
-			} else if index < len(lines) && lines[index].indent > indent {
+			_, next, err := validateYAMLIndentBlock(lines, index, indent+4)
+			if err != nil {
+				return index, err
+			}
+			index = next
+		}
+
+		for index < len(lines) && lines[index].indent == indent+2 && !strings.HasPrefix(lines[index].text, "-") {
+			entry := lines[index]
+			separator := legacyMappingColon(entry.text)
+			if separator < 0 {
+				return index, fmt.Errorf("line %d: expected key: value", entry.number)
+			}
+			value := strings.TrimSpace(entry.text[separator+1:])
+			index++
+			if value == "" && index < len(lines) && lines[index].indent > indent+2 {
 				if lines[index].indent != indent+4 {
-					return nil, index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
+					return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
 				}
-				v, next, err := parseYAMLBlock(lines, index, indent+4)
+				_, next, err := validateYAMLIndentBlock(lines, index, indent+4)
 				if err != nil {
-					return nil, index, err
+					return index, err
 				}
-				item[key] = v
 				index = next
-			} else {
-				item[key] = nil
 			}
-			for index < len(lines) && lines[index].indent == indent+2 && !strings.HasPrefix(lines[index].text, "-") {
-				entry := lines[index]
-				k, r, ok := splitYAMLKey(entry.text)
-				if !ok {
-					return nil, index, fmt.Errorf("line %d: expected key: value", entry.number)
-				}
-				if _, exists := item[k]; exists {
-					return nil, index, fmt.Errorf("line %d: duplicate key %q", entry.number, k)
-				}
-				index++
-				if r != "" {
-					v, err := parseYAMLScalar(r)
-					if err != nil {
-						return nil, index, fmt.Errorf("line %d: %w", entry.number, err)
-					}
-					item[k] = v
-				} else if index < len(lines) && lines[index].indent > indent+2 {
-					if lines[index].indent != indent+4 {
-						return nil, index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
-					}
-					v, next, err := parseYAMLBlock(lines, index, indent+4)
-					if err != nil {
-						return nil, index, err
-					}
-					item[k] = v
-					index = next
-				} else {
-					item[k] = nil
-				}
-			}
-			out = append(out, item)
-			continue
 		}
-		v, err := parseYAMLScalar(rest)
-		if err != nil {
-			return nil, index, fmt.Errorf("line %d: %w", line.number, err)
-		}
-		out = append(out, v)
 	}
-	return out, index, nil
+	return index, nil
 }
 
-func splitYAMLKey(s string) (string, string, bool) {
-	inSingle, inDouble := false, false
-	escaped := false
-	for i, r := range s {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if r == '\\' && inDouble {
-			escaped = true
-			continue
-		}
-		if r == '\'' && !inDouble {
-			inSingle = !inSingle
-			continue
-		}
-		if r == '"' && !inSingle {
-			inDouble = !inDouble
-			continue
-		}
-		// In this block-style subset a mapping colon must be followed by
-		// whitespace or end of line. Colons inside URLs and IPv6 are scalars.
-		if r == ':' && !inSingle && !inDouble && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
-			return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:]), true
-		}
+func isYAMLDocumentMarker(line string) bool {
+	if line == "---" || line == "..." {
+		return true
 	}
-	return "", "", false
-}
-func stripYAMLComment(s string) string {
-	inSingle, inDouble := false, false
-	escaped := false
-	for i, r := range s {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if r == '\\' && inDouble {
-			escaped = true
-			continue
-		}
-		if r == '\'' && !inDouble {
-			inSingle = !inSingle
-			continue
-		}
-		if r == '"' && !inSingle {
-			inDouble = !inDouble
-			continue
-		}
-		if r == '#' && !inSingle && !inDouble && (i == 0 || s[i-1] == ' ') {
-			return strings.TrimRight(s[:i], " ")
-		}
+	if len(line) < 4 || line[:3] != "---" && line[:3] != "..." {
+		return false
 	}
-	return s
+	return line[3] == ' ' || line[3] == '\t'
 }
 
-func parseYAMLScalar(raw string) (any, error) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return "", nil
+func yamlSubsetNode(node *yaml.Node) (any, error) {
+	if node.Anchor != "" || node.Kind == yaml.AliasNode {
+		return nil, fmt.Errorf("YAML anchors and aliases are not supported")
 	}
-	if s == "[]" {
-		return []any{}, nil
+	if node.Style&yaml.TaggedStyle != 0 {
+		return nil, fmt.Errorf("explicit YAML tags are not supported")
 	}
-	if s == "{}" {
-		return map[string]any{}, nil
-	}
-	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
-		body := strings.TrimSpace(s[1 : len(s)-1])
-		if body == "" {
-			return []any{}, nil
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		if node.Style&yaml.FlowStyle != 0 && len(node.Content) != 0 {
+			return nil, fmt.Errorf("non-empty flow mappings are not supported")
 		}
-		parts := splitInline(body)
-		out := make([]any, 0, len(parts))
-		for _, part := range parts {
-			v, err := parseYAMLScalar(part)
+		out := make(map[string]any, len(node.Content)/2)
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			if keyNode.Kind != yaml.ScalarNode || keyNode.Anchor != "" || keyNode.Style&yaml.TaggedStyle != 0 {
+				return nil, fmt.Errorf("YAML mapping key must be a scalar string")
+			}
+			key := keyNode.Value
+			if key == "<<" {
+				return nil, fmt.Errorf("YAML merge keys are not supported")
+			}
+			if _, exists := out[key]; exists {
+				return nil, fmt.Errorf("duplicate key %q", key)
+			}
+			value, err := yamlSubsetNode(node.Content[i+1])
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, v)
+			out[key] = value
 		}
 		return out, nil
-	}
-	if strings.HasPrefix(s, "\"") {
-		v, err := strconv.Unquote(s)
-		if err != nil {
-			return nil, fmt.Errorf("invalid quoted string")
+
+	case yaml.SequenceNode:
+		out := make([]any, len(node.Content))
+		for i, item := range node.Content {
+			value, err := yamlSubsetNode(item)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = value
 		}
-		return v, nil
+		return out, nil
+
+	case yaml.ScalarNode:
+		if node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
+			return nil, fmt.Errorf("block scalar strings are not supported")
+		}
+		if node.Style&(yaml.SingleQuotedStyle|yaml.DoubleQuotedStyle) != 0 {
+			return node.Value, nil
+		}
+		return parseYAMLSubsetScalar(node.Value), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported YAML node kind %d", node.Kind)
 	}
-	if strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'") && len(s) >= 2 {
-		return strings.ReplaceAll(s[1:len(s)-1], "''", "'"), nil
+}
+
+func parseYAMLSubsetScalar(raw string) any {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil
 	}
 	switch strings.ToLower(s) {
 	case "true":
-		return true, nil
+		return true
 	case "false":
-		return false, nil
+		return false
 	case "null", "~":
-		return nil, nil
+		return nil
 	}
 	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return i, nil
+		return i
 	}
-	if f, err := strconv.ParseFloat(s, 64); err == nil && strings.ContainsAny(s, ".") {
-		return f, nil
+	if f, err := strconv.ParseFloat(s, 64); err == nil && strings.Contains(s, ".") {
+		return f
 	}
-	return s, nil
-}
-func splitInline(s string) []string {
-	out := []string{}
-	start := 0
-	inSingle, inDouble := false, false
-	escaped := false
-	for i, r := range s {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if r == '\\' && inDouble {
-			escaped = true
-			continue
-		}
-		if r == '\'' && !inDouble {
-			inSingle = !inSingle
-		}
-		if r == '"' && !inSingle {
-			inDouble = !inDouble
-		}
-		if r == ',' && !inSingle && !inDouble {
-			out = append(out, strings.TrimSpace(s[start:i]))
-			start = i + 1
-		}
-	}
-	out = append(out, strings.TrimSpace(s[start:]))
-	return out
-}
-
-func yamlSubsetToJSON(data []byte) ([]byte, error) {
-	v, err := parseYAMLSubset(data)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(v)
+	return s
 }

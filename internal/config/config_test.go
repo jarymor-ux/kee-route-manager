@@ -107,6 +107,70 @@ func TestDuplicateKeyRejected(t *testing.T) {
 	}
 }
 
+func TestYAMLSubsetRejectsUnsupportedSyntax(t *testing.T) {
+	tests := map[string]string{
+		"document marker":         "---\na: 1\n",
+		"document marker comment": "--- # comment\na: 1\n",
+		"document end comment":    "a: 1\n... # comment\n",
+		"anchor":                  "a: &shared value\n",
+		"alias":                   "a: &shared value\nb: *shared\n",
+		"merge key":               "a:\n  <<: {}\n",
+		"explicit tag":            "a: !!str value\n",
+		"literal block":           "a: |\n  value\n",
+		"folded block":            "a: >\n  value\n",
+		"flow mapping":            "a: {b: value}\n",
+		"odd indentation":         "a:\n   b: value\n",
+		"excess map indentation":  "a:\n    b: value\n",
+		"excess list indentation": "a:\n  - b: value\n      c: value\n",
+		"tab indentation":         "a:\n\tb: value\n",
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseYAMLSubset([]byte(input)); err == nil {
+				t.Fatalf("unsupported YAML syntax accepted: %q", input)
+			}
+		})
+	}
+}
+
+func TestYAMLSubsetKeepsPlainScalarMapKeysAsStrings(t *testing.T) {
+	value, err := parseYAMLSubset([]byte("headers:\n  123: value\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, ok := value.(map[string]any)["headers"].(map[string]any)
+	if !ok || headers["123"] != "value" {
+		t.Fatalf("headers = %#v", value)
+	}
+}
+
+func TestYAMLSubsetKeepsPlainTimestampLikeValuesAsStrings(t *testing.T) {
+	value, err := parseYAMLSubset([]byte("date: 2026-10-05\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.(map[string]any)["date"].(string)
+	if !ok || got != "2026-10-05" {
+		t.Fatalf("date = %#v", value)
+	}
+}
+
+func TestLoadPreservesLegacyPlainScalarColonSpace(t *testing.T) {
+	d := t.TempDir()
+	p := filepath.Join(d, "config.yaml")
+	body := strings.Replace(validYAML, "name: Provider A", "name: Provider: Europe", 1)
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("legacy plain scalar with colon-space rejected: %v", err)
+	}
+	if got := cfg.Subscriptions.Sources[0].Name; got != "Provider: Europe" {
+		t.Fatalf("subscription name = %q, want %q", got, "Provider: Europe")
+	}
+}
+
 func TestShippedControllerTemplatesUseRepositoryDiscovery(t *testing.T) {
 	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
 		t.Run(name, func(t *testing.T) {

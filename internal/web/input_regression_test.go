@@ -136,3 +136,30 @@ func TestStatusRedactsSubscriptionPathSecrets(t *testing.T) {
 		t.Fatal("authorization boundary failed")
 	}
 }
+
+func TestSameOriginRejectsDNSRebindingOnPlaintextAPI(t *testing.T) {
+	tests := []struct {
+		name   string
+		tls    bool
+		host   string
+		origin string
+		want   bool
+	}{
+		{name: "loopback IPv4 HTTP", host: "127.0.0.1:9443", origin: "http://127.0.0.1:9443", want: true},
+		{name: "loopback IPv6 HTTP", host: "[::1]:9443", origin: "http://[::1]:9443", want: true},
+		{name: "rebinding hostname HTTP", host: "attacker.example:9443", origin: "http://attacker.example:9443", want: false},
+		{name: "rebinding hostname HTTP without origin", host: "attacker.example:9443", origin: "", want: false},
+		{name: "localhost HTTP", host: "localhost:9443", origin: "http://localhost:9443", want: true},
+		{name: "trusted hostname HTTPS", tls: true, host: "controller.example:9443", origin: "https://controller.example:9443", want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9443/api/v1/auth/login", strings.NewReader("{}"))
+			req.Host = tc.host
+			req.Header.Set("Origin", tc.origin)
+			if got := sameOrigin(req, tc.tls); got != tc.want {
+				t.Fatalf("sameOrigin() = %t, want %t for host=%q origin=%q tls=%t", got, tc.want, tc.host, tc.origin, tc.tls)
+			}
+		})
+	}
+}

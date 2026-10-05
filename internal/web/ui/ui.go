@@ -12,11 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jarymor-ux/kee-route-manager/internal/auth"
-	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
-	"github.com/jarymor-ux/kee-route-manager/internal/logging"
-	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 	"io/fs"
 	"log"
 	"net"
@@ -26,6 +21,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/jarymor-ux/kee-route-manager/internal/auth"
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/httpsec"
+	"github.com/jarymor-ux/kee-route-manager/internal/logging"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 //go:embed static/*
@@ -110,6 +111,9 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	files := StaticHandler()
 	loginLimiter := auth.NewLimiter(8, 15*time.Minute)
 	proxy.ModifyResponse = func(response *http.Response) error {
+		if c.Web.TLS.Enabled {
+			secureSessionCookie(response)
+		}
 		r := response.Request
 		if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login" && response.StatusCode == http.StatusOK {
 			loginLimiter.Reset(auth.RemoteIP(r))
@@ -145,6 +149,30 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	mux.HandleFunc("/healthz", serveProxy)
 	mux.Handle("/", files)
 	return httpsec.Security(mux, c.Web.TLS.Enabled), nil
+}
+
+func secureSessionCookie(response *http.Response) {
+	values := response.Header.Values("Set-Cookie")
+	if len(values) == 0 {
+		return
+	}
+	changed := false
+	for i, raw := range values {
+		parsed := (&http.Response{Header: http.Header{"Set-Cookie": []string{raw}}}).Cookies()
+		if len(parsed) != 1 || parsed[0].Name != auth.CookieName || parsed[0].Secure {
+			continue
+		}
+		parsed[0].Secure = true
+		values[i] = parsed[0].String()
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	response.Header.Del("Set-Cookie")
+	for _, value := range values {
+		response.Header.Add("Set-Cookie", value)
+	}
 }
 
 func minDuration(a, b time.Duration) time.Duration {

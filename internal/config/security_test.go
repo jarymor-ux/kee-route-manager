@@ -75,6 +75,34 @@ func TestUIConfigRequiresTrustedUpstream(t *testing.T) {
 		t.Fatal("invalid pin accepted")
 	}
 }
+func TestUIPlaintextUpstreamRejectsTLSOptions(t *testing.T) {
+	for _, mutate := range []func(*Config){
+		func(c *Config) { c.UIProxy.UpstreamCAFile = "/tmp/controller-ca.crt" },
+		func(c *Config) { c.UIProxy.UpstreamSPKISHA256 = strings.Repeat("00", 32) },
+		func(c *Config) { c.UIProxy.InsecureTLS = true },
+	} {
+		c := Default()
+		c.Instance.Role = "ui"
+		c.UIProxy.Upstream = "http://127.0.0.1:9443"
+		mutate(&c)
+		if err := c.Validate(); err == nil {
+			t.Fatalf("plaintext UI upstream accepted TLS-only settings: %#v", c.UIProxy)
+		}
+	}
+}
+
+func TestSubscriptionHeaderNameUsesHTTPTokenGrammar(t *testing.T) {
+	for _, name := range []string{"X:Bad", "Bad Header", "Bad\\Header", "Bad\"Header"} {
+		t.Run(name, func(t *testing.T) {
+			c := validConfig(t)
+			c.Subscriptions.Sources[0].Headers = map[string]string{name: "value"}
+			if err := c.Validate(); err == nil {
+				t.Fatalf("invalid HTTP header name %q accepted", name)
+			}
+		})
+	}
+}
+
 func TestUpdateRejectsMutableLatest(t *testing.T) {
 	c := validConfig(t)
 	c.Update.Enabled = true

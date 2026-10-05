@@ -14,11 +14,11 @@ api:
   listen: "127.0.0.1:9443"
   unix_socket: "/opt/var/run/kee-route-manager/control.sock"
   tls:
-    enabled: true
-    auto_generate: true
-    cert_file: /opt/etc/kee-route-manager/api.crt
-    key_file: /opt/etc/kee-route-manager/api.key
-    hosts: [127.0.0.1, localhost]
+    enabled: false
+    auto_generate: false
+    cert_file: ""
+    key_file: ""
+    hosts: []
 web:
   enabled: false
   listen: "0.0.0.0:9444"
@@ -143,6 +143,6 @@ update:
   allow_downgrade: false
 ui:
   enabled: false
-  upstream: "https://127.0.0.1:9443"
+  upstream: "http://127.0.0.1:9443"
   insecure_tls: false
   request_timeout: 30s

@@ -17,6 +17,8 @@ import (
 // XraySelectionTag owns its entire prefix because balancer selectors use prefix matching.
 const XraySelectionTag = "krm-persisted-selection"
 
+var httpHeaderNameRE = regexp.MustCompile("^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$")
+
 func loopback(host string) bool { ip := net.ParseIP(host); return ip != nil && ip.IsLoopback() }
 func listenPort(addr string) (string, int, error) {
 	host, raw, err := net.SplitHostPort(addr)
@@ -80,8 +82,13 @@ func (c Config) validateCommon() []error {
 			es = append(es, fmt.Errorf("ui.upstream must be an HTTP(S) URL without credentials or fragment"))
 		} else {
 			u, _ := url.Parse(c.UIProxy.Upstream)
-			if u.Scheme == "http" && !loopback(u.Hostname()) {
-				es = append(es, fmt.Errorf("plaintext UI upstream must be loopback"))
+			if u.Scheme == "http" {
+				if !loopback(u.Hostname()) {
+					es = append(es, fmt.Errorf("plaintext UI upstream must be loopback"))
+				}
+				if c.UIProxy.InsecureTLS || c.UIProxy.UpstreamCAFile != "" || c.UIProxy.UpstreamSPKISHA256 != "" {
+					es = append(es, fmt.Errorf("UI TLS trust options require an HTTPS upstream"))
+				}
 			}
 			if u.RawQuery != "" || (u.Path != "" && u.Path != "/") {
 				es = append(es, fmt.Errorf("ui.upstream must be an origin URL"))
@@ -247,7 +254,7 @@ func (c Config) validateController() []error {
 			}
 		}
 		for k, v := range s.Headers {
-			if strings.ContainsAny(k+v, "\r\n") || k == "" || len(k) > 128 || len(v) > 8192 {
+			if !httpHeaderNameRE.MatchString(k) || strings.ContainsAny(v, "\r\n") || len(k) > 128 || len(v) > 8192 {
 				add(fmt.Errorf("subscription %q header invalid", s.ID))
 			}
 		}
