@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -318,7 +319,7 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
-	binaryDefault, configDirDefault, routingDefault := platformDefaults(platform)
+	binaryDefault, configDirDefault, _ := platformDefaults(platform)
 
 	fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
 	binary, err := w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
@@ -330,6 +331,7 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
+	routingDefault := filepath.Join(configDir, "05_routing.json")
 	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
 	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
 	if err != nil {
