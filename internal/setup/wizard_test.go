@@ -190,6 +190,50 @@ func TestExistingOutputFileIsNotSilentlyOverwritten(t *testing.T) {
 	}
 }
 
+
+func TestWriteConfigWithoutOverwriteRefusesExistingFile(t *testing.T) {
+	cfg, _, _, err := runWizardToFile(t, wizardScript("2", false, false, "y"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = writeConfig(path, cfg, false)
+	if !errors.Is(err, os.ErrExist) {
+		t.Fatalf("expected os.ErrExist, got %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original\n" {
+		t.Fatalf("existing file changed: %q", got)
+	}
+}
+
+func TestInvalidSubscriptionHeaderNameIsRejectedAndReprompted(t *testing.T) {
+	script := wizardScript("2", false, false, "y")
+	script = strings.Replace(
+		script,
+		"n\nn\nhttps://score.example.test/ping\n",
+		"y\nBad Header\nAuthorization\nBearer test\nn\nn\nhttps://score.example.test/ping\n",
+		1,
+	)
+	cfg, out, _, err := runWizardToFile(t, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "valid HTTP header name") {
+		t.Fatalf("invalid header name was not rejected:\n%s", out)
+	}
+	if cfg.Subscriptions.Sources[0].Headers["Authorization"] != "Bearer test" {
+		t.Fatalf("valid header was not saved: %#v", cfg.Subscriptions.Sources[0].Headers)
+	}
+}
+
 func TestMultipleSubscriptions(t *testing.T) {
 	script := wizardScript("2", false, false, "y")
 	old := "n\nhttps://score.example.test/ping\n"
