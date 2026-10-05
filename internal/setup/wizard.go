@@ -395,6 +395,10 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 		}
 	}
 
+	update := defaultUpdateOptions()
+	update.Enabled = updatesEnabled
+	update.Channel = channel
+
 	opts := SetupOptions{
 		Platform:      platform,
 		Subscriptions: subscriptions,
@@ -413,12 +417,7 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 			SpeedEnabled:     speedEnabled,
 			SpeedURLTemplate: speedURL,
 		},
-		Update: func() UpdateOptions {
-			update := defaultUpdateOptions()
-			update.Enabled = updatesEnabled
-			update.Channel = channel
-			return update
-		}(),
+		Update: update,
 	}
 	subscriptionNames := make([]string, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
