@@ -13,7 +13,12 @@ trap cleanup EXIT HUP INT TERM
 command -v openssl >/dev/null 2>&1 || fail 'OpenSSL with Ed25519 pkeyutl support is required; install it from your trusted package manager'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 command -v curl >/dev/null 2>&1 || fail 'curl with trusted CA certificates is required'
-[ -n "${KRM_CONFIG_FILE:-}" ] && [ -f "$KRM_CONFIG_FILE" ] || fail 'prepare a private controller/UI config first; set KRM_CONFIG_FILE=/absolute/path/config.yaml; see docs/AGENT_INSTALL.md'
+if [ -n "${KRM_CONFIG_FILE:-}" ]; then
+ [ -f "$KRM_CONFIG_FILE" ] || fail 'prepare a private controller/UI config first; set KRM_CONFIG_FILE=/absolute/path/config.yaml; see docs/AGENT_INSTALL.md'
+ NEED_CONFIG=0
+else
+ NEED_CONFIG=1
+fi
 case "$(uname -m)" in
  x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; armv7l|armv7*) ARCH=armv7;; mipsel|mipsle) ARCH=mipsle;; mips)
   endian=$(od -An -t u1 -j5 -N1 /bin/sh | tr -d '[:space:]')
@@ -70,7 +75,12 @@ cp manifest-rc.json manifest-rc.json.sig SHA256SUMS SHA256SUMS.sig payload/dist/
 # The launcher verifies and installs a complete daemon/UI/ctl slot, including
 # the dormant UI binary in core-only mode. The launcher itself remains stable.
 for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do
- case "$MODE:$component" in ui:kee-route-managerd|ui:kee-route-managerctl|ui:kee-route-manager-launcher) continue;; esac
+ if [ "$MODE" = ui ]; then
+  case "$component" in
+   kee-route-managerd|kee-route-manager-launcher) continue;;
+   kee-route-managerctl) [ "$NEED_CONFIG" = 1 ] || continue;;
+  esac
+ fi
  name=$component-linux-$ARCH
  fetch "$name" "$name"
  verify_file "$name"
@@ -78,4 +88,22 @@ for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui ke
  chmod 0755 "payload/dist/$name"
 done
 # No downloaded program has been executed before signature and digest checks.
-KRM_MODE=$MODE sh "payload/install/$PLATFORM/install.sh"
+if [ "$NEED_CONFIG" = 1 ]; then
+ if [ ! -t 0 ]; then
+  cat >&2 <<'EOF'
+ERROR: No configuration was provided and interactive terminal is unavailable.
+
+Provide KRM_CONFIG_FILE=/absolute/path/config.yaml
+or run the installer from an interactive SSH shell.
+EOF
+  exit 1
+ fi
+ CTL="payload/dist/kee-route-managerctl-linux-$ARCH"
+ GENERATED_CONFIG="$WORK/generated-config.yaml"
+ "$CTL" init-config --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
+ [ -f "$GENERATED_CONFIG" ] || fail 'configuration wizard did not create a configuration'
+ "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
+ KRM_CONFIG_FILE=$GENERATED_CONFIG
+ export KRM_CONFIG_FILE
+fi
+KRM_MODE=$MODE KRM_CONFIG_FILE="$KRM_CONFIG_FILE" sh "payload/install/$PLATFORM/install.sh"
