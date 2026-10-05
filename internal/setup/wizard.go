@@ -75,6 +75,8 @@ type Messages struct {
 	Overwrite              string
 	InvalidChoice          string
 	InvalidURL             string
+	InvalidHeaderName      string
+	InvalidHeaderValue     string
 	Required               string
 	InvalidBool            string
 	InvalidPool            string
@@ -135,6 +137,8 @@ var messagesRU = Messages{
 	Overwrite:              "Файл уже существует. Перезаписать? [д/Н]",
 	InvalidChoice:          "Неверный выбор.",
 	InvalidURL:             "Введите корректный http(s) URL без учётных данных и fragment.",
+	InvalidHeaderName:      "Введите корректное имя HTTP-заголовка.",
+	InvalidHeaderValue:     "Значение HTTP-заголовка некорректно или слишком длинное.",
 	Required:               "Обязательное значение не может быть пустым.",
 	InvalidBool:            "Введите д или н.",
 	InvalidPool:            "Размер пула должен быть числом от 1 до 20.",
@@ -195,6 +199,8 @@ var messagesEN = Messages{
 	Overwrite:              "Output file already exists. Overwrite? [y/N]",
 	InvalidChoice:          "Invalid choice.",
 	InvalidURL:             "Enter a valid http(s) URL without credentials or fragment.",
+	InvalidHeaderName:      "Enter a valid HTTP header name.",
+	InvalidHeaderValue:     "HTTP header value is invalid or too long.",
 	Required:               "This value is required.",
 	InvalidBool:            "Enter y or n.",
 	InvalidPool:            "Pool size must be a number from 1 to 20.",
@@ -238,6 +244,7 @@ func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) 
 		return ErrNotConfirmed
 	}
 
+	allowOverwrite := overwrite
 	if !overwrite {
 		if _, err := os.Stat(outputPath); err == nil {
 			ok, err = w.askBool(w.msg.Overwrite, false)
@@ -247,12 +254,13 @@ func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) 
 			if !ok {
 				return ErrNotConfirmed
 			}
+			allowOverwrite = true
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("check output file: %w", err)
 		}
 	}
 
-	if err := WriteConfig(outputPath, cfg); err != nil {
+	if err := writeConfig(outputPath, cfg, allowOverwrite); err != nil {
 		return err
 	}
 	loaded, err := config.Load(outputPath)
@@ -510,11 +518,11 @@ func (w *wizard) askSubscriptions() ([]config.Source, error) {
 			if !add {
 				break
 			}
-			key, err := w.askRequired(w.msg.HeaderName)
+			key, err := w.askHeaderName()
 			if err != nil {
 				return nil, err
 			}
-			value, err := w.askRequired(w.msg.HeaderValue)
+			value, err := w.askHeaderValue(key)
 			if err != nil {
 				return nil, err
 			}
@@ -534,6 +542,40 @@ func (w *wizard) askSubscriptions() ([]config.Source, error) {
 		if !more {
 			return out, nil
 		}
+	}
+}
+
+func (w *wizard) askHeaderName() (string, error) {
+	for {
+		answer, err := w.prompt(w.msg.HeaderName)
+		if err != nil {
+			return "", err
+		}
+		if answer == "" {
+			fmt.Fprintln(w.out, w.msg.Required)
+			continue
+		}
+		if config.ValidSubscriptionHeader(answer, "") {
+			return answer, nil
+		}
+		fmt.Fprintln(w.out, w.msg.InvalidHeaderName)
+	}
+}
+
+func (w *wizard) askHeaderValue(name string) (string, error) {
+	for {
+		answer, err := w.prompt(w.msg.HeaderValue)
+		if err != nil {
+			return "", err
+		}
+		if answer == "" {
+			fmt.Fprintln(w.out, w.msg.Required)
+			continue
+		}
+		if config.ValidSubscriptionHeader(name, answer) {
+			return answer, nil
+		}
+		fmt.Fprintln(w.out, w.msg.InvalidHeaderValue)
 	}
 }
 
