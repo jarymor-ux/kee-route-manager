@@ -100,5 +100,20 @@ func marshalYAML(cfg config.Config) ([]byte, error) {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, err
 	}
-	return yaml.Marshal(value)
+
+	var node yaml.Node
+	if err := node.Encode(value); err != nil {
+		return nil, err
+	}
+	quoteYAMLStrings(&node)
+	return yaml.Marshal(&node)
+}
+
+func quoteYAMLStrings(node *yaml.Node) {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+		node.Style = yaml.DoubleQuotedStyle
+	}
+	for _, child := range node.Content {
+		quoteYAMLStrings(child)
+	}
 }
