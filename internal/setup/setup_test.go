@@ -12,6 +12,9 @@ import (
 func byteSizePtr(v config.ByteSize) *config.ByteSize { return &v }
 
 func validOptions(platform Platform) SetupOptions {
+	update := defaultUpdateOptions()
+	update.Enabled = true
+
 	return SetupOptions{
 		Platform: platform,
 		Subscriptions: []config.Source{
@@ -65,14 +68,9 @@ func validOptions(platform Platform) SetupOptions {
 			SpeedMaxSampleBytes: 128 << 20,
 			SpeedRepetitions:    2,
 		},
-		Update: func() UpdateOptions {
-			update := defaultUpdateOptions()
-			update.Enabled = true
-			return update
-		}(),
+		Update: update,
 	}
 }
-
 
 func TestDefaultUpdatePublicKeyMatchesReleaseKey(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "release-public.key"))
