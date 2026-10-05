@@ -110,8 +110,8 @@ func yamlSubsetNode(node *yaml.Node) (any, error) {
 		out := make(map[string]any, len(node.Content)/2)
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
-			if keyNode.Kind != yaml.ScalarNode || keyNode.Anchor != "" || keyNode.Style&yaml.TaggedStyle != 0 || keyNode.Tag != "!!str" {
-				return nil, fmt.Errorf("YAML mapping key must be a plain string")
+			if keyNode.Kind != yaml.ScalarNode || keyNode.Anchor != "" || keyNode.Style&yaml.TaggedStyle != 0 {
+				return nil, fmt.Errorf("YAML mapping key must be a scalar string")
 			}
 			key := keyNode.Value
 			if key == "<<" {
