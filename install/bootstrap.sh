@@ -98,7 +98,7 @@ EOF
  fi
  CTL="payload/dist/kee-route-managerctl-linux-$ARCH"
  GENERATED_CONFIG="$WORK/generated-config.yaml"
- "$CTL" init-config --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
+ "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
  [ -f "$GENERATED_CONFIG" ] || fail 'configuration wizard did not create a configuration'
  "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
  KRM_CONFIG_FILE=$GENERATED_CONFIG
