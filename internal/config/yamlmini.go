@@ -77,11 +77,21 @@ func validateYAMLSubsetSource(data []byte) error {
 		if len(leading)%2 != 0 {
 			return fmt.Errorf("line %d: indentation must use multiples of two spaces", line)
 		}
-		if trimmed == "---" || trimmed == "..." || strings.HasPrefix(trimmed, "%") {
+		if isYAMLDocumentMarker(trimmed) || strings.HasPrefix(trimmed, "%") {
 			return fmt.Errorf("line %d: YAML directives and document markers are not supported", line)
 		}
 	}
 	return scanner.Err()
+}
+
+func isYAMLDocumentMarker(line string) bool {
+	if line == "---" || line == "..." {
+		return true
+	}
+	if len(line) < 4 || line[:3] != "---" && line[:3] != "..." {
+		return false
+	}
+	return line[3] == ' ' || line[3] == '\t'
 }
 
 func yamlSubsetNode(node *yaml.Node) (any, error) {
