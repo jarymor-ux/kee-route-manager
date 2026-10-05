@@ -278,6 +278,28 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 	}
 }
 
+func TestWriteConfigRoundTripsMultilineStrings(t *testing.T) {
+	opts := validOptions(PlatformLinuxSystemd)
+	name := "first line\nsecond line"
+	opts.Subscriptions[0].Name = name
+
+	cfg, err := BuildControllerConfig(opts)
+	if err != nil {
+		t.Fatalf("BuildControllerConfig: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := WriteConfig(path, cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if loaded.Subscriptions.Sources[0].Name != name {
+		t.Fatalf("name = %q, want %q", loaded.Subscriptions.Sources[0].Name, name)
+	}
+}
+
 func TestBuildControllerConfigAllowsExplicitZeroSpeedWarmup(t *testing.T) {
 	opts := validOptions(PlatformLinuxSystemd)
 	opts.Benchmark.SpeedWarmupBytes = byteSizePtr(0)
