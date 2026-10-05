@@ -142,6 +142,29 @@ func TestDefaultsAreAppliedOnEnter(t *testing.T) {
 	}
 }
 
+func TestCustomConfigDirDefaultsBaseRoutingInsideIt(t *testing.T) {
+	script := wizardScript("2", false, false, "y")
+	script = strings.Replace(
+		script,
+		"1\n\n\n\n\nproxy-main\n",
+		"1\n\n/custom/xray/configs\n\n\nproxy-main\n",
+		1,
+	)
+	cfg, _, _, err := runWizardToFile(t, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Xray.ConfigDir != "/custom/xray/configs" {
+		t.Fatalf("config dir=%q", cfg.Xray.ConfigDir)
+	}
+	if cfg.Xray.BaseRoutingFile != "/custom/xray/configs/05_routing.json" {
+		t.Fatalf("base routing file=%q", cfg.Xray.BaseRoutingFile)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("generated config is invalid: %v", err)
+	}
+}
+
 func TestWizardEOF(t *testing.T) {
 	var out strings.Builder
 	err := InitConfig(strings.NewReader(""), &out, filepath.Join(t.TempDir(), "config.yaml"), false)
