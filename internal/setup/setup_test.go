@@ -65,13 +65,22 @@ func validOptions(platform Platform) SetupOptions {
 			SpeedMaxSampleBytes: 128 << 20,
 			SpeedRepetitions:    2,
 		},
-		Update: UpdateOptions{
-			Enabled:          true,
-			Channel:          "rc",
-			GitHubRepository: "jarymor-ux/kee-route-manager",
-			PublicKey:        "t8ZyoMK5zMz2vTBuWaH8HIwMOo+E1nJXydOak0RWKAE",
-			AutoApply:        false,
-		},
+		Update: func() UpdateOptions {
+			update := defaultUpdateOptions()
+			update.Enabled = true
+			return update
+		}(),
+	}
+}
+
+
+func TestDefaultUpdatePublicKeyMatchesReleaseKey(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "release-public.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != defaultUpdatePublicKey {
+		t.Fatalf("default update public key = %q, release-public.key = %q", defaultUpdatePublicKey, got)
 	}
 }
 
@@ -188,8 +197,8 @@ func assertGeneratedFields(t *testing.T, cfg config.Config) {
 		cfg.Benchmark.Speed.Repetitions != 2 {
 		t.Fatalf("benchmark speed = %#v", cfg.Benchmark.Speed)
 	}
-	if !cfg.Update.Enabled || cfg.Update.Channel != "rc" ||
-		cfg.Update.GitHubRepository != "jarymor-ux/kee-route-manager" ||
+	if !cfg.Update.Enabled || cfg.Update.Channel != defaultUpdateChannel ||
+		cfg.Update.GitHubRepository != defaultUpdateRepository ||
 		cfg.Update.AutoApply {
 		t.Fatalf("update = %#v", cfg.Update)
 	}
