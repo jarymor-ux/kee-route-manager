@@ -172,15 +172,12 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	cfg.UIProxy.Enabled = true
 	cfg.UIProxy.Upstream = upstream
 	cfg.UIProxy.InsecureTLS = opts.InsecureTLS
+	cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
 	cfg.UIProxy.UpstreamSPKISHA256 = opts.UpstreamSPKISHA256
 	if parseErr == nil && u.Scheme == "http" {
 		cfg.UIProxy.InsecureTLS = false
-		cfg.UIProxy.UpstreamSPKISHA256 = ""
 		cfg.UIProxy.UpstreamCAFile = ""
-	} else if !opts.InsecureTLS {
-		// Empty custom CA means standard system trust. A private controller CA
-		// is configured only when the operator explicitly supplies its path.
-		cfg.UIProxy.UpstreamCAFile = opts.UpstreamCAFile
+		cfg.UIProxy.UpstreamSPKISHA256 = ""
 	}
 	if opts.RequestTimeout.Duration > 0 {
 		cfg.UIProxy.RequestTimeout = opts.RequestTimeout
