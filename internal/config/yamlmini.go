@@ -29,7 +29,7 @@ func yamlSubsetToJSON(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder := yaml.NewDecoder(bytes.NewReader(normalizeLegacyPlainMappingScalars(data)))
 	var document yaml.Node
 	if err := decoder.Decode(&document); err != nil {
 		if err == io.EOF {
@@ -54,6 +54,135 @@ func yamlSubsetToJSON(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(value)
+}
+
+// normalizeLegacyPlainMappingScalars preserves the previous config grammar
+// where an unquoted mapping value could contain ": ". yaml.v3 follows the
+// YAML specification and rejects that form, so quote only that legacy scalar
+// shape before decoding. Unsupported YAML constructs remain untouched and are
+// still rejected by yamlSubsetNode.
+func normalizeLegacyPlainMappingScalars(data []byte) []byte {
+	lines := bytes.Split(data, []byte{'\n'})
+	changed := false
+	for i, line := range lines {
+		normalized, ok := normalizeLegacyPlainMappingLine(string(line))
+		if !ok {
+			continue
+		}
+		lines[i] = []byte(normalized)
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	return bytes.Join(lines, []byte{'\n'})
+}
+
+func normalizeLegacyPlainMappingLine(raw string) (string, bool) {
+	cr := ""
+	if strings.HasSuffix(raw, "\r") {
+		raw = strings.TrimSuffix(raw, "\r")
+		cr = "\r"
+	}
+
+	leading := len(raw) - len(strings.TrimLeft(raw, " "))
+	prefix, body := raw[:leading], raw[leading:]
+	if body == "" || strings.HasPrefix(body, "#") {
+		return raw + cr, false
+	}
+	if strings.HasPrefix(body, "- ") {
+		prefix += "- "
+		body = body[2:]
+	}
+
+	separator := legacyMappingColon(body)
+	if separator < 0 {
+		return raw + cr, false
+	}
+	rest := body[separator+1:]
+	spaceLen := len(rest) - len(strings.TrimLeft(rest, " \t"))
+	valueAndSuffix := rest[spaceLen:]
+	if valueAndSuffix == "" {
+		return raw + cr, false
+	}
+
+	valueEnd := len(valueAndSuffix)
+	if comment := legacyPlainCommentIndex(valueAndSuffix); comment >= 0 {
+		valueEnd = comment
+	}
+	value := strings.TrimRight(valueAndSuffix[:valueEnd], " \t")
+	if !legacyPlainScalarNeedsQuote(value) {
+		return raw + cr, false
+	}
+	suffix := valueAndSuffix[len(value):]
+
+	normalized := prefix + body[:separator+1] + rest[:spaceLen] + strconv.Quote(value) + suffix + cr
+	return normalized, true
+}
+
+func legacyPlainScalarNeedsQuote(value string) bool {
+	if value == "" || !strings.ContainsAny(value, ":") ||
+		(!strings.Contains(value, ": ") && !strings.Contains(value, ":\t")) {
+		return false
+	}
+	switch value[0] {
+	case '"', '\'', '{', '[', '&', '*', '!', '|', '>':
+		return false
+	default:
+		return true
+	}
+}
+
+func legacyMappingColon(s string) int {
+	inSingle, inDouble, escaped := false, false, false
+	for i, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inDouble {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if r == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if r == ':' && !inSingle && !inDouble && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
+			return i
+		}
+	}
+	return -1
+}
+
+func legacyPlainCommentIndex(s string) int {
+	inSingle, inDouble, escaped := false, false, false
+	for i, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inDouble {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if r == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if r == '#' && !inSingle && !inDouble && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+			return i
+		}
+	}
+	return -1
 }
 
 func validateYAMLSubsetSource(data []byte) error {
