@@ -91,7 +91,7 @@ case "$1" in
   name=$3
   if [ "$name" = kee-route-manager ]; then binary=/usr/local/bin/kee-route-manager-launcher; config=/etc/kee-route-manager/config.yaml; else binary=/usr/local/bin/kee-route-manager-ui; config=/etc/kee-route-manager-ui/config.yaml; fi
   grep -Fxq "ExecStart=$binary serve --config $config" "/etc/systemd/system/$name.service"
-  "$binary" serve --config "$config" > "/tmp/$name.stdout" 2>&1 &
+  "$binary" serve --config "$config" </dev/null > "/tmp/$name.stdout" 2>&1 &
   echo "$!" > "/tmp/krm-test-service-$name.pid";;
  disable) krm-test-stop "$3";;
  *) echo 'unexpected service command' >&2; exit 1;;
@@ -107,7 +107,7 @@ procd_close_instance(){ :; }
 procd_set_param(){
  if [ "$1" = command ]; then
   shift
-  "$@" > "/tmp/$name.stdout" 2>&1 &
+  "$@" </dev/null > "/tmp/$name.stdout" 2>&1 &
   echo "$!" > "/tmp/krm-test-service-$name.pid"
  fi
 }
