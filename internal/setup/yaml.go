@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -109,7 +110,17 @@ func marshalYAML(cfg config.Config) ([]byte, error) {
 		return nil, err
 	}
 	quoteYAMLStrings(&node)
-	return yaml.Marshal(&node)
+
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&node); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func quoteYAMLStrings(node *yaml.Node) {
