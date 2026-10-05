@@ -180,7 +180,7 @@ if proc.returncode:
  raise SystemExit(proc.returncode)
 PYBOOTRUN
 [[ -f /etc/kee-route-manager/config.yaml ]]
-grep -Fq 'kind: linux-systemd' /etc/kee-route-manager/config.yaml
+grep -Fq '"kind": "linux-systemd"' /etc/kee-route-manager/config.yaml
 /usr/local/bin/kee-route-managerctl validate --config /etc/kee-route-manager/config.yaml >/dev/null
 /usr/local/bin/kee-route-managerctl ready --config /etc/kee-route-manager/config.yaml >/dev/null
 sh install/linux-systemd/uninstall.sh --purge
