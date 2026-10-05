@@ -504,6 +504,12 @@ func subtleEqual(a, b string) bool {
 	return v == 0
 }
 func sameOrigin(r *http.Request, tls bool) bool {
+	// Plaintext controller HTTP is permitted only on loopback. Reject a
+	// non-loopback Host before considering Origin so DNS rebinding cannot turn
+	// an attacker-controlled hostname into a same-origin controller request.
+	if !tls && !loopbackRequestHost(r.Host) {
+		return false
+	}
 	o := r.Header.Get("Origin")
 	if o == "" {
 		return true
@@ -517,6 +523,20 @@ func sameOrigin(r *http.Request, tls bool) bool {
 		scheme = "https"
 	}
 	return strings.EqualFold(u.Scheme, scheme) && strings.EqualFold(u.Host, r.Host)
+}
+
+func loopbackRequestHost(authority string) bool {
+	host := authority
+	if h, _, err := net.SplitHostPort(authority); err == nil {
+		host = h
+	} else if strings.HasPrefix(authority, "[") && strings.HasSuffix(authority, "]") {
+		host = strings.TrimSuffix(strings.TrimPrefix(authority, "["), "]")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // LocalHandler is served exclusively on the owner-only Unix socket. Never mount
