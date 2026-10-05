@@ -476,13 +476,24 @@ func TestBuildUIConfigPreservesExplicitHTTPSCA(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
 		Platform:       PlatformLinuxSystemd,
 		Upstream:       "https://controller.example.com",
-		UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
+		UpstreamCAFile: "/etc/kee-route-manager-ui/controller-ca.crt",
 	})
 	if err != nil {
 		t.Fatalf("BuildUIConfig: %v", err)
 	}
-	if cfg.UIProxy.UpstreamCAFile != "/etc/ssl/private/controller-ca.crt" {
+	if cfg.UIProxy.UpstreamCAFile != "/etc/kee-route-manager-ui/controller-ca.crt" {
 		t.Fatalf("custom CA = %q", cfg.UIProxy.UpstreamCAFile)
+	}
+}
+
+func TestBuildUIConfigRejectsUnmanagedHTTPSCAPath(t *testing.T) {
+	_, err := BuildUIConfig(UIOptions{
+		Platform:       PlatformLinuxSystemd,
+		Upstream:       "https://controller.example.com",
+		UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
+	})
+	if err == nil || !strings.Contains(err.Error(), "ui.upstream_ca_file must be") {
+		t.Fatalf("expected unmanaged CA path error, got %v", err)
 	}
 }
 
