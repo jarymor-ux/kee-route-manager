@@ -212,6 +212,19 @@ type wizard struct {
 }
 
 func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) error {
+	return initConfig(in, out, outputPath, overwrite, "")
+}
+
+func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
+	switch platform {
+	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	default:
+		return fmt.Errorf("unsupported platform %q", platform)
+	}
+	return initConfig(in, out, outputPath, overwrite, platform)
+}
+
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -223,7 +236,7 @@ func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) 
 	if err := w.chooseLanguage(); err != nil {
 		return err
 	}
-	opts, summary, err := w.collect()
+	opts, summary, err := w.collect(platform)
 	if err != nil {
 		return err
 	}
@@ -309,10 +322,13 @@ type wizardSummary struct {
 	channel           string
 }
 
-func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
-	platform, err := w.askPlatform()
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
+func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error) {
+	var err error
+	if platform == "" {
+		platform, err = w.askPlatform()
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
 	}
 	binaryDefault, configDirDefault, _ := platformDefaults(platform)
 

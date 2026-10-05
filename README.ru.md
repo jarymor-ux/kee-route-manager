@@ -15,15 +15,21 @@ KRM управляет проверенным горячим пулом Xray, п
 
 На Linux/OpenWrt с `firewall_mode: managed` установка и обычная работа KRM поддерживаются, но для обновлений доступна только проверка новых версий: скачивание через updater, применение и candidate trial запрещены до реализации read-only reconciliation управляемого firewall. Keenetic и режим `existing` на Linux/OpenWrt допускают применение через launcher; это не добавляет Keenetic автоматический bypass. Подробности — в [ограничениях](docs/KNOWN_LIMITATIONS.md). Production bootstrap использует одну фиксированную версию и проверяет Ed25519 и SHA256 до исполнения скачанных программ.
 
-Чтобы передать установку своему AI-агенту, достаточно ссылки на репозиторий: [глобальные инструкции AGENTS.md](AGENTS.md) и [полный порядок установки](docs/AGENT_INSTALL.md). Там описаны SSH, backup, подготовка config без секретов в Git, выбор routing tags, core-only, локальный/удалённый UI, TLS, readiness, удаление и rollback.
+Чтобы передать установку своему AI-агенту, достаточно ссылки на репозиторий: [глобальные инструкции AGENTS.md](AGENTS.md) и [полный порядок установки](docs/AGENT_INSTALL.md). Там описаны SSH, backup, подготовленная или интерактивная конфигурация, выбор routing tags, core-only, локальный/удалённый UI, TLS, readiness, удаление и rollback.
 
-После публикации подписанного release и подготовки приватной конфигурации:
+С заранее подготовленной приватной конфигурацией:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-keenetic.sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. Ограничения: [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Автоматические проверки: [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions). Изменения: [CHANGELOG.md](CHANGELOG.md).
+Для свежей core-установки controller config можно создать интерактивно уже после полной проверки release assets:
+
+```sh
+KRM_MODE=core sh /tmp/krm-bootstrap.sh
+```
+
+Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. В configless-режиме `local-ui` также запускает controller wizard и использует подписанный platform-specific UI template. Если для `local-ui` передан `KRM_CONFIG_FILE`, `KRM_UI_CONFIG_FILE` по-прежнему обязателен. UI-only всегда требует заранее подготовленный UI config. Ограничения: [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Автоматические проверки: [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions). Изменения: [CHANGELOG.md](CHANGELOG.md).
 
 Лицензия [Apache-2.0](LICENSE) выбрана владельцем.

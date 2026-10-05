@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
 )
 
 func captureOutput(t *testing.T, run func() error) (string, error) {
@@ -323,5 +324,27 @@ func TestInitConfigCommandRunsOfflineWithInjectedIO(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Create configuration?") {
 		t.Fatalf("wizard output missing: %s", out.String())
+	}
+}
+
+func TestInitConfigCommandPinsPlatformWithoutPrompt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	input := strings.Join([]string{
+		"2", "", "", "", "", "proxy-main",
+		"https://sub.example.test/main", "Main", "", "n", "n",
+		"https://score.example.test/ping",
+		"https://health.example.test/ping", "n", "",
+		"n", "n", "y",
+	}, "\n") + "\n"
+	var out strings.Builder
+	if err := runWithIO(context.Background(), []string{"init-config", "--platform", "openwrt", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Platform.Kind != "openwrt" {
+		t.Fatalf("platform=%q, want openwrt", cfg.Platform.Kind)
 	}
 }

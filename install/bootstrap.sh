@@ -13,7 +13,12 @@ trap cleanup EXIT HUP INT TERM
 command -v openssl >/dev/null 2>&1 || fail 'OpenSSL with Ed25519 pkeyutl support is required; install it from your trusted package manager'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 command -v curl >/dev/null 2>&1 || fail 'curl with trusted CA certificates is required'
-[ -n "${KRM_CONFIG_FILE:-}" ] && [ -f "$KRM_CONFIG_FILE" ] || fail 'prepare a private controller/UI config first; set KRM_CONFIG_FILE=/absolute/path/config.yaml; see docs/AGENT_INSTALL.md'
+if [ -n "${KRM_CONFIG_FILE:-}" ]; then
+ [ -f "$KRM_CONFIG_FILE" ] || fail 'prepare a private controller/UI config first; set KRM_CONFIG_FILE=/absolute/path/config.yaml; see docs/AGENT_INSTALL.md'
+ NEED_CONFIG=0
+else
+ NEED_CONFIG=1
+fi
 case "$(uname -m)" in
  x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; armv7l|armv7*) ARCH=armv7;; mipsel|mipsle) ARCH=mipsle;; mips)
   endian=$(od -An -t u1 -j5 -N1 /bin/sh | tr -d '[:space:]')
@@ -22,6 +27,7 @@ case "$(uname -m)" in
 esac
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/krm-bootstrap.XXXXXX")
 cd "$WORK"
+WORK=$(pwd -P)
 cat > trusted-public.pem <<'KEY'
 @PUBLIC_PEM@
 KEY
@@ -57,6 +63,9 @@ protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' manifest-rc
 [ "$version" = "@VERSION@" ] && [ "$channel" = rc ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
+if [ "$NEED_CONFIG" = 1 ] && [ "$MODE" = ui ]; then
+ fail 'KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config; init-config generates controller configuration only'
+fi
 fetch release-files.tar.gz release-files.tar.gz
 verify_file release-files.tar.gz
 mkdir payload
@@ -78,4 +87,32 @@ for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui ke
  chmod 0755 "payload/dist/$name"
 done
 # No downloaded program has been executed before signature and digest checks.
-KRM_MODE=$MODE sh "payload/install/$PLATFORM/install.sh"
+if [ "$NEED_CONFIG" = 1 ]; then
+ if [ ! -t 0 ]; then
+  cat >&2 <<'EOF'
+ERROR: No configuration was provided and interactive terminal is unavailable.
+
+Provide KRM_CONFIG_FILE=/absolute/path/config.yaml
+or run the installer from an interactive SSH shell.
+EOF
+  exit 1
+ fi
+ CTL="payload/dist/kee-route-managerctl-linux-$ARCH"
+ GENERATED_CONFIG="$WORK/generated-config.yaml"
+ "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
+ [ -f "$GENERATED_CONFIG" ] || fail 'configuration wizard did not create a configuration'
+ "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
+ KRM_CONFIG_FILE=$GENERATED_CONFIG
+ export KRM_CONFIG_FILE
+ if [ "$MODE" = local-ui ] && [ -z "${KRM_UI_CONFIG_FILE:-}" ]; then
+  case "$PLATFORM" in
+   keenetic) GENERATED_UI_CONFIG="$WORK/payload/configs/ui-keenetic.yaml";;
+   openwrt|linux-systemd) GENERATED_UI_CONFIG="$WORK/payload/configs/ui-linux-openwrt.yaml";;
+   *) fail 'unsupported platform for signed UI template';;
+  esac
+  [ -f "$GENERATED_UI_CONFIG" ] || fail 'signed UI configuration template is missing from release payload'
+  KRM_UI_CONFIG_FILE=$GENERATED_UI_CONFIG
+  export KRM_UI_CONFIG_FILE
+ fi
+fi
+KRM_MODE=$MODE KRM_CONFIG_FILE="$KRM_CONFIG_FILE" sh "payload/install/$PLATFORM/install.sh"

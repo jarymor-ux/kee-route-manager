@@ -17,16 +17,22 @@ Failover compares independent health targets through VPN and WAN with quorum; in
 
 The launcher checks for updates at the configured interval; installation requires an explicit UI/CLI action. A signed protocol-1 bundle updates daemon, CLI and managed local UI together, verifies process/API/reconciliation readiness, and rolls back a failed trial before commit. After commit, recovery restarts the new version without restoring old controller state. The stable launcher is updated manually. Linux UI retains its separate unprivileged service. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
 
-For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, private config, core-only/local UI/remote UI, readiness, uninstall and rollback.
+For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-Example after preparing private config as described in the runbook:
+With a prepared private config:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-keenetic.sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
 ```
 
-OpenWrt/Linux assets: `bootstrap-openwrt.sh` / `bootstrap-linux.sh`. Local UI requires `KRM_UI_CONFIG_FILE`; remote UI uses an authenticated SSH tunnel and trusted controller CA/SPKI. No mutable `main` installation or insecure upstream TLS defaults.
+For a fresh core install, the controller config can instead be created interactively after all release assets are verified:
+
+```sh
+KRM_MODE=core sh /tmp/krm-bootstrap.sh
+```
+
+OpenWrt/Linux assets: `bootstrap-openwrt.sh` / `bootstrap-linux.sh`. Configless `local-ui` also runs the interactive controller wizard and uses the signed platform UI template. If `KRM_CONFIG_FILE` is supplied for `local-ui`, `KRM_UI_CONFIG_FILE` is still required. UI-only installation always requires a prepared UI config. Remote UI uses an authenticated SSH tunnel and trusted controller CA/SPKI. No mutable `main` installation or insecure upstream TLS defaults.
 
 ```sh
 make build

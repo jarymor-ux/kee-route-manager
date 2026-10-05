@@ -100,17 +100,33 @@ KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstra
 
 OpenWrt: bootstrap `bootstrap-openwrt.sh`, ctl `/usr/bin/kee-route-managerctl`, config `/etc/kee-route-manager/config.yaml`. Linux/systemd: `bootstrap-linux.sh`, ctl `/usr/local/bin/kee-route-managerctl`, та же config.
 
+Для интерактивной установки core можно не готовить `KRM_CONFIG_FILE` заранее:
+
+```sh
+KRM_MODE=core sh /tmp/krm-bootstrap.sh
+```
+
+После полной проверки release assets bootstrap запускает подписанный `kee-route-managerctl init-config`, проверяет созданный временный config и только затем передаёт его installer. Нужен интерактивный TTY.
+
 Bootstrap проверяет native Ed25519 signatures manifest и SHA256SUMS, каждый digest/size перед исполнением, затем распаковывает signed install payload. Core-установка получает стабильный launcher и начальный подписанный slot с daemon, UI и CLI; UI в core-only не запускается. Сервис запускает launcher, а он — daemon. На Keenetic helper `/opt/etc/kee-route-manager/xray-status.sh` проверяет именно основной Xray с production config directory, исключая временные probe-процессы. Установщик не перезаписывает существующий config/binary. Readiness endpoint может сообщать **safe degraded**: внимательно прочитать JSON, убедиться в state/reconciliation и фактическом маршруте; HTTP 200 сам по себе не доказывает работающий VPN.
 
 ## 6. Core + UI на одном устройстве
 
 Дополнительно подготовьте UI YAML из `configs/ui-keenetic.yaml` или `configs/ui-linux-openwrt.yaml`. В нём `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`. Браузерный `web` остаётся на HTTPS, а локальный upstream к controller — `http://127.0.0.1:9443`. Controller API остаётся loopback-only, поэтому отдельный CA между UI и controller на одном устройстве не нужен.
 
-С нуля:
+С нуля с заранее подготовленными файлами:
 
 ```sh
 KRM_MODE=local-ui KRM_CONFIG_FILE=/root/krm-install/config.yaml KRM_UI_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
 ```
+
+Либо интерактивно без заранее подготовленного controller config:
+
+```sh
+KRM_MODE=local-ui sh /tmp/krm-bootstrap.sh
+```
+
+В этом режиме controller config создаётся подписанным `kee-route-managerctl init-config` после полной проверки release assets, а UI config берётся из подписанного platform-specific шаблона внутри `release-files.tar.gz`. Если нужен нестандартный UI config, передайте свой `KRM_UI_CONFIG_FILE`.
 
 Installer больше не генерирует отдельный API TLS/CA для локальной связи UI→controller. На Keenetic/OpenWrt один сервис launcher запускает daemon и локальный UI; отдельный `S98kee-route-manager-ui`/UI procd-сервис не устанавливается. На Linux UI сохраняет отдельный DynamicUser-сервис и обновляется вручную; launcher не запускает его с правами root. `KRM_UPSTREAM_CA_FILE` опционален: для HTTPS upstream без него используется системное хранилище доверия; файл нужен только для private/custom CA. UI не хранит admin пароль и не получает private API key.
 
@@ -132,6 +148,8 @@ KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
 # Для HTTPS upstream с private/custom CA:
 KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt sh /tmp/krm-bootstrap.sh
 ```
+
+UI-only режим не использует controller wizard: `KRM_MODE=ui` по-прежнему требует заранее подготовленный `KRM_CONFIG_FILE` с `instance.role: ui`.
 
 Скачивание выше выполнять на Linux-компьютере с UI. Для UI на OpenWrt/Keenetic выбрать bootstrap соответствующей платформы, не переносить Keenetic bootstrap на Linux-хост.
 
