@@ -22,7 +22,49 @@ for name in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-rou
 done
 go build -o "$WORK/tool" ./cmd/krm-release-tool
 "$WORK/tool" keygen --public "$WORK/public" --private "$WORK/private-key"
+# The configless bootstrap integration uses a disposable release trust root.
+# Rebuild ctl with that key embedded so the real wizard-generated config can
+# authenticate the same signed seed when the real launcher imports it.
+cp "$WORK/public" internal/releasetrust/public.key
+cp "$WORK/public" release-public.key
+go build -ldflags "-X main.version=$VERSION" -o "dist/kee-route-managerctl-linux-$ARCH" ./cmd/kee-route-managerctl
+tar -czf dist/release-files.tar.gz configs install release-public.key LICENSE NOTICE
 "$WORK/tool" manifest --version "$VERSION" --base-url "https://github.com/jarymor-ux/kee-route-manager/releases/download/v$VERSION" --dist dist --out dist/manifest-rc.json --private "$WORK/private-key"
+python3 - dist <<'PYSUMS'
+import hashlib,pathlib,sys
+p=pathlib.Path(sys.argv[1])
+entries=[]
+for f in sorted(p.iterdir()):
+ if f.is_file() and f.name not in {'SHA256SUMS','SHA256SUMS.sig'}:
+  entries.append(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n')
+(p/'SHA256SUMS').write_text(''.join(entries))
+PYSUMS
+"$WORK/tool" sign --private "$WORK/private-key" --input dist/SHA256SUMS --out dist/SHA256SUMS.sig
+mkdir -p "$WORK/bootstrap-fake"
+cat > "$WORK/bootstrap-fake/curl" <<'BOOTSTRAP_CURL'
+#!/bin/sh
+set -eu
+out=
+url=
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  -o) out=$2; shift 2;;
+  *) url=$1; shift;;
+ esac
+done
+[ -n "$out" ] && [ -n "$url" ]
+cp "$KRM_TEST_ASSETS/$(basename "$url")" "$out"
+BOOTSTRAP_CURL
+chmod 0755 "$WORK/bootstrap-fake/curl"
+python3 - "$WORK" "$VERSION" <<'PYBOOTSTRAP'
+import base64,pathlib,sys
+work=pathlib.Path(sys.argv[1]);version=sys.argv[2]
+raw=base64.b64decode((work/'public').read_text().strip()+'===')
+der=bytes.fromhex('302a300506032b6570032100')+raw
+pem='-----BEGIN PUBLIC KEY-----\n'+base64.b64encode(der).decode()+'\n-----END PUBLIC KEY-----'
+template=pathlib.Path('install/bootstrap.sh').read_text()
+(work/'bootstrap-linux.sh').write_text(template.replace('@VERSION@',version).replace('@PLATFORM@','linux-systemd').replace('@PUBLIC_PEM@',pem))
+PYBOOTSTRAP
 # Disposable service-manager adapters execute the installed service commands.
 # Keenetic uses the actual checked-in supervisor; no real host service is used.
 cat > "$WORK/fake/krm-test-stop" <<'STOP'
@@ -100,6 +142,50 @@ for platform in ('linux-systemd','openwrt','keenetic'):
 (w/'private/password').write_text('integration-only-long-password\n')
 PYCONFIG
 openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=krm-installer-test -keyout "$WORK/private/ca.key" -out "$WORK/private/ca.crt" -days 1 >/dev/null 2>&1
+# Exercise the complete new path with the actual bootstrap, actual ctl wizard,
+# actual common installer and actual launcher inside this disposable container.
+python3 - "$WORK" <<'PYBOOTRUN'
+import os,pty,subprocess,sys
+work=sys.argv[1]
+master,slave=pty.openpty()
+env=os.environ.copy()
+env.pop('KRM_CONFIG_FILE',None)
+env.pop('KRM_UI_CONFIG_FILE',None)
+env.update(
+ KRM_MODE='core',
+ KRM_PASSWORD_FILE=work+'/private/password',
+ KRM_TEST_ASSETS=work+'/source/dist',
+ PATH=work+'/bootstrap-fake:'+work+'/fake:'+env['PATH'],
+)
+answers='\n'.join([
+ '2','','','','','proxy-main',
+ 'https://sub.example.test/main','Main','n','n','n',
+ 'https://score.example.test/ping',
+ 'https://health.example.test/ping','n','',
+ 'n','n','y',
+])+'\n'
+proc=subprocess.Popen(
+ ['sh',work+'/bootstrap-linux.sh'],
+ stdin=slave,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,
+)
+os.close(slave)
+try:
+ os.write(master,answers.encode())
+ out,err=proc.communicate(timeout=90)
+finally:
+ os.close(master)
+sys.stdout.write(out)
+sys.stderr.write(err)
+if proc.returncode:
+ raise SystemExit(proc.returncode)
+PYBOOTRUN
+[[ -f /etc/kee-route-manager/config.yaml ]]
+grep -Fq 'kind: linux-systemd' /etc/kee-route-manager/config.yaml
+/usr/local/bin/kee-route-managerctl validate --config /etc/kee-route-manager/config.yaml >/dev/null
+/usr/local/bin/kee-route-managerctl ready --config /etc/kee-route-manager/config.yaml >/dev/null
+sh install/linux-systemd/uninstall.sh --purge
+[[ ! -e /usr/local/bin/kee-route-managerd && ! -e /usr/local/bin/kee-route-manager-launcher && ! -e /etc/kee-route-manager/config.yaml ]]
+printf 'Real configless bootstrap -> wizard -> installer integration passed: linux-systemd core.\n'
 for platform in linux-systemd openwrt keenetic; do
  case "$platform" in
   keenetic) prefix=/opt; bin=/opt/bin; core_service=/opt/etc/init.d/S99kee-route-manager; ui_service=/opt/etc/init.d/S98kee-route-manager-ui;;
