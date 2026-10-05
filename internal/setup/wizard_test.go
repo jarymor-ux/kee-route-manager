@@ -372,12 +372,16 @@ func TestWizardURLValidationMatchesConfigSecurityRules(t *testing.T) {
 	for _, raw := range []string{
 		"https://user:pass@example.test/path",
 		"https://example.test/path#fragment",
+		"https://example.test:not-a-port/path",
+		"https://example.test:70000/path",
 	} {
 		if validHTTPURL(raw) {
 			t.Fatalf("wizard accepted URL rejected by config validation: %q", raw)
 		}
 	}
-	if !validHTTPURL("http://example.test/path?token=value") || !validHTTPURL("https://example.test/path") {
+	if !validHTTPURL("http://example.test/path?token=value") ||
+		!validHTTPURL("https://example.test/path") ||
+		!validHTTPURL("https://example.test:8443/path") {
 		t.Fatal("wizard rejected a valid HTTP(S) URL")
 	}
 }
