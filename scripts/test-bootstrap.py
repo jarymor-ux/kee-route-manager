@@ -79,12 +79,15 @@ case "${1:-}" in
  init-config)
   shift
   output=
+  platform=
   while [ "$#" -gt 0 ]; do
    case "$1" in
     --output) output=$2; shift 2;;
+    --platform) platform=$2; shift 2;;
     *) shift;;
    esac
   done
+  printf 'ctl:init-config-platform:%s\\n' "$platform" >> "$KRM_TEST_ORDER"
   [ -n "$output" ] || exit 2
   case "${KRM_TEST_WIZARD_RESULT:-valid}" in
    cancel) exit 130;;
@@ -143,6 +146,12 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   order=(d/'order.log').read_text().splitlines();wizard=order.index('ctl:init-config');installer=order.index('installer')
   self.assertGreater(wizard,max(i for i,v in enumerate(order) if v.startswith('fetch:')));self.assertLess(wizard,installer)
   self.assertIn('ctl:validate',order)
+ def test_missing_config_pins_bootstrap_platform(self):
+  for platform in PLATFORMS:
+   with self.subTest(platform=platform):
+    d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap_tty(d,e)
+    self.assertEqual(r.returncode,0,r.stderr)
+    self.assertIn(f'ctl:init-config-platform:{platform}',(d/'order.log').read_text().splitlines())
  def test_missing_config_local_ui_uses_signed_ui_template(self):
   for platform,expected in (('keenetic','fixture-ui: keenetic\n'),('openwrt','fixture-ui: linux-openwrt\n'),('linux-systemd','fixture-ui: linux-openwrt\n')):
    with self.subTest(platform=platform):
