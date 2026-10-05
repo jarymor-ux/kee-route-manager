@@ -5,9 +5,12 @@ cd "$ROOT"
 KRM_VERSION="$(tr -d '[:space:]' < VERSION)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/release}"
 PRIVATE_KEY="${KRM_RELEASE_PRIVATE_KEY:-}"
+PUBLIC_KEY="${KRM_RELEASE_PUBLIC_KEY:-$ROOT/internal/releasetrust/public.key}"
 BASE_URL="${KRM_RELEASE_BASE_URL:-https://github.com/jarymor-ux/kee-route-manager/releases/download/v$KRM_VERSION}"
 CHANNEL="${KRM_RELEASE_CHANNEL:-rc}"
 [[ -n "$PRIVATE_KEY" && -f "$PRIVATE_KEY" ]] || { echo 'KRM_RELEASE_PRIVATE_KEY must point to an external Ed25519 private key' >&2; exit 1; }
+[[ -f "$PUBLIC_KEY" ]] || { echo 'KRM_RELEASE_PUBLIC_KEY must point to an Ed25519 public key' >&2; exit 1; }
+export KRM_RELEASE_PUBLIC_KEY="$PUBLIC_KEY"
 [[ "$CHANNEL" == rc ]] || { echo 'Release builder supports rc only' >&2; exit 1; }
 # Refuse recursive deletion of arbitrary caller paths.
 [[ "$OUTPUT_DIR" == "$ROOT/release" || "$OUTPUT_DIR" == /tmp/krm-release.* || "$OUTPUT_DIR" == /tmp/krm-release.*/output ]] || { echo 'OUTPUT_DIR must be repo/release or /tmp/krm-release.*' >&2; exit 1; }
@@ -28,8 +31,11 @@ for target in amd64 arm64 armv7 mipsle; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" GOMIPS="$mips" go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/$component-linux-$target" "./cmd/$component"
  done
 done
-# Signed install payload contains configuration, all service/uninstall scripts and trust key.
-tar -czf "$DIST/release-files.tar.gz" configs install release-public.key LICENSE NOTICE
+# Signed install payload contains configuration, all service/uninstall scripts and the selected trust key.
+TRUST_DIR="$TOOL_DIR/trust"
+mkdir -p "$TRUST_DIR"
+cp "$PUBLIC_KEY" "$TRUST_DIR/release-public.key"
+tar -czf "$DIST/release-files.tar.gz" configs install LICENSE NOTICE -C "$TRUST_DIR" release-public.key
 python3 scripts/prepare-release.py "$DIST" "$KRM_VERSION"
 "$TOOL_DIR/krm-release-tool" manifest --version "$KRM_VERSION" --channel "$CHANNEL" --base-url "$BASE_URL" --dist "$DIST" --out "$DIST/manifest-rc.json" --private "$PRIVATE_KEY" --signature "$DIST/manifest-rc.json.sig"
 python3 - "$DIST" <<'PY'

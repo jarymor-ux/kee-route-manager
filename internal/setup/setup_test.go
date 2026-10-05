@@ -12,6 +12,9 @@ import (
 func byteSizePtr(v config.ByteSize) *config.ByteSize { return &v }
 
 func validOptions(platform Platform) SetupOptions {
+	update := defaultUpdateOptions()
+	update.Enabled = true
+
 	return SetupOptions{
 		Platform: platform,
 		Subscriptions: []config.Source{
@@ -65,13 +68,7 @@ func validOptions(platform Platform) SetupOptions {
 			SpeedMaxSampleBytes: 128 << 20,
 			SpeedRepetitions:    2,
 		},
-		Update: UpdateOptions{
-			Enabled:          true,
-			Channel:          "rc",
-			GitHubRepository: "jarymor-ux/kee-route-manager",
-			PublicKey:        "t8ZyoMK5zMz2vTBuWaH8HIwMOo+E1nJXydOak0RWKAE",
-			AutoApply:        false,
-		},
+		Update: update,
 	}
 }
 
@@ -188,8 +185,8 @@ func assertGeneratedFields(t *testing.T, cfg config.Config) {
 		cfg.Benchmark.Speed.Repetitions != 2 {
 		t.Fatalf("benchmark speed = %#v", cfg.Benchmark.Speed)
 	}
-	if !cfg.Update.Enabled || cfg.Update.Channel != "rc" ||
-		cfg.Update.GitHubRepository != "jarymor-ux/kee-route-manager" ||
+	if !cfg.Update.Enabled || cfg.Update.Channel != defaultUpdateChannel ||
+		cfg.Update.GitHubRepository != defaultUpdateRepository ||
 		cfg.Update.AutoApply {
 		t.Fatalf("update = %#v", cfg.Update)
 	}

@@ -6,7 +6,7 @@ The CI workflow checks branch pushes and pull requests. Only a new `vMAJOR.MINOR
 
 ## One-time repository setup
 
-Keep the Ed25519 private key outside Git with mode `0600`. Its matching public key must be present in `release-public.key`, the controller configuration and generated bootstraps. Key changes require a deliberate trust migration on installed controllers; downloading a new public key beside an untrusted manifest does not establish trust.
+Keep the Ed25519 private key outside Git with mode `0600`. Its matching production public key is stored once at `internal/releasetrust/public.key`; Go binaries embed that file and the release builder pins the same key into controller defaults, generated bootstraps and the signed payload as `release-public.key`. Key changes require a deliberate trust migration on installed controllers; downloading a new public key beside an untrusted manifest does not establish trust.
 
 Store the signing key through standard input, without printing it or placing its contents in command arguments:
 
@@ -38,6 +38,9 @@ For a local signed build from the intended source commit:
 ```sh
 KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
 python3 scripts/verify-release.py release/dist
+
+# KRM_RELEASE_PUBLIC_KEY is reserved for isolated build/test fixtures.
+# Production builds use internal/releasetrust/public.key by default.
 ```
 
 The builder reads `VERSION` directly. `KRM_SOURCE_COMMIT` can identify an isolated source copy; official publication uses the exact tested commit SHA. Existing output is refused to prevent accidental replacement.

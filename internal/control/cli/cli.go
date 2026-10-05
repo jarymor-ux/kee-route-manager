@@ -15,6 +15,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/configflag"
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
+	"github.com/jarymor-ux/kee-route-manager/internal/setup"
 )
 
 func Validate(args []string) error {
@@ -31,8 +32,12 @@ func Validate(args []string) error {
 }
 
 func Run(ctx context.Context, args []string, version, commit, buildTime string) error {
+	return runWithIO(ctx, args, version, commit, buildTime, os.Stdin, os.Stdout)
+}
+
+func runWithIO(ctx context.Context, args []string, version, commit, buildTime string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kee-route-managerctl <status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
+		return fmt.Errorf("usage: kee-route-managerctl <init-config|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
 	}
 	command, args := args[0], args[1:]
 	switch command {
@@ -45,6 +50,8 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 		return password(args)
 	case "route-candidates":
 		return routeCandidates(args)
+	case "init-config":
+		return initConfig(args, in, out)
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	p := f.String("config", configflag.DefaultPath(), "configuration path")
@@ -104,12 +111,12 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 	}
 	cl := client.New(*socket)
 	defer cl.Close()
-	out, e := cl.Do(ctx, method, path, body)
+	response, e := cl.Do(ctx, method, path, body)
 	if e != nil {
 		return e
 	}
 	var pretty bytes.Buffer
-	if e = json.Indent(&pretty, out, "", "  "); e != nil {
+	if e = json.Indent(&pretty, response, "", "  "); e != nil {
 		return e
 	}
 	fmt.Println(pretty.String())
@@ -195,4 +202,18 @@ func routeCandidates(args []string) error {
 	}
 	fmt.Println(string(out))
 	return nil
+}
+
+func initConfig(args []string, in io.Reader, out io.Writer) error {
+	f := flag.NewFlagSet("init-config", flag.ContinueOnError)
+	f.SetOutput(out)
+	output := f.String("output", configflag.DefaultPath(), "output configuration path")
+	overwrite := f.Bool("overwrite", false, "allow replacing an existing output file")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected argument %q", f.Arg(0))
+	}
+	return setup.InitConfig(in, out, *output, *overwrite)
 }

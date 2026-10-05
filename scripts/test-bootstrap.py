@@ -25,10 +25,9 @@ class BootstrapTests(unittest.TestCase):
     self.assertEqual(result.returncode,0 if kind=='production' else 1,result.stderr)
  def test_prepare_release_pins_bootstraps_and_inventories_assets(self):
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));out=d/'dist';out.mkdir();(d/'install').mkdir()
-  (d/'release-public.key').write_bytes((self.root/'public').read_bytes())
   (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
   (out/'fixture-binary').write_bytes(b'release payload')
-  env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit'
+  env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit';env['KRM_RELEASE_PUBLIC_KEY']=str(self.root/'public')
   subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.0.0-rc.2'],cwd=d,env=env,check=True)
   for name,platform in (('keenetic','keenetic'),('openwrt','openwrt'),('linux','linux-systemd')):
    body=(out/f'bootstrap-{name}.sh').read_text()
