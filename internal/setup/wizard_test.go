@@ -283,6 +283,80 @@ func TestGeneratedConfigPassesLoadAndValidate(t *testing.T) {
 	}
 }
 
+func TestSpeedURLRequiresHTTPSAndReprompts(t *testing.T) {
+	script := wizardScript("2", true, false, "y")
+	script = strings.Replace(script,
+		"https://speed.example.test/download?bytes={bytes}\n",
+		"http://speed.example.test/download?bytes={bytes}\nhttps://speed.example.test/download?bytes={bytes}\n",
+		1,
+	)
+	cfg, out, _, err := runWizardToFile(t, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Benchmark.Speed.URLTemplate != "https://speed.example.test/download?bytes={bytes}" {
+		t.Fatalf("unexpected speed URL: %q", cfg.Benchmark.Speed.URLTemplate)
+	}
+	if !strings.Contains(out, "HTTPS") {
+		t.Fatalf("HTTP speed URL was not rejected by wizard:\n%s", out)
+	}
+}
+
+func TestWizardURLValidationMatchesConfigSecurityRules(t *testing.T) {
+	for _, raw := range []string{
+		"https://user:pass@example.test/path",
+		"https://example.test/path#fragment",
+	} {
+		if validHTTPURL(raw) {
+			t.Fatalf("wizard accepted URL rejected by config validation: %q", raw)
+		}
+	}
+	if !validHTTPURL("http://example.test/path?token=value") || !validHTTPURL("https://example.test/path") {
+		t.Fatal("wizard rejected a valid HTTP(S) URL")
+	}
+}
+
+func TestRussianWizardUsesLocalizedPromptsAndSummary(t *testing.T) {
+	_, out, _, err := runWizardToFile(t, wizardScript("1", false, true, "д"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Название подписки",
+		"Включить подписку?",
+		"Добавить HTTP-заголовок?",
+		"Размер пула [5]",
+		"Включить проверку скорости?",
+		"Включить обновления?",
+		"Подписки:",
+		"Размер пула:",
+		"Обновления:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("Russian localization missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSummaryShowsKeyNonSecretConfiguration(t *testing.T) {
+	_, out, _, err := runWizardToFile(t, wizardScript("2", false, false, "y"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"/opt/sbin/xray",
+		"/opt/etc/xray/configs",
+		"/opt/etc/xray/configs/05_routing.json",
+		"redirect, tproxy",
+		"proxy-main",
+		"Main subscription",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("summary missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestTranslationParity(t *testing.T) {
 	rv, ev := reflect.ValueOf(messagesRU), reflect.ValueOf(messagesEN)
 	rt := rv.Type()
