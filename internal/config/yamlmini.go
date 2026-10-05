@@ -209,7 +209,169 @@ func validateYAMLSubsetSource(data []byte) error {
 			return fmt.Errorf("line %d: YAML directives and document markers are not supported", line)
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return validateYAMLIndentation(data)
+}
+
+type yamlIndentLine struct {
+	indent int
+	number int
+	text   string
+}
+
+func validateYAMLIndentation(data []byte) error {
+	lines := make([]yamlIndentLine, 0)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		raw := strings.TrimRight(scanner.Text(), " \r\t")
+		if comment := legacyPlainCommentIndex(raw); comment >= 0 {
+			raw = strings.TrimRight(raw[:comment], " \t")
+		}
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		lines = append(lines, yamlIndentLine{indent: indent, number: lineNumber, text: strings.TrimSpace(raw)})
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if lines[0].indent != 0 {
+		return fmt.Errorf("line %d: top-level indentation must be zero", lines[0].number)
+	}
+	_, next, err := validateYAMLIndentBlock(lines, 0, 0)
+	if err != nil {
+		return err
+	}
+	if next != len(lines) {
+		return fmt.Errorf("line %d: unexpected content", lines[next].number)
+	}
+	return nil
+}
+
+func validateYAMLIndentBlock(lines []yamlIndentLine, index, indent int) (bool, int, error) {
+	if index >= len(lines) {
+		return false, index, fmt.Errorf("missing nested value")
+	}
+	if lines[index].indent != indent {
+		return false, index, fmt.Errorf("line %d: expected indentation %d", lines[index].number, indent)
+	}
+	if strings.HasPrefix(lines[index].text, "-") {
+		next, err := validateYAMLIndentSequence(lines, index, indent)
+		return true, next, err
+	}
+	next, err := validateYAMLIndentMap(lines, index, indent)
+	return false, next, err
+}
+
+func validateYAMLIndentMap(lines []yamlIndentLine, index, indent int) (int, error) {
+	for index < len(lines) {
+		line := lines[index]
+		if line.indent < indent {
+			break
+		}
+		if line.indent > indent {
+			return index, fmt.Errorf("line %d: unexpected indentation", line.number)
+		}
+		if strings.HasPrefix(line.text, "-") {
+			break
+		}
+		separator := legacyMappingColon(line.text)
+		if separator < 0 {
+			return index, fmt.Errorf("line %d: expected key: value", line.number)
+		}
+		rest := strings.TrimSpace(line.text[separator+1:])
+		index++
+		if rest != "" || index >= len(lines) || lines[index].indent <= indent {
+			continue
+		}
+		if lines[index].indent != indent+2 {
+			return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
+		}
+		_, next, err := validateYAMLIndentBlock(lines, index, indent+2)
+		if err != nil {
+			return index, err
+		}
+		index = next
+	}
+	return index, nil
+}
+
+func validateYAMLIndentSequence(lines []yamlIndentLine, index, indent int) (int, error) {
+	for index < len(lines) {
+		line := lines[index]
+		if line.indent < indent {
+			break
+		}
+		if line.indent > indent {
+			return index, fmt.Errorf("line %d: unexpected indentation", line.number)
+		}
+		if !strings.HasPrefix(line.text, "-") {
+			break
+		}
+
+		rest := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
+		index++
+		if rest == "" {
+			if index >= len(lines) || lines[index].indent <= indent {
+				return index, fmt.Errorf("line %d: empty list item", line.number)
+			}
+			if lines[index].indent != indent+2 {
+				return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+2)
+			}
+			_, next, err := validateYAMLIndentBlock(lines, index, indent+2)
+			if err != nil {
+				return index, err
+			}
+			index = next
+			continue
+		}
+
+		separator := legacyMappingColon(rest)
+		if separator < 0 {
+			continue
+		}
+		value := strings.TrimSpace(rest[separator+1:])
+		if value == "" && index < len(lines) && lines[index].indent > indent {
+			if lines[index].indent != indent+4 {
+				return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
+			}
+			_, next, err := validateYAMLIndentBlock(lines, index, indent+4)
+			if err != nil {
+				return index, err
+			}
+			index = next
+		}
+
+		for index < len(lines) && lines[index].indent == indent+2 && !strings.HasPrefix(lines[index].text, "-") {
+			entry := lines[index]
+			separator := legacyMappingColon(entry.text)
+			if separator < 0 {
+				return index, fmt.Errorf("line %d: expected key: value", entry.number)
+			}
+			value := strings.TrimSpace(entry.text[separator+1:])
+			index++
+			if value == "" && index < len(lines) && lines[index].indent > indent+2 {
+				if lines[index].indent != indent+4 {
+					return index, fmt.Errorf("line %d: nested indentation must be %d", lines[index].number, indent+4)
+				}
+				_, next, err := validateYAMLIndentBlock(lines, index, indent+4)
+				if err != nil {
+					return index, err
+				}
+				index = next
+			}
+		}
+	}
+	return index, nil
 }
 
 func isYAMLDocumentMarker(line string) bool {
