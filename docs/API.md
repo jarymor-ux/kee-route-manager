@@ -1,6 +1,6 @@
 # API and local control
 
-Controller network API is authenticated HTTPS on loopback, local control on private Unix socket (OS owner authorization). Both reach the same daemon manager. UI proxies `/api/` and `/healthz` and owns static routes only.
+Controller network API is authenticated and loopback-only. Shipped split-mode configs use plaintext HTTP on `127.0.0.1:9443`; explicit deployments may enable API TLS. Local control uses a private Unix socket (OS owner authorization). Both reach the same daemon manager. UI proxies `/api/` and `/healthz` and owns static routes only.
 
 `GET /healthz` normally returns cached readiness/reconciliation information, including explicit degraded state. During update trial it performs read-only Xray API reconciliation and reports `trial_ready` with process/version/nonce identity. Internal prepare/activate endpoints exist only on the owner socket and are denied through the network API. `GET /api/v1/status` is read-only. Login/session/CSRF authorization remains core-side. Responses carry request IDs; internal errors are not exposed as raw root command output.
 
