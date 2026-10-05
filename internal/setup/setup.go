@@ -77,6 +77,13 @@ type UIOptions struct {
 	RequestTimeout     config.Duration
 }
 
+func managedUIUpstreamCAPath(platform Platform) string {
+	if platform == PlatformKeenetic {
+		return "/opt/etc/kee-route-manager-ui/controller-ca.crt"
+	}
+	return "/etc/kee-route-manager-ui/controller-ca.crt"
+}
+
 func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 	if len(opts.Xray.InboundTags) == 0 {
 		return config.Config{}, fmt.Errorf("xray.inbound_tags requires at least one tag")
@@ -142,6 +149,12 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
 	default:
 		return config.Config{}, fmt.Errorf("unsupported platform %q", opts.Platform)
+	}
+	if opts.UpstreamCAFile != "" {
+		managedCA := managedUIUpstreamCAPath(opts.Platform)
+		if opts.UpstreamCAFile != managedCA {
+			return config.Config{}, fmt.Errorf("ui.upstream_ca_file must be %q for platform %q", managedCA, opts.Platform)
+		}
 	}
 
 	cfg := config.Default()
