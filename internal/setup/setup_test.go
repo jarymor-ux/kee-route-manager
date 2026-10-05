@@ -547,7 +547,7 @@ func TestBuildUIConfigRejectsInsecureTLSWithExplicitTrust(t *testing.T) {
 			Platform:       PlatformLinuxSystemd,
 			Upstream:       "https://controller.example.com",
 			InsecureTLS:    true,
-			UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
+			UpstreamCAFile: "/etc/kee-route-manager-ui/controller-ca.crt",
 		},
 		{
 			Platform:           PlatformLinuxSystemd,
