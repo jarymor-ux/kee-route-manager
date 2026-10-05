@@ -121,8 +121,7 @@ func normalizeLegacyPlainMappingLine(raw string) (string, bool) {
 }
 
 func legacyPlainScalarNeedsQuote(value string) bool {
-	if value == "" || !strings.ContainsAny(value, ":") ||
-		(!strings.Contains(value, ": ") && !strings.Contains(value, ":\t")) {
+	if value == "" || (!strings.Contains(value, ": ") && !strings.Contains(value, ":\t")) {
 		return false
 	}
 	switch value[0] {
