@@ -14,8 +14,8 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/buildinfo"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/configflag"
-	"github.com/jarymor-ux/kee-route-manager/internal/setup"
 	"github.com/jarymor-ux/kee-route-manager/internal/control/client"
+	"github.com/jarymor-ux/kee-route-manager/internal/setup"
 )
 
 func Validate(args []string) error {
