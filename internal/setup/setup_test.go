@@ -508,6 +508,29 @@ func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
 	roundTrip(t, cfg)
 }
 
+func TestBuildUIConfigRejectsInsecureTLSWithExplicitTrust(t *testing.T) {
+	tests := []UIOptions{
+		{
+			Platform:       PlatformLinuxSystemd,
+			Upstream:       "https://controller.example.com",
+			InsecureTLS:    true,
+			UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
+		},
+		{
+			Platform:           PlatformLinuxSystemd,
+			Upstream:           "https://controller.example.com",
+			InsecureTLS:        true,
+			UpstreamSPKISHA256: strings.Repeat("00", 32),
+		},
+	}
+	for _, opts := range tests {
+		_, err := BuildUIConfig(opts)
+		if err == nil || !strings.Contains(err.Error(), "ui.insecure_tls cannot be combined with CA or pin trust") {
+			t.Fatalf("expected conflicting TLS trust options to be rejected, got %v", err)
+		}
+	}
+}
+
 func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
 	_, err := BuildUIConfig(UIOptions{
 		Platform: Platform("open-wrt"),
