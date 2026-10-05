@@ -209,11 +209,15 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	f.SetOutput(out)
 	output := f.String("output", configflag.DefaultPath(), "output configuration path")
 	overwrite := f.Bool("overwrite", false, "allow replacing an existing output file")
+	platform := f.String("platform", "", "target platform (keenetic|openwrt|linux-systemd)")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", f.Arg(0))
+	}
+	if *platform != "" {
+		return setup.InitConfigForPlatform(in, out, *output, *overwrite, setup.Platform(*platform))
 	}
 	return setup.InitConfig(in, out, *output, *overwrite)
 }
