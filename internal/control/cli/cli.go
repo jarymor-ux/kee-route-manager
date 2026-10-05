@@ -111,12 +111,12 @@ func runWithIO(ctx context.Context, args []string, version, commit, buildTime st
 	}
 	cl := client.New(*socket)
 	defer cl.Close()
-	out, e := cl.Do(ctx, method, path, body)
+	response, e := cl.Do(ctx, method, path, body)
 	if e != nil {
 		return e
 	}
 	var pretty bytes.Buffer
-	if e = json.Indent(&pretty, out, "", "  "); e != nil {
+	if e = json.Indent(&pretty, response, "", "  "); e != nil {
 		return e
 	}
 	fmt.Println(pretty.String())
