@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Allow fresh core/local-ui bootstrap without a pre-created controller config: after signed release verification, run the offline wizard pinned to the bootstrap platform; configless local-ui uses the signed platform UI template.
+- Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
 ## 1.1.0-rc.7 — 2026-10-04
 

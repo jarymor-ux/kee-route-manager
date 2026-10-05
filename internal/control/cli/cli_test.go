@@ -348,3 +348,92 @@ func TestInitConfigCommandPinsPlatformWithoutPrompt(t *testing.T) {
 		t.Fatalf("platform=%q, want openwrt", cfg.Platform.Kind)
 	}
 }
+
+func TestInitConfigLocalUIPair(t *testing.T) {
+	for _, platform := range []string{"keenetic", "openwrt", "linux-systemd"} {
+		t.Run(platform, func(t *testing.T) {
+			dir := t.TempDir()
+			corePath, uiPath := filepath.Join(dir, "core.yaml"), filepath.Join(dir, "ui.yaml")
+			input := strings.Join([]string{"2", "", "", "", "", "proxy-main", "https://sub.example.test/main", "Main", "n", "n", "n", "https://score.example.test/ping", "https://health.example.test/ping", "n", "", "n", "n", "y"}, "\n") + "\n"
+			var out strings.Builder
+			err := runWithIO(context.Background(), []string{"init-config", "--platform", platform, "--output", corePath, "--ui-output", uiPath, "--tls-dir", filepath.Join(dir, "tls")}, "test", "commit", "build", strings.NewReader(input), &out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			core, err := config.Load(corePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ui, err := config.Load(uiPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !core.API.TLS.Enabled || core.API.Listen != "127.0.0.1:9443" || core.Update.AutoApply || core.Benchmark.Speed.Enabled {
+				t.Fatal("unsafe controller defaults")
+			}
+			prefix := ""
+			if platform == "keenetic" {
+				prefix = "/opt"
+			}
+			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.UIProxy.UpstreamCAFile != prefix+"/etc/kee-route-manager-ui/controller-ca.crt" {
+				t.Fatal("invalid local UI trust")
+			}
+			for _, path := range []string{corePath, uiPath, filepath.Join(dir, "tls", "tls.key")} {
+				info, err := os.Stat(path)
+				if err != nil || info.Mode().Perm() != 0600 {
+					t.Fatalf("private file permissions: %s", path)
+				}
+			}
+		})
+	}
+}
+
+func TestInitConfigLocalUIRefusesInvalidOrExistingOutputs(t *testing.T) {
+	for _, scenario := range []string{"missing-platform", "missing-ui", "missing-tls", "overwrite", "core-exists", "ui-exists", "tls-exists", "ui-symlink", "same-output"} {
+		t.Run(scenario, func(t *testing.T) {
+			dir := t.TempDir()
+			core, ui, tls := filepath.Join(dir, "core"), filepath.Join(dir, "ui"), filepath.Join(dir, "tls")
+			args := []string{"init-config", "--platform", "openwrt", "--output", core, "--ui-output", ui, "--tls-dir", tls}
+			switch scenario {
+			case "missing-platform":
+				args[2] = ""
+			case "missing-ui":
+				args[6] = ""
+			case "missing-tls":
+				args[8] = ""
+			case "overwrite":
+				args = append(args, "--overwrite")
+			case "core-exists":
+				if err := os.WriteFile(core, []byte("preserve"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "ui-exists":
+				if err := os.WriteFile(ui, []byte("preserve"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "tls-exists":
+				if err := os.Mkdir(tls, 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "ui-symlink":
+				if err := os.Symlink(filepath.Join(dir, "missing"), ui); err != nil {
+					t.Fatal(err)
+				}
+			case "same-output":
+				args[6] = core
+			}
+			var out strings.Builder
+			if err := runWithIO(context.Background(), args, "test", "commit", "build", strings.NewReader(""), &out); err == nil {
+				t.Fatal("unsafe pair accepted")
+			}
+			if strings.Contains(out.String(), "Choose language") {
+				t.Fatal("invalid pair started wizard")
+			}
+			for _, path := range []string{core, ui} {
+				if data, err := os.ReadFile(path); err == nil && string(data) != "preserve" {
+					t.Fatal("existing output changed")
+				}
+			}
+		})
+	}
+}

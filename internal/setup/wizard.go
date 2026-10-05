@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 var (
@@ -212,7 +213,7 @@ type wizard struct {
 }
 
 func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) error {
-	return initConfig(in, out, outputPath, overwrite, "")
+	return initConfig(in, out, outputPath, overwrite, "", "", "")
 }
 
 func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
@@ -221,10 +222,32 @@ func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overw
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
-	return initConfig(in, out, outputPath, overwrite, platform)
+	return initConfig(in, out, outputPath, overwrite, platform, "", "")
 }
 
-func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
+// InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
+func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
+	switch platform {
+	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	default:
+		return fmt.Errorf("unsupported platform %q", platform)
+	}
+	if uiPath == "" || tlsDir == "" || filepath.Clean(uiPath) == filepath.Clean(outputPath) {
+		return fmt.Errorf("distinct UI output and TLS directory are required")
+	}
+	if _, err := os.Lstat(uiPath); !os.IsNotExist(err) {
+		return fmt.Errorf("UI output already exists or cannot be inspected")
+	}
+	if _, err := os.Lstat(outputPath); !os.IsNotExist(err) {
+		return fmt.Errorf("controller output already exists or cannot be inspected")
+	}
+	if _, err := os.Lstat(tlsDir); !os.IsNotExist(err) {
+		return fmt.Errorf("TLS directory already exists or cannot be inspected")
+	}
+	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
+}
+
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) error {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -244,6 +267,13 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	if err != nil {
 		return err
 	}
+	if uiPath != "" {
+		prefix := ""
+		if platform == PlatformKeenetic {
+			prefix = "/opt"
+		}
+		cfg.API.TLS = config.TLS{Enabled: true, AutoGenerate: true, CertFile: prefix + "/etc/kee-route-manager/tls.crt", KeyFile: prefix + "/etc/kee-route-manager/tls.key"}
+	}
 	w.printSummary(summary)
 	ok, err := w.askBool(w.msg.Create, true)
 	if err != nil {
@@ -254,7 +284,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	}
 
 	allowOverwrite := overwrite
-	if !overwrite {
+	if !overwrite && uiPath == "" {
 		if _, err := os.Stat(outputPath); err == nil {
 			ok, err = w.askBool(w.msg.Overwrite, false)
 			if err != nil {
@@ -269,6 +299,20 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		}
 	}
 
+	if uiPath != "" {
+		ui, err := BuildUIConfig(UIOptions{Platform: platform, Upstream: "https://127.0.0.1:9443", UpstreamCAFile: managedUIUpstreamCAPath(platform)})
+		if err != nil {
+			return err
+		}
+		stagedTLS := cfg.API.TLS
+		stagedTLS.CertFile, stagedTLS.KeyFile = filepath.Join(tlsDir, "tls.crt"), filepath.Join(tlsDir, "tls.key")
+		if err := tlsutil.EnsureTLS(stagedTLS, cfg.API.Listen); err != nil {
+			return err
+		}
+		if err := writeConfig(uiPath, ui, false); err != nil {
+			return err
+		}
+	}
 	if err := writeConfig(outputPath, cfg, allowOverwrite); err != nil {
 		return err
 	}

@@ -11,6 +11,22 @@ class BootstrapTests(unittest.TestCase):
   subprocess.run([str(cls.tool),'keygen','--public',str(cls.root/'public'),'--private',str(cls.root/'private')],check=True)
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()
+ def test_standalone_ui_rejects_missing_trust_before_effects(self):
+  for case in ('no-ca-path','no-ca-file'):
+   with self.subTest(case=case):
+    d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
+    (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
+    for name,body in (('id','echo 0'),('uname','echo x86_64'),('systemctl','exit 0')):
+     f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
+    ui=d/'dist/kee-route-manager-ui-linux-amd64'
+    ui.write_text('#!/bin/sh\nif [ "$1" = upstream-ca-path ]; then printf "%s" "$KRM_TEST_CA_PATH"; fi\n');ui.chmod(0o755)
+    config=d/'ui.yaml';config.write_text('fixture')
+    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='linux-systemd',KRM_MODE='ui',KRM_CONFIG_FILE=str(config),KRM_TEST_CA_PATH='' if case=='no-ca-path' else '/etc/kee-route-manager-ui/controller-ca.crt')
+    env.pop('KRM_UPSTREAM_CA_FILE',None);env.pop('KRM_GENERATED_TLS_DIR',None)
+    # Linux preflight avoids router paths; platform-specific CA paths are
+    # independently exercised by the disposable Docker installer matrix.
+    result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
+    self.assertNotEqual(result.returncode,0);self.assertIn('standalone UI requires HTTPS with trusted upstream CA',result.stderr)
  def test_keenetic_status_helper_ignores_nonproduction_processes(self):
   for kind in ('production','probe','wrong-executable','wrong-config','zombie','missing'):
    with self.subTest(kind=kind):
@@ -80,15 +96,24 @@ case "${1:-}" in
   shift
   output=
   platform=
+  ui_output=
+  tls_dir=
   while [ "$#" -gt 0 ]; do
    case "$1" in
     --output) output=$2; shift 2;;
     --platform) platform=$2; shift 2;;
+    --ui-output) ui_output=$2; shift 2;;
+    --tls-dir) tls_dir=$2; shift 2;;
     *) shift;;
    esac
   done
   printf 'ctl:init-config-platform:%s\\n' "$platform" >> "$KRM_TEST_ORDER"
   [ -n "$output" ] || exit 2
+  if [ -n "$ui_output" ]; then
+   printf 'fixture-ui: generated-https\\n' > "$ui_output"
+   mkdir "$tls_dir"
+   printf 'public certificate\\n' > "$tls_dir/tls.crt"
+  fi
   case "${KRM_TEST_WIZARD_RESULT:-valid}" in
    cancel) exit 130;;
    invalid) printf 'invalid: [\\n' > "$output";;
@@ -157,12 +182,20 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
     d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap_tty(d,e)
     self.assertEqual(r.returncode,0,r.stderr)
     self.assertIn(f'ctl:init-config-platform:{platform}',(d/'order.log').read_text().splitlines())
- def test_missing_config_local_ui_uses_signed_ui_template(self):
-  for platform,expected in (('keenetic','fixture-ui: keenetic\n'),('openwrt','fixture-ui: linux-openwrt\n'),('linux-systemd','fixture-ui: linux-openwrt\n')):
+ def test_missing_config_local_ui_generates_pair(self):
+  for platform,expected in (('keenetic','fixture-ui: generated-https\n'),('openwrt','fixture-ui: generated-https\n'),('linux-systemd','fixture-ui: generated-https\n')):
    with self.subTest(platform=platform):
     d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';r=self.run_bootstrap_tty(d,e)
     self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n');self.assertEqual((d/'ui-config-used').read_text(),expected)
     order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertIn('installer',order)
+ def test_generated_local_ui_cleans_up_pair_and_requires_managed_trust(self):
+  d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui'
+  r=self.run_bootstrap_tty(d,e);self.assertEqual(r.returncode,0,r.stderr)
+  for name in ('config-path','ui-config-path'):
+   self.assertFalse(pathlib.Path((d/name).read_text().strip()).exists())
+  for supplied in ('KRM_UI_CONFIG_FILE','KRM_UPSTREAM_CA_FILE'):
+   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';e[supplied]=str(d/'custom.yaml')
+   r=self.run_bootstrap_tty(d,e);self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists());self.assertNotIn('ctl:init-config',(d/'order.log').read_text())
  def test_ui_mode_without_config_requires_prepared_ui_config(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='ui';r=self.run_bootstrap_tty(d,e)
   self.assertNotEqual(r.returncode,0);self.assertIn('KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config',r.stderr);self.assertFalse(m.exists())

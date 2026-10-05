@@ -80,6 +80,9 @@ if [ "$MODE" != core ]; then
  [ -n "$UI_INPUT" ] && [ -f "$UI_INPUT" ] || fail 'local-ui requires KRM_UI_CONFIG_FILE pointing to a prepared UI config'
  "$src" validate --config "$UI_INPUT"
  UI_UPSTREAM_CA_PATH=$("$src" upstream-ca-path --config "$UI_INPUT")
+ if [ "$MODE" = ui ]; then
+  [ -n "$UI_UPSTREAM_CA_PATH" ] && [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'standalone UI requires HTTPS with trusted upstream CA and KRM_UPSTREAM_CA_FILE; use an authenticated SSH tunnel'
+ fi
  if [ -n "$UI_UPSTREAM_CA_PATH" ]; then
   [ "$UI_UPSTREAM_CA_PATH" = "$UI_DIR/controller-ca.crt" ] || fail "ui.upstream_ca_file must be $UI_DIR/controller-ca.crt for installer-managed custom CA"
   [ -n "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'UI config requires a custom upstream CA; set KRM_UPSTREAM_CA_FILE before installation'
@@ -89,6 +92,14 @@ if [ "$MODE" != core ]; then
   fail 'KRM_UPSTREAM_CA_FILE was provided but ui.upstream_ca_file is empty'
  fi
  cp "$UI_INPUT" "$STAGE/ui.yaml"
+fi
+# Only configless local-ui supplies a private staged identity, before any service
+# starts. The controller alone receives the private key; UI gets the public CA.
+if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
+ [ "$MODE" = local-ui ] || fail 'generated TLS identity requires local-ui'
+ [ -f "$KRM_GENERATED_TLS_DIR/tls.crt" ] && [ -f "$KRM_GENERATED_TLS_DIR/tls.key" ] || fail 'generated controller TLS identity is missing'
+ [ ! -e "$CONFIG_DIR/tls.crt" ] && [ ! -L "$CONFIG_DIR/tls.crt" ] && [ ! -e "$CONFIG_DIR/tls.key" ] && [ ! -L "$CONFIG_DIR/tls.key" ] || fail 'existing controller TLS identity detected'
+ openssl x509 -in "$KRM_GENERATED_TLS_DIR/tls.crt" -noout >/dev/null || fail 'invalid generated controller certificate'
 fi
 # Preserve existing installations; reinstall requires explicit uninstall first.
 if [ "$MODE" != ui ]; then [ ! -e "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'; fi
@@ -102,6 +113,11 @@ if [ "$MODE" != ui ]; then
  mkdir -p "$CONFIG_DIR" "$RUN"
  chmod 0700 "$CONFIG_DIR" "$RUN"
  cp "$STAGE/core.yaml" "$CONFIG"; chmod 0600 "$CONFIG"
+ if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
+  cp "$KRM_GENERATED_TLS_DIR/tls.crt" "$CONFIG_DIR/tls.crt"
+  cp "$KRM_GENERATED_TLS_DIR/tls.key" "$CONFIG_DIR/tls.key"
+  chmod 0644 "$CONFIG_DIR/tls.crt"; chmod 0600 "$CONFIG_DIR/tls.key"
+ fi
  if [ "$PLATFORM" = keenetic ]; then
   cp "$ROOT/install/keenetic/xray-status.sh" "$CONFIG_DIR/xray-status.sh"
   chmod 0755 "$CONFIG_DIR/xray-status.sh"
