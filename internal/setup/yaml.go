@@ -12,6 +12,10 @@ import (
 )
 
 func WriteConfig(path string, cfg config.Config) error {
+	return writeConfig(path, cfg, true)
+}
+
+func writeConfig(path string, cfg config.Config, overwrite bool) error {
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("validate config before write: %w", err)
 	}
@@ -47,8 +51,14 @@ func WriteConfig(path string, cfg config.Config) error {
 	if _, err := config.Load(tmpName); err != nil {
 		return fmt.Errorf("verify generated config: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace config: %w", err)
+	if overwrite {
+		if err := os.Rename(tmpName, path); err != nil {
+			return fmt.Errorf("replace config: %w", err)
+		}
+		return nil
+	}
+	if err := os.Link(tmpName, path); err != nil {
+		return fmt.Errorf("create config without overwrite: %w", err)
 	}
 	return nil
 }
