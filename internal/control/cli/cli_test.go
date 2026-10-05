@@ -304,3 +304,25 @@ func TestPasswordStdinCreatesPrivateCredentialsOnly(t *testing.T) {
 		t.Fatal("invalid password overwrote credentials")
 	}
 }
+
+
+func TestInitConfigCommandRunsOfflineWithInjectedIO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	input := strings.Join([]string{
+		"2", "1", "", "", "", "", "proxy-main",
+		"https://sub.example.test/main", "Main", "", "n", "n",
+		"https://score.example.test/ping",
+		"https://health.example.test/ping", "n", "",
+		"n", "n", "y",
+	}, "\n") + "\n"
+	var out strings.Builder
+	if err := runWithIO(context.Background(), []string{"init-config", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config was not created: %v", err)
+	}
+	if !strings.Contains(out.String(), "Create configuration?") {
+		t.Fatalf("wizard output missing: %s", out.String())
+	}
+}
