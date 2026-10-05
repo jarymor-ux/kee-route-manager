@@ -153,6 +153,22 @@ func TestYAMLSubsetKeepsPlainTimestampLikeValuesAsStrings(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesLegacyPlainScalarColonSpace(t *testing.T) {
+	d := t.TempDir()
+	p := filepath.Join(d, "config.yaml")
+	body := strings.Replace(validYAML, "name: Provider A", "name: Provider: Europe", 1)
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("legacy plain scalar with colon-space rejected: %v", err)
+	}
+	if got := cfg.Subscriptions.Sources[0].Name; got != "Provider: Europe" {
+		t.Fatalf("subscription name = %q, want %q", got, "Provider: Europe")
+	}
+}
+
 func TestShippedControllerTemplatesUseRepositoryDiscovery(t *testing.T) {
 	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
 		t.Run(name, func(t *testing.T) {
