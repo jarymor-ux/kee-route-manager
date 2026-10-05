@@ -148,6 +148,8 @@ func TestSameOriginRejectsDNSRebindingOnPlaintextAPI(t *testing.T) {
 		{name: "loopback IPv4 HTTP", host: "127.0.0.1:9443", origin: "http://127.0.0.1:9443", want: true},
 		{name: "loopback IPv6 HTTP", host: "[::1]:9443", origin: "http://[::1]:9443", want: true},
 		{name: "rebinding hostname HTTP", host: "attacker.example:9443", origin: "http://attacker.example:9443", want: false},
+		{name: "rebinding hostname HTTP without origin", host: "attacker.example:9443", origin: "", want: false},
+		{name: "localhost HTTP", host: "localhost:9443", origin: "http://localhost:9443", want: true},
 		{name: "trusted hostname HTTPS", tls: true, host: "controller.example:9443", origin: "https://controller.example:9443", want: true},
 	}
 	for _, tc := range tests {
