@@ -1,6 +1,6 @@
 # Полная установка Kee Route Manager для AI-агента
 
-Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Версия: **v1.1.0-rc.7**, experimental prerelease. Аппаратная приёмка каждой платформы проводится отдельно; контейнерные проверки не заменяют её. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
+Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Текущий опубликованный релиз: **v1.1.0-rc.7**, experimental prerelease. Интерактивный сценарий ниже требует следующего подписанного релиза с этим изменением; старые assets не обновляются. Аппаратная приёмка каждой платформы проводится отдельно; контейнерные проверки не заменяют её. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
 
 **Прежний v1.0.0-rc.2 не использовать для новой установки:** его раздельные секции Xray `routing` перезаписывают друг друга. В новой версии routing объединён в выбранном base-файле и проверен с реальным Xray. Прежние опубликованные assets остаются неизменными.
 
@@ -54,14 +54,16 @@ crontab -l
 ```sh
 git clone https://github.com/jarymor-ux/kee-route-manager.git
 cd kee-route-manager
-git checkout v1.1.0-rc.7
+git checkout RELEASE_TAG
 ```
 
-Читайте release notes и `release-public.key`. Для этой версии используется закреплённый release signing key; ключ доверять через аутентифицированный репозиторий/канал владельца, а не через файл, скачанный вместе с потенциально подменённой подписью. Bootstrap содержит pinned public key. Первое получение bootstrap защищено HTTPS/GitHub trust; для усиления проверьте подпись и его digest на доверенном компьютере командой `scripts/verify-release.py` после скачивания assets.
+Читайте release notes и `internal/releasetrust/public.key`. Для этой версии используется закреплённый release signing key; ключ доверять через аутентифицированный репозиторий/канал владельца, а не через файл, скачанный вместе с потенциально подменённой подписью. Bootstrap содержит pinned public key. Первое получение bootstrap защищено HTTPS/GitHub trust; для усиления проверьте подпись и его digest на доверенном компьютере командой `scripts/verify-release.py` после скачивания assets.
 
-Для этой инструкции используйте assets из release `v1.1.0-rc.7`; сначала убедитесь, что опубликован весь подписанный набор. Если release ещё отсутствует, установка по этим ссылкам должна остановиться, а не подменять версию. Не используйте `main` или `/releases/latest` для установки. Версия, бинарники, сервисы и конфигурации должны совпадать.
+Замените `RELEASE_TAG` на неизменяемый tag выбранного релиза с интерактивным установщиком. `RELEASE_URL` ниже — полный HTTPS URL bootstrap asset той же версии: `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` или `bootstrap-linux.sh`. Сначала убедитесь, что опубликован весь подписанный набор. Если release ещё отсутствует, установка по этим ссылкам должна остановиться, а не подменять версию. Не используйте `main` или `/releases/latest` для установки. Версия, бинарники, сервисы и конфигурации должны совпадать.
 
-## 4. Подготовить приватную core-конфигурацию
+## 4. Выбрать подготовленную или интерактивную конфигурацию
+
+При новой установке без `KRM_CONFIG_FILE` приватный config создаёт RU/EN wizard после полной проверки signed assets. Подготовка YAML вручную необязательна; предварительно определите реальные Xray paths и routing tags, subscriptions и независимые health targets. Для prepared/noninteractive пути выполните подготовку ниже: если передан `KRM_CONFIG_FILE`, wizard не запускается.
 
 Скопируйте подходящий шаблон `configs/keenetic.yaml`, `configs/openwrt.yaml` или `configs/linux-systemd.yaml` в приватный каталог на целевом устройстве (например `/root/krm-install/config.yaml`), mode 0600. Не редактируйте tracked template реальными данными.
 
@@ -85,34 +87,60 @@ kee-route-managerctl validate --config /root/krm-install/config.yaml
 
 Если ctl ещё не установлен, на доверенном компьютере используйте собранный `dist/kee-route-managerctl` с приватной копией routing JSON или проверенный бинарник из release. `route-candidates` только читает strict JSON и показывает кандидатов; выбор не должен быть автоматическим при неоднозначных rules. Не запускайте непроверенный бинарник для проверки его самого.
 
-## 5. Установить core-only
+## 5. Установить через wizard или готовый config
 
-Подготовьте private config и безопасный пароль. Installer читает пароль с терминала; для полностью автоматического запуска создайте root-only `KRM_PASSWORD_FILE` вне Git и удалите после настройки. Не передавайте пароль параметром командной строки.
+Выберите интерактивный или prepared config путь и безопасный пароль. Installer читает пароль с терминала; для полностью автоматического запуска создайте root-only `KRM_PASSWORD_FILE` вне Git и удалите после настройки. Не передавайте пароль параметром командной строки.
 
-Keenetic:
+Новый простой сценарий для Keenetic, OpenWrt и Linux/systemd:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-keenetic.sh
-KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
+sh /tmp/krm-bootstrap.sh
+```
+
+Без `KRM_MODE` используется `local-ui`. После полной проверки release assets bootstrap запускает подписанный `kee-route-managerctl init-config`, предлагает русский или английский язык, проверяет созданный временный config и только затем передаёт его installer. Нужен интерактивный TTY. Wizard настраивает Xray paths, реальные inbound/outbound tags, subscriptions/headers, score/health targets, размер пула, speed test и update discovery. Routing tags нельзя угадывать; при неоднозначности сначала используйте `route-candidates`. Health targets желательно выбирать на разных hostname у независимых операторов: при quorum 2 один сервер под двумя URL не даёт независимых свидетельств.
+
+Безопасные defaults: firewall `existing`, API на loopback, приватные config/credentials, speed test выключен, автоматическое применение обновлений выключено (`auto_apply: false`). Поиск обновлений — отдельная опция, не разрешение на их применение. При включении speed test нужен HTTPS URL-шаблон с `{bytes}`. Wizard не устанавливает Xray и не угадывает рабочие routing tags.
+
+Advanced/noninteractive сценарий сохраняется и пропускает wizard:
+
+```sh
+KRM_MODE=core \
+KRM_CONFIG_FILE=/root/krm-install/config.yaml \
+sh /tmp/krm-bootstrap.sh
+```
+
+После установки Keenetic:
+
+```sh
 /opt/bin/kee-route-managerctl ready --config /opt/etc/kee-route-manager/config.yaml
 /opt/bin/kee-route-managerctl status --config /opt/etc/kee-route-manager/config.yaml
 ```
 
-OpenWrt: bootstrap `bootstrap-openwrt.sh`, ctl `/usr/bin/kee-route-managerctl`, config `/etc/kee-route-manager/config.yaml`. Linux/systemd: `bootstrap-linux.sh`, ctl `/usr/local/bin/kee-route-managerctl`, та же config.
+OpenWrt: ctl `/usr/bin/kee-route-managerctl`, config `/etc/kee-route-manager/config.yaml`. Linux/systemd: ctl `/usr/local/bin/kee-route-managerctl`, та же config. Установленные controller config/credentials остаются private (0600, каталоги 0700); URL/headers/пароли не должны попадать в отчёт или логи.
 
 Bootstrap проверяет native Ed25519 signatures manifest и SHA256SUMS, каждый digest/size перед исполнением, затем распаковывает signed install payload. Core-установка получает стабильный launcher и начальный подписанный slot с daemon, UI и CLI; UI в core-only не запускается. Сервис запускает launcher, а он — daemon. На Keenetic helper `/opt/etc/kee-route-manager/xray-status.sh` проверяет именно основной Xray с production config directory, исключая временные probe-процессы. Установщик не перезаписывает существующий config/binary. Readiness endpoint может сообщать **safe degraded**: внимательно прочитать JSON, убедиться в state/reconciliation и фактическом маршруте; HTTP 200 сам по себе не доказывает работающий VPN.
 
 ## 6. Core + UI на одном устройстве
 
-Дополнительно подготовьте UI YAML из `configs/ui-keenetic.yaml` или `configs/ui-linux-openwrt.yaml`. В нём `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`. Браузерный `web` остаётся на HTTPS, а локальный upstream к controller — `http://127.0.0.1:9443`. Controller API остаётся loopback-only, поэтому отдельный CA между UI и controller на одном устройстве не нужен.
-
-С нуля:
+Новая интерактивная установка автоматически создаёт **два YAML** — controller и UI:
 
 ```sh
-KRM_MODE=local-ui KRM_CONFIG_FILE=/root/krm-install/config.yaml KRM_UI_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
+KRM_MODE=local-ui sh /tmp/krm-bootstrap.sh
 ```
 
-Installer больше не генерирует отдельный API TLS/CA для локальной связи UI→controller. На Keenetic/OpenWrt один сервис launcher запускает daemon и локальный UI; отдельный `S98kee-route-manager-ui`/UI procd-сервис не устанавливается. На Linux UI сохраняет отдельный DynamicUser-сервис и обновляется вручную; launcher не запускает его с правами root. `KRM_UPSTREAM_CA_FILE` опционален: для HTTPS upstream без него используется системное хранилище доверия; файл нужен только для private/custom CA. UI не хранит admin пароль и не получает private API key.
+Controller config создаётся RU/EN wizard; UI config формируется подписанным CLI с platform-specific defaults. Controller API слушает `127.0.0.1:9443` с TLS; UI использует `https://127.0.0.1:9443`, `insecure_tls: false` и публичный сертификат controller в `controller-ca.crt`. Installer готовит сертификат и trust-файл до запуска UI. Private key остаётся у controller и не копируется в UI. UI config не содержит controller secrets; mode 0644 и каталог 0755 позволяют Linux DynamicUser читать его, ключ UI остаётся 0600. UI trust-файл — `/opt/etc/kee-route-manager-ui/controller-ca.crt` на Keenetic, `/etc/kee-route-manager-ui/controller-ca.crt` на OpenWrt/Linux. Второй YAML вручную не нужен; generated configs проходят validation до запуска сервисов.
+
+Обратная совместимость prepared config сохранена: переданный `KRM_CONFIG_FILE` не запускает wizard. Для `local-ui` также передайте заранее подготовленный UI config из `configs/ui-keenetic.yaml` или `configs/ui-linux-openwrt.yaml`, согласованный с controller TLS:
+
+```sh
+KRM_MODE=local-ui \
+KRM_CONFIG_FILE=/root/krm-install/config.yaml \
+KRM_UI_CONFIG_FILE=/root/krm-install/ui.yaml \
+sh /tmp/krm-bootstrap.sh
+```
+
+На Keenetic/OpenWrt один сервис launcher запускает daemon и локальный UI; отдельный `S98kee-route-manager-ui`/UI procd-сервис не устанавливается. На Linux UI сохраняет отдельный DynamicUser-сервис и обновляется вручную; launcher не запускает его с правами root. UI не хранит admin пароль и не получает private API key. Existing installation нельзя молча перезаписать; перед reinstall следуйте разделу 10.
 
 Откройте `https://ROUTER_ADDRESS:9444/`. Сверьте SHA256 fingerprint сертификата через SSH, затем добавьте его в доверенные браузера либо используйте собственный trusted cert. Не отключайте TLS проверки. Login/session/CSRF обрабатываются core. Проверить `/`, `/assets/app.css`, `/assets/app.js`, `/sw.js`, `/manifest.webmanifest`: HTTP 200; PWA на доверенном HTTPS origin.
 
@@ -124,14 +152,19 @@ Core API слушает только loopback. Используйте посто
 ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:9445:127.0.0.1:9443 -p SSH_PORT USER@ROUTER_ADDRESS
 ```
 
-SSH tunnel уже шифрует межмашинный участок. В UI YAML используйте upstream `http://127.0.0.1:9445`; отдельный API cert/CA для этого туннеля не нужен. Не открывайте controller API напрямую в LAN/WAN. Если вместо SSH tunnel намеренно используется HTTPS upstream, по умолчанию используется системное хранилище доверия. Для installer-managed private/custom CA задайте `upstream_ca_file: /etc/kee-route-manager-ui/controller-ca.crt` на Linux/OpenWrt или `/opt/etc/kee-route-manager-ui/controller-ca.crt` на Keenetic и передайте исходный PEM через `KRM_UPSTREAM_CA_FILE`. Installer проверяет соответствие пути и валидность сертификата до записи системных файлов. При необходимости дополнительно задайте `ui.upstream_spki_sha256`.
+SSH tunnel шифрует межмашинный участок и аутентифицирует SSH peer; проверка HTTPS controller остаётся обязательной. В UI YAML используйте `ui.upstream: https://127.0.0.1:9445`, `insecure_tls: false`, `upstream_ca_file: /etc/kee-route-manager-ui/controller-ca.crt` на Linux/OpenWrt или `/opt/etc/kee-route-manager-ui/controller-ca.crt` на Keenetic. По аутентифицированному SSH каналу получите **публичный** controller certificate/CA и передайте его через `KRM_UPSTREAM_CA_FILE`; private key не переносите. Сертификат должен быть доверенным и подходить для loopback HTTPS upstream; не отключайте проверку имени/цепочки. При необходимости дополнительно задайте `ui.upstream_spki_sha256`.
+
+Installer проверяет соответствие CA path и валидность сертификата до записи системных файлов. Не открывайте controller API напрямую в LAN/WAN. Не устанавливайте `insecure_tls: true`, не отключайте SSH host verification.
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-linux.sh
-KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml sh /tmp/krm-bootstrap.sh
-# Для HTTPS upstream с private/custom CA:
-KRM_MODE=ui KRM_CONFIG_FILE=/root/krm-install/ui.yaml KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt sh /tmp/krm-bootstrap.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
+KRM_MODE=ui \
+KRM_CONFIG_FILE=/root/krm-install/ui.yaml \
+KRM_UPSTREAM_CA_FILE=/root/krm-install/controller-ca.crt \
+sh /tmp/krm-bootstrap.sh
 ```
+
+UI-only режим не использует controller wizard: `KRM_MODE=ui` требует заранее подготовленный `KRM_CONFIG_FILE` с `instance.role: ui`. Без trusted upstream CA и authenticated SSH flow удалённую UI-установку не продолжать.
 
 Скачивание выше выполнять на Linux-компьютере с UI. Для UI на OpenWrt/Keenetic выбрать bootstrap соответствующей платформы, не переносить Keenetic bootstrap на Linux-хост.
 

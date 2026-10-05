@@ -15,15 +15,29 @@ KRM управляет проверенным горячим пулом Xray, п
 
 На Linux/OpenWrt с `firewall_mode: managed` установка и обычная работа KRM поддерживаются, но для обновлений доступна только проверка новых версий: скачивание через updater, применение и candidate trial запрещены до реализации read-only reconciliation управляемого firewall. Keenetic и режим `existing` на Linux/OpenWrt допускают применение через launcher; это не добавляет Keenetic автоматический bypass. Подробности — в [ограничениях](docs/KNOWN_LIMITATIONS.md). Production bootstrap использует одну фиксированную версию и проверяет Ed25519 и SHA256 до исполнения скачанных программ.
 
-Чтобы передать установку своему AI-агенту, достаточно ссылки на репозиторий: [глобальные инструкции AGENTS.md](AGENTS.md) и [полный порядок установки](docs/AGENT_INSTALL.md). Там описаны SSH, backup, подготовка config без секретов в Git, выбор routing tags, core-only, локальный/удалённый UI, TLS, readiness, удаление и rollback.
+Чтобы передать установку своему AI-агенту, достаточно ссылки на репозиторий: [глобальные инструкции AGENTS.md](AGENTS.md) и [полный порядок установки](docs/AGENT_INSTALL.md). Там описаны SSH, backup, подготовленная или интерактивная конфигурация, выбор routing tags, core-only, локальный/удалённый UI, TLS, readiness, удаление и rollback.
 
-После публикации подписанного release и подготовки приватной конфигурации:
+Для новой установки скачайте bootstrap своей платформы из **одного неизменяемого подписанного релиза с интерактивным установщиком** и запустите без config:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-keenetic.sh
-KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
+sh /tmp/krm-bootstrap.sh
 ```
 
-Для OpenWrt/Linux используйте `bootstrap-openwrt.sh`/`bootstrap-linux.sh`. Ограничения: [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Автоматические проверки: [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions). Изменения: [CHANGELOG.md](CHANGELOG.md).
+Замените `RELEASE_URL` на URL asset `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` или `bootstrap-linux.sh` выбранного релиза. Этот сценарий относится к следующему релизу: опубликованные assets v1.1.0-rc.7 не изменяются.
+
+После проверки всех release assets wizard на **русском или английском** настраивает пути Xray, явно выбранные routing tags, подписки и headers, score/health targets, размер пула, необязательную проверку скорости и поиск обновлений. Без `KRM_MODE` используется `local-ui`; для установки только controller запустите `KRM_MODE=core sh /tmp/krm-bootstrap.sh`. Нужен интерактивный терминал. Wizard создаёт приватный controller config и проверяет его; в `local-ui` также автоматически создаётся UI config с upstream `https://127.0.0.1:9443` и публичным сертификатом controller в `controller-ca.crt`. TLS verification остаётся включённой, второй YAML готовить вручную не требуется.
+
+Routing tags нельзя угадывать: выберите реальные значения из Xray rules через `kee-route-managerctl route-candidates --file PATH`. Health targets желательно размещать на независимых hostname у разных операторов, чтобы сбой одного сервера не выглядел отказом VPN. Безопасные defaults сохраняют существующее управление firewall, loopback API, выключенный speed test и `auto_apply: false`. Поиск обновлений не включает автоматическое применение. Секретные URL, headers и credentials не должны попадать в логи.
+
+Существующий advanced/noninteractive вариант пропускает wizard:
+
+```sh
+KRM_MODE=core \
+KRM_CONFIG_FILE=/root/krm-install/config.yaml \
+sh /tmp/krm-bootstrap.sh
+```
+
+При prepared config для `local-ui` по-прежнему нужен `KRM_UI_CONFIG_FILE`: подготовьте оба YAML с согласованными TLS-настройками. Для отдельного `KRM_MODE=ui` нужны подготовленный UI config, trusted upstream CA через `KRM_UPSTREAM_CA_FILE` и authenticated SSH tunnel; wizard не обходит эти требования. Existing installation не перезаписывается: restore/uninstall/reinstall описаны в [runbook](docs/AGENT_INSTALL.md). Ограничения: [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). Автоматические проверки: [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions). Изменения: [CHANGELOG.md](CHANGELOG.md).
 
 Лицензия [Apache-2.0](LICENSE) выбрана владельцем.

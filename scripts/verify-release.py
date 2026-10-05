@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Verify Ed25519 signatures and every manifest asset before release upload."""
-import base64,hashlib,json,pathlib,subprocess,sys,tempfile
+import base64,hashlib,json,os,pathlib,subprocess,sys,tempfile
 p=pathlib.Path(sys.argv[1]).resolve()
-pub=base64.b64decode(pathlib.Path('release-public.key').read_text().strip()+'===')
+key_path=pathlib.Path(os.environ.get('KRM_RELEASE_PUBLIC_KEY','internal/releasetrust/public.key'))
+pub=base64.b64decode(key_path.read_text().strip()+'===')
+if len(pub)!=32: raise SystemExit('invalid release public key')
 with tempfile.TemporaryDirectory() as d:
  d=pathlib.Path(d);(d/'pub.der').write_bytes(bytes.fromhex('302a300506032b6570032100')+pub)
  for name in ['manifest-rc.json','SHA256SUMS']:

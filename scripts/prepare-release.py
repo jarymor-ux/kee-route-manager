@@ -2,7 +2,8 @@
 """Create pinned bootstraps and a source/package SPDX inventory; no third party runtime Go modules."""
 import base64, datetime, hashlib, json, pathlib, subprocess, sys, os
 out=pathlib.Path(sys.argv[1]);version=sys.argv[2]
-pub=base64.b64decode(pathlib.Path('release-public.key').read_text().strip()+'===')
+key_path=pathlib.Path(os.environ.get('KRM_RELEASE_PUBLIC_KEY','internal/releasetrust/public.key'))
+pub=base64.b64decode(key_path.read_text().strip()+'===')
 if len(pub)!=32: raise SystemExit('invalid release public key')
 der=bytes.fromhex('302a300506032b6570032100')+pub
 b64=base64.b64encode(der).decode()

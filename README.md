@@ -17,16 +17,30 @@ Failover compares independent health targets through VPN and WAN with quorum; in
 
 The launcher checks for updates at the configured interval; installation requires an explicit UI/CLI action. A signed protocol-1 bundle updates daemon, CLI and managed local UI together, verifies process/API/reconciliation readiness, and rolls back a failed trial before commit. After commit, recovery restarts the new version without restoring old controller state. The stable launcher is updated manually. Linux UI retains its separate unprivileged service. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
 
-For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, private config, core-only/local UI/remote UI, readiness, uninstall and rollback.
+For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-Example after preparing private config as described in the runbook:
+For a fresh installation, download the bootstrap for your platform from **one immutable signed release containing the interactive installer**, then run it without a config:
 
 ```sh
-curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.1.0-rc.7/bootstrap-keenetic.sh
-KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
+curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
+sh /tmp/krm-bootstrap.sh
 ```
 
-OpenWrt/Linux assets: `bootstrap-openwrt.sh` / `bootstrap-linux.sh`. Local UI requires `KRM_UI_CONFIG_FILE`; remote UI uses an authenticated SSH tunnel and trusted controller CA/SPKI. No mutable `main` installation or insecure upstream TLS defaults.
+Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` asset URL. These instructions describe the next release; published v1.1.0-rc.7 assets do not acquire this behavior.
+
+After verification of all release assets, the RU/EN wizard configures Xray paths, explicit routing tags, subscriptions and headers, score/health targets, pool size, optional speed testing and update discovery. With no `KRM_MODE`, installation defaults to `local-ui`; use `KRM_MODE=core sh /tmp/krm-bootstrap.sh` for controller only. The wizard generates a validated private controller config; `local-ui` also creates the UI config automatically, using `https://127.0.0.1:9443` and the controller's public certificate installed as `controller-ca.crt`. TLS verification remains enabled. An interactive terminal is required.
+
+Routing tags must come from the actual Xray rules: inspect `kee-route-managerctl route-candidates --file PATH`; never guess a tag. Use health targets on independent hosts, preferably different operators, so one target outage does not look like VPN failure. Safe defaults retain existing firewall management, keep API access on loopback, disable speed tests and keep `auto_apply: false`; update discovery does not apply updates. Subscription URLs, headers and credentials belong in private files, never logs.
+
+The advanced/noninteractive path remains available and skips the wizard:
+
+```sh
+KRM_MODE=core \
+KRM_CONFIG_FILE=/root/krm-install/config.yaml \
+sh /tmp/krm-bootstrap.sh
+```
+
+Prepared `local-ui` installations also require `KRM_UI_CONFIG_FILE`; prepare both files and their TLS settings explicitly. Standalone `KRM_MODE=ui` requires a prepared UI config, a trusted upstream CA supplied via `KRM_UPSTREAM_CA_FILE`, and an authenticated SSH tunnel. The wizard does not bypass remote trust requirements. Existing installations are refused rather than overwritten; follow the runbook for restore, uninstall and reinstall. No mutable `main` installation or insecure upstream TLS defaults.
 
 ```sh
 make build

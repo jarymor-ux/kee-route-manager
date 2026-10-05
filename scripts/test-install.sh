@@ -22,7 +22,50 @@ for name in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-rou
 done
 go build -o "$WORK/tool" ./cmd/krm-release-tool
 "$WORK/tool" keygen --public "$WORK/public" --private "$WORK/private-key"
+# The configless bootstrap integration uses a disposable release trust root.
+# Rebuild ctl with that key embedded so the real wizard-generated config can
+# authenticate the same signed seed when the real launcher imports it.
+cp "$WORK/public" internal/releasetrust/public.key
+cp "$WORK/public" release-public.key
+go build -ldflags "-X main.version=$VERSION" -o "dist/kee-route-managerctl-linux-$ARCH" ./cmd/kee-route-managerctl
+tar -czf dist/release-files.tar.gz configs install release-public.key LICENSE NOTICE
 "$WORK/tool" manifest --version "$VERSION" --base-url "https://github.com/jarymor-ux/kee-route-manager/releases/download/v$VERSION" --dist dist --out dist/manifest-rc.json --private "$WORK/private-key"
+python3 - dist <<'PYSUMS'
+import hashlib,pathlib,sys
+p=pathlib.Path(sys.argv[1])
+entries=[]
+for f in sorted(p.iterdir()):
+ if f.is_file() and f.name not in {'SHA256SUMS','SHA256SUMS.sig'}:
+  entries.append(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n')
+(p/'SHA256SUMS').write_text(''.join(entries))
+PYSUMS
+"$WORK/tool" sign --private "$WORK/private-key" --input dist/SHA256SUMS --out dist/SHA256SUMS.sig
+mkdir -p "$WORK/bootstrap-fake"
+cat > "$WORK/bootstrap-fake/curl" <<'BOOTSTRAP_CURL'
+#!/bin/sh
+set -eu
+out=
+url=
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  -o) out=$2; shift 2;;
+  *) url=$1; shift;;
+ esac
+done
+[ -n "$out" ] && [ -n "$url" ]
+cp "$KRM_TEST_ASSETS/$(basename "$url")" "$out"
+BOOTSTRAP_CURL
+chmod 0755 "$WORK/bootstrap-fake/curl"
+python3 - "$WORK" "$VERSION" <<'PYBOOTSTRAP'
+import base64,pathlib,sys
+work=pathlib.Path(sys.argv[1]);version=sys.argv[2]
+raw=base64.b64decode((work/'public').read_text().strip()+'===')
+der=bytes.fromhex('302a300506032b6570032100')+raw
+pem='-----BEGIN PUBLIC KEY-----\n'+base64.b64encode(der).decode()+'\n-----END PUBLIC KEY-----'
+template=pathlib.Path('install/bootstrap.sh').read_text()
+for platform in ('linux-systemd','openwrt','keenetic'):
+ (work/('bootstrap-'+platform+'.sh')).write_text(template.replace('@VERSION@',version).replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@',pem))
+PYBOOTSTRAP
 # Disposable service-manager adapters execute the installed service commands.
 # Keenetic uses the actual checked-in supervisor; no real host service is used.
 cat > "$WORK/fake/krm-test-stop" <<'STOP'
@@ -49,7 +92,7 @@ case "$1" in
   name=$3
   if [ "$name" = kee-route-manager ]; then binary=/usr/local/bin/kee-route-manager-launcher; config=/etc/kee-route-manager/config.yaml; else binary=/usr/local/bin/kee-route-manager-ui; config=/etc/kee-route-manager-ui/config.yaml; fi
   grep -Fxq "ExecStart=$binary serve --config $config" "/etc/systemd/system/$name.service"
-  "$binary" serve --config "$config" > "/tmp/$name.stdout" 2>&1 &
+  "$binary" serve --config "$config" </dev/null > "/tmp/$name.stdout" 2>&1 &
   echo "$!" > "/tmp/krm-test-service-$name.pid";;
  disable) krm-test-stop "$3";;
  *) echo 'unexpected service command' >&2; exit 1;;
@@ -65,7 +108,7 @@ procd_close_instance(){ :; }
 procd_set_param(){
  if [ "$1" = command ]; then
   shift
-  "$@" > "/tmp/$name.stdout" 2>&1 &
+  "$@" </dev/null > "/tmp/$name.stdout" 2>&1 &
   echo "$!" > "/tmp/krm-test-service-$name.pid"
  fi
 }
@@ -88,6 +131,11 @@ for platform in ('linux-systemd','openwrt','keenetic'):
  s=pathlib.Path('configs/'+platform+'.yaml').read_text().replace('enabled: true\n      headers:', 'enabled: false\n      headers:')
  s=re.sub(r'^  public_key:.*$', '  public_key: "'+key+'"', s, flags=re.M)
  (w/('private/'+platform+'.yaml')).write_text(s)
+ prefix='/opt' if platform=='keenetic' else ''
+ tls=s.replace('    enabled: false\n    auto_generate: false\n    cert_file: ""\n    key_file: ""\n    hosts: []',
+  '    enabled: true\n    auto_generate: true\n    cert_file: '+prefix+'/etc/kee-route-manager/tls.crt\n    key_file: '+prefix+'/etc/kee-route-manager/tls.key\n    hosts: [localhost]',1)
+ assert tls != s, 'controller API TLS fixture was not enabled'
+ (w/('private/'+platform+'-tls.yaml')).write_text(tls)
  ui=pathlib.Path('configs/ui-linux-openwrt.yaml').read_text()
  if platform=='keenetic':
   ui=ui.replace('/var/', '/opt/var/').replace('/run/', '/opt/var/run/').replace('/etc/kee-route-manager-ui/', '/opt/etc/kee-route-manager-ui/')
@@ -100,6 +148,118 @@ for platform in ('linux-systemd','openwrt','keenetic'):
 (w/'private/password').write_text('integration-only-long-password\n')
 PYCONFIG
 openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=krm-installer-test -keyout "$WORK/private/ca.key" -out "$WORK/private/ca.crt" -days 1 >/dev/null 2>&1
+# Assert installed private controller material and both validators/readiness.
+check_core(){
+ [[ -f "$core_config" && -s "$prefix/etc/kee-route-manager/credentials.json" ]]
+ [[ "$(stat -c %a "$core_config")" = 600 ]]
+ [[ "$(stat -c %a "$prefix/etc/kee-route-manager/credentials.json")" = 600 ]]
+ [[ "$(stat -c %a "$prefix/etc/kee-route-manager")" = 700 ]]
+ "$bin/kee-route-managerctl" validate --config "$core_config" >/dev/null
+ "$bin/kee-route-managerctl" ready --config "$core_config" >/dev/null
+}
+check_ui(){
+ [[ -f "$ui_config" && "$(stat -c %a "$ui_config")" = 644 ]]
+ # UI config is public and readable by systemd DynamicUser; keys remain private.
+ "$bin/kee-route-manager-ui" validate --config "$ui_config" >/dev/null
+ "$bin/kee-route-manager-ui" ready --config "$ui_config" >/dev/null
+ [[ "$(stat -c %a "$prefix/var/lib/kee-route-manager-ui/tls.key")" = 600 ]]
+ curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+}
+platform_paths(){
+ case "$platform" in
+  keenetic) prefix=/opt; bin=/opt/bin;;
+  openwrt) prefix=; bin=/usr/bin;;
+  linux-systemd) prefix=; bin=/usr/local/bin;;
+ esac
+ core_config=$prefix/etc/kee-route-manager/config.yaml
+ ui_config=$prefix/etc/kee-route-manager-ui/config.yaml
+}
+# Run the actual signed bootstrap, ctl wizard, installer and launcher for every
+# platform/mode combination. Only service managers and downloads are fixtures.
+for platform in linux-systemd openwrt keenetic; do
+ platform_paths
+ for mode in core local-ui; do
+  python3 - "$WORK" "$platform" "$mode" <<'PYBOOTRUN'
+import os,pty,subprocess,sys
+work,platform,mode=sys.argv[1:]
+master,slave=pty.openpty()
+env=os.environ.copy()
+for name in ('KRM_CONFIG_FILE','KRM_UI_CONFIG_FILE','KRM_UPSTREAM_CA_FILE','KRM_GENERATED_TLS_DIR'):
+ env.pop(name,None)
+env.update(
+ KRM_MODE=mode,
+ KRM_PASSWORD_FILE=work+'/private/password',
+ KRM_TEST_ASSETS=work+'/source/dist',
+ PATH=work+'/bootstrap-fake:'+work+'/fake:'+env['PATH'],
+)
+# Both languages cover the entire installer flow. Disabled subscriptions keep
+# this fixture independent of the network; input secrets must never reach logs.
+answers='\n'.join([
+ '1' if mode=='local-ui' else '2','','','','','proxy-main',
+ 'https://sub.example.test/main?token=integration-subscription-secret','Main','n',
+ 'y','X-Integration-Secret','integration-header-secret','n','n',
+ 'https://score.example.test/ping',
+ 'https://health.example.test/ping','y','https://independent.example.test/ping','n','',
+ 'n','n','y',
+])+'\n'
+proc=subprocess.Popen(
+ ['sh',work+'/bootstrap-'+platform+'.sh'],
+ stdin=slave,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,
+)
+os.close(slave)
+try:
+ os.write(master,answers.encode())
+ out,err=proc.communicate(timeout=120)
+finally:
+ os.close(master)
+for secret in ('integration-subscription-secret','integration-header-secret','integration-only-long-password'):
+ if secret in out+err:
+  raise SystemExit('bootstrap exposed a configuration or credential secret')
+sys.stdout.write(out)
+sys.stderr.write(err)
+if proc.returncode:
+ raise SystemExit(proc.returncode)
+PYBOOTRUN
+  check_core
+  grep -Fq '"kind": "'"$platform"'"' "$core_config"
+  "$bin/kee-route-managerctl" validate --config "$core_config" > "$WORK/generated-validation.json"
+  python3 - "$WORK/generated-validation.json" <<'PYDEFAULTS'
+import json,sys
+with open(sys.argv[1]) as output:
+ assert output.readline().strip() == 'Configuration is valid'
+ cfg=json.load(output)
+assert cfg['update']['auto_apply'] is False
+assert cfg['benchmark']['speed']['enabled'] is False
+PYDEFAULTS
+  [[ -L "$bin/kee-route-managerd" && -f "$bin/kee-route-manager-launcher" ]]
+  if [[ "$mode" = local-ui ]]; then
+   check_ui
+   grep -Fq 'https://127.0.0.1:9443' "$ui_config"
+   grep -Fq "$prefix/etc/kee-route-manager-ui/controller-ca.crt" "$ui_config"
+   [[ -s "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
+   # The UI trusts exactly the local controller certificate, never insecure TLS.
+   cmp "$prefix/etc/kee-route-manager/tls.crt" "$prefix/etc/kee-route-manager-ui/controller-ca.crt"
+   if grep -Eq 'insecure_tls["[:space:]]*:[[:space:]]*true' "$ui_config"; then
+    echo 'generated UI disabled TLS verification' >&2; exit 1
+   fi
+  else
+   [[ ! -e "$ui_config" ]]
+  fi
+  before=$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")
+  KRM_MODE=$mode KRM_CONFIG_FILE=$core_config KRM_UI_CONFIG_FILE=$ui_config KRM_PASSWORD_FILE="$WORK/private/password" \
+   KRM_UPSTREAM_CA_FILE="$prefix/etc/kee-route-manager-ui/controller-ca.crt" KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
+   sh "$WORK/bootstrap-$platform.sh" > "$WORK/reinstall.stdout" 2>&1 && { echo 'generated installation overwrite accepted' >&2; exit 1; }
+  grep -Fq 'existing controller installation detected' "$WORK/reinstall.stdout"
+  [[ "$before" = "$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")" ]]
+  KRM_MODE=$mode sh "install/$platform/uninstall.sh" --purge
+  [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" && ! -e "$ui_config" ]]
+  printf 'Real configless bootstrap -> RU/EN wizard -> validated installer lifecycle passed: %s %s.\n' "$platform" "$mode"
+ done
+done
+prepared_bootstrap(){
+ KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
+  sh "$WORK/bootstrap-$platform.sh" </dev/null
+}
 for platform in linux-systemd openwrt keenetic; do
  case "$platform" in
   keenetic) prefix=/opt; bin=/opt/bin; core_service=/opt/etc/init.d/S99kee-route-manager; ui_service=/opt/etc/init.d/S98kee-route-manager-ui;;
@@ -108,12 +268,16 @@ for platform in linux-systemd openwrt keenetic; do
  esac
  core_config=$prefix/etc/kee-route-manager/config.yaml
  ui_config=$prefix/etc/kee-route-manager-ui/config.yaml
- export KRM_CONFIG_FILE="$WORK/private/$platform.yaml" KRM_UI_CONFIG_FILE="$WORK/private/$platform-ui.yaml" KRM_PASSWORD_FILE="$WORK/private/password"
+ export KRM_CONFIG_FILE="$WORK/private/$platform-tls.yaml" KRM_UI_CONFIG_FILE="$WORK/private/$platform-ui.yaml" KRM_PASSWORD_FILE="$WORK/private/password"
  export KRM_MODE=core
- sh "install/$platform/install.sh"
+ prepared_bootstrap
  [[ -L "$bin/kee-route-managerd" && -L "$bin/kee-route-managerctl" && -f "$bin/kee-route-manager-launcher" ]]
  [[ ! -e "$ui_service" ]]
- "$bin/kee-route-managerctl" ready --config "$core_config"
+ check_core
+ before=$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")
+ if prepared_bootstrap > "$WORK/reinstall.stdout" 2>&1; then echo 'prepared core overwrite accepted' >&2; exit 1; fi
+ grep -Fq 'existing controller installation detected' "$WORK/reinstall.stdout"
+ [[ "$before" = "$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")" ]]
  # Custom-CA mistakes must fail during preflight, before UI files or services are installed.
  export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui-custom.yaml"
  unset KRM_UPSTREAM_CA_FILE
@@ -122,12 +286,16 @@ for platform in linux-systemd openwrt keenetic; do
  export KRM_CONFIG_FILE="$WORK/private/$platform-ui-wrong-ca.yaml" KRM_UPSTREAM_CA_FILE="$WORK/private/ca.crt"
  if sh "install/$platform/install.sh"; then echo 'unmanaged custom CA path accepted' >&2; exit 1; fi
  [[ ! -e "$ui_config" && ! -e "$bin/kee-route-manager-ui" && ! -e "$ui_service" ]]
- # Standalone UI remains installable beside a controller and removable alone.
+ # Standalone UI must reject plaintext upstreams before installing files.
  export KRM_MODE=ui KRM_CONFIG_FILE="$WORK/private/$platform-ui.yaml"
  unset KRM_UPSTREAM_CA_FILE
- sh "install/$platform/install.sh"
- [[ ! -e "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
- "$bin/kee-route-manager-ui" ready --config "$ui_config"
+ if sh "install/$platform/install.sh"; then echo 'plaintext standalone UI accepted' >&2; exit 1; fi
+ [[ ! -e "$ui_config" && ! -e "$bin/kee-route-manager-ui" && ! -e "$ui_service" ]]
+ # The trusted HTTPS standalone UI installs beside a controller and removes alone.
+ export KRM_CONFIG_FILE="$WORK/private/$platform-ui-custom.yaml" KRM_UPSTREAM_CA_FILE="$prefix/etc/kee-route-manager/tls.crt"
+ prepared_bootstrap
+ cmp "$KRM_UPSTREAM_CA_FILE" "$prefix/etc/kee-route-manager-ui/controller-ca.crt"
+ check_ui
  sh "install/$platform/uninstall.sh" --purge
  "$bin/kee-route-managerctl" ready --config "$core_config"
  export KRM_MODE=core
@@ -135,15 +303,16 @@ for platform in linux-systemd openwrt keenetic; do
  [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" ]]
  # Local UI is supervised only once: routers by launcher, Linux by DynamicUser.
  export KRM_MODE=local-ui KRM_CONFIG_FILE="$WORK/private/$platform.yaml"
+ unset KRM_UPSTREAM_CA_FILE
  if [[ "$platform" != linux-systemd ]]; then
   printf '#!/bin/sh\nexit 0\n' > "$ui_service"
   if sh "install/$platform/install.sh"; then echo 'concurrent UI service accepted' >&2; exit 1; fi
   [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" ]]
   rm "$ui_service"
  fi
- sh "install/$platform/install.sh"
- "$bin/kee-route-managerctl" ready --config "$core_config"
- "$bin/kee-route-manager-ui" ready --config "$ui_config"
+ prepared_bootstrap
+ check_core
+ check_ui
  if [[ "$platform" == linux-systemd ]]; then
   [[ -f "$ui_service" && ! -L "$bin/kee-route-manager-ui" ]]
   grep -Fxq 'DynamicUser=true' "$ui_service"

@@ -12,7 +12,7 @@ tar --exclude=.git --exclude=.omx --exclude=dist --exclude=release -cf - . | tar
 cd "$WORK/source"
 go build -o "$WORK/tool" ./cmd/krm-release-tool
 "$WORK/tool" keygen --public "$WORK/public" --private "$WORK/private"
-cp "$WORK/public" release-public.key
+export KRM_RELEASE_PUBLIC_KEY="$WORK/public"
 KRM_RELEASE_PRIVATE_KEY="$WORK/private" OUTPUT_DIR="$WORK/output" ./scripts/build-release.sh
 python3 scripts/verify-release.py "$WORK/output/dist"
 # Change a published file: verifier must reject it even though signatures remain valid.
