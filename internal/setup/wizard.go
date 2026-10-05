@@ -19,11 +19,6 @@ var (
 	ErrNotConfirmed = errors.New("configuration creation not confirmed")
 )
 
-const (
-	updateRepository = "jarymor-ux/kee-route-manager"
-	updatePublicKey  = "t8ZyoMK5zMz2vTBuWaH8HIwMOo+E1nJXydOak0RWKAE"
-)
-
 type Messages struct {
 	PlatformTitle          string
 	PlatformHelp           string
@@ -392,7 +387,7 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
-	channel := "rc"
+	channel := defaultUpdateChannel
 	if updatesEnabled {
 		channel, err = w.askChannel()
 		if err != nil {
@@ -418,13 +413,12 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 			SpeedEnabled:     speedEnabled,
 			SpeedURLTemplate: speedURL,
 		},
-		Update: UpdateOptions{
-			Enabled:          updatesEnabled,
-			Channel:          channel,
-			GitHubRepository: updateRepository,
-			PublicKey:        updatePublicKey,
-			AutoApply:        false,
-		},
+		Update: func() UpdateOptions {
+			update := defaultUpdateOptions()
+			update.Enabled = updatesEnabled
+			update.Channel = channel
+			return update
+		}(),
 	}
 	subscriptionNames := make([]string, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
