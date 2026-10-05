@@ -43,6 +43,9 @@ func WriteConfig(path string, cfg config.Config) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temporary config: %w", err)
 	}
+	if _, err := config.Load(tmpName); err != nil {
+		return fmt.Errorf("verify generated config: %w", err)
+	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("replace config: %w", err)
 	}
