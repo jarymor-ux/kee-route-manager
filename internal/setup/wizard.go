@@ -57,6 +57,11 @@ type Messages struct {
 	UpdateChannel          string
 	SummaryTitle           string
 	SummaryPlatform        string
+	SummaryXrayBinary      string
+	SummaryXrayConfigDir   string
+	SummaryBaseRouting     string
+	SummaryInboundTags     string
+	SummaryOutboundTag     string
 	SummarySubscriptions   string
 	SummaryScoreTargets    string
 	SummaryHealthTargets   string
@@ -82,54 +87,59 @@ var messagesRU = Messages{
 	PlatformTitle:          "Платформа:",
 	PlatformHelp:           "Выберите платформу, на которой будет работать Kee Route Manager.",
 	XrayBinaryHelp:         "Путь к исполняемому файлу Xray.",
-	XrayBinaryPrompt:       "Xray binary",
+	XrayBinaryPrompt:       "Путь к Xray",
 	XrayConfigDirHelp:      "Каталог конфигурации Xray, в который Kee Route Manager будет записывать управляемые файлы.",
-	XrayConfigDirPrompt:    "Xray config directory",
+	XrayConfigDirPrompt:    "Каталог конфигурации Xray",
 	BaseRoutingHelp:        "Базовый routing-файл Xray, содержащий правило, которое будет заменяться управляемым outbound.",
-	BaseRoutingPrompt:      "Base routing file",
+	BaseRoutingPrompt:      "Базовый routing-файл",
 	InboundTagsHelp:        "Inbound tags правила маршрутизации. Укажите через запятую.",
 	InboundTagsPrompt:      "Inbound tags",
 	OutboundTagHelp:        "Outbound tag правила, которое Kee Route Manager должен заменять. Если tag неочевиден, используйте: kee-route-managerctl route-candidates --file PATH. При неоднозначности tag автоматически не выбирается.",
 	OutboundTagPrompt:      "Outbound tag",
 	SubscriptionURLHelp:    "URL источника подписки с узлами.",
-	SubscriptionURLPrompt:  "Subscription URL",
-	SubscriptionNamePrompt: "Subscription name",
-	SubscriptionEnabled:    "Enable subscription? [Y/n]",
-	AddHeader:              "Add HTTP header? [y/N]",
-	HeaderName:             "Header name",
-	HeaderValue:            "Header value (не будет показан в summary)",
-	AddSubscription:        "Add another subscription? [y/N]",
+	SubscriptionURLPrompt:  "URL подписки",
+	SubscriptionNamePrompt: "Название подписки",
+	SubscriptionEnabled:    "Включить подписку? [Д/н]",
+	AddHeader:              "Добавить HTTP-заголовок? [д/Н]",
+	HeaderName:             "Имя заголовка",
+	HeaderValue:            "Значение заголовка (не будет показано в итогах)",
+	AddSubscription:        "Добавить ещё одну подписку? [д/Н]",
 	ScoreHelp:              "Score target используется для сравнительной оценки доступных узлов.",
-	ScorePrompt:            "Score target URL",
+	ScorePrompt:            "URL score target",
 	HealthHelp:             "Health targets используются для проверки реальной доступности маршрута. Рекомендуются два независимых hostname.",
-	HealthPrompt:           "Health target URL",
-	AddHealth:              "Add another health target? [y/N]",
-	PoolPrompt:             "Pool size [5]",
-	SpeedEnable:            "Enable speed test? [y/N]",
-	SpeedURLHelp:           "URL template для download benchmark. Обязателен placeholder {bytes}.",
-	SpeedURLPrompt:         "Speed test URL template",
-	UpdatesEnable:          "Enable updates? [y/N]",
-	UpdateChannel:          "Update channel [rc]",
+	HealthPrompt:           "URL health target",
+	AddHealth:              "Добавить ещё один health target? [д/Н]",
+	PoolPrompt:             "Размер пула [5]",
+	SpeedEnable:            "Включить проверку скорости? [д/Н]",
+	SpeedURLHelp:           "HTTPS URL-шаблон для download benchmark. Обязателен placeholder {bytes}.",
+	SpeedURLPrompt:         "HTTPS URL-шаблон проверки скорости",
+	UpdatesEnable:          "Включить обновления? [д/Н]",
+	UpdateChannel:          "Канал обновлений [rc]",
 	SummaryTitle:           "Итог:",
-	SummaryPlatform:        "Platform",
-	SummarySubscriptions:   "Subscriptions",
+	SummaryPlatform:        "Платформа",
+	SummaryXrayBinary:      "Xray binary",
+	SummaryXrayConfigDir:   "Каталог конфигурации Xray",
+	SummaryBaseRouting:     "Базовый routing-файл",
+	SummaryInboundTags:     "Inbound tags",
+	SummaryOutboundTag:     "Outbound tag",
+	SummarySubscriptions:   "Подписки",
 	SummaryScoreTargets:    "Score targets",
 	SummaryHealthTargets:   "Health targets",
-	SummaryPool:            "Pool size",
-	SummarySpeed:           "Speed test",
-	SummaryUpdates:         "Updates",
-	SummaryChannel:         "Channel",
-	Enabled:                "enabled",
-	Disabled:               "disabled",
-	Create:                 "Создать конфигурацию? [Y/n]",
-	Overwrite:              "Файл уже существует. Перезаписать? [y/N]",
+	SummaryPool:            "Размер пула",
+	SummarySpeed:           "Проверка скорости",
+	SummaryUpdates:         "Обновления",
+	SummaryChannel:         "Канал",
+	Enabled:                "включено",
+	Disabled:               "выключено",
+	Create:                 "Создать конфигурацию? [Д/н]",
+	Overwrite:              "Файл уже существует. Перезаписать? [д/Н]",
 	InvalidChoice:          "Неверный выбор.",
-	InvalidURL:             "Введите корректный http(s) URL.",
+	InvalidURL:             "Введите корректный http(s) URL без учётных данных и fragment.",
 	Required:               "Обязательное значение не может быть пустым.",
-	InvalidBool:            "Введите y или n.",
-	InvalidPool:            "Pool size должен быть числом от 1 до 20.",
-	InvalidSpeedTemplate:   "URL template должен быть корректным http(s) URL и содержать {bytes}.",
-	InvalidChannel:         "Channel должен быть rc или stable.",
+	InvalidBool:            "Введите д или н.",
+	InvalidPool:            "Размер пула должен быть числом от 1 до 20.",
+	InvalidSpeedTemplate:   "URL-шаблон должен быть корректным HTTPS URL без учётных данных/fragment и содержать {bytes}.",
+	InvalidChannel:         "Канал должен быть rc или stable.",
 	Written:                "Конфигурация записана:",
 }
 
@@ -167,6 +177,11 @@ var messagesEN = Messages{
 	UpdateChannel:          "Update channel [rc]",
 	SummaryTitle:           "Summary:",
 	SummaryPlatform:        "Platform",
+	SummaryXrayBinary:      "Xray binary",
+	SummaryXrayConfigDir:   "Xray config directory",
+	SummaryBaseRouting:     "Base routing file",
+	SummaryInboundTags:     "Inbound tags",
+	SummaryOutboundTag:     "Outbound tag",
 	SummarySubscriptions:   "Subscriptions",
 	SummaryScoreTargets:    "Score targets",
 	SummaryHealthTargets:   "Health targets",
@@ -179,11 +194,11 @@ var messagesEN = Messages{
 	Create:                 "Create configuration? [Y/n]",
 	Overwrite:              "Output file already exists. Overwrite? [y/N]",
 	InvalidChoice:          "Invalid choice.",
-	InvalidURL:             "Enter a valid http(s) URL.",
+	InvalidURL:             "Enter a valid http(s) URL without credentials or fragment.",
 	Required:               "This value is required.",
 	InvalidBool:            "Enter y or n.",
 	InvalidPool:            "Pool size must be a number from 1 to 20.",
-	InvalidSpeedTemplate:   "URL template must be a valid http(s) URL and contain {bytes}.",
+	InvalidSpeedTemplate:   "URL template must be a valid HTTPS URL without credentials or fragment and contain {bytes}.",
 	InvalidChannel:         "Channel must be rc or stable.",
 	Written:                "Configuration written:",
 }
@@ -275,14 +290,19 @@ func (w *wizard) chooseLanguage() error {
 }
 
 type wizardSummary struct {
-	platform      string
-	subscriptions int
-	scoreTargets  int
-	healthTargets int
-	poolSize      int
-	speed         bool
-	updates       bool
-	channel       string
+	platform          string
+	xrayBinary        string
+	xrayConfigDir     string
+	baseRouting       string
+	inboundTags       []string
+	outboundTag       string
+	subscriptionNames []string
+	scoreTargets      int
+	healthTargets     int
+	poolSize          int
+	speed             bool
+	updates           bool
+	channel           string
 }
 
 func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
@@ -396,15 +416,24 @@ func (w *wizard) collect() (SetupOptions, wizardSummary, error) {
 			AutoApply:        false,
 		},
 	}
+	subscriptionNames := make([]string, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		subscriptionNames = append(subscriptionNames, subscription.Name)
+	}
 	summary := wizardSummary{
-		platform:      platformName(platform),
-		subscriptions: len(subscriptions),
-		scoreTargets:  len(score),
-		healthTargets: len(health),
-		poolSize:      pool,
-		speed:         speedEnabled,
-		updates:       updatesEnabled,
-		channel:       channel,
+		platform:          platformName(platform),
+		xrayBinary:        binary,
+		xrayConfigDir:     configDir,
+		baseRouting:       routing,
+		inboundTags:       append([]string(nil), inbound...),
+		outboundTag:       outbound,
+		subscriptionNames: subscriptionNames,
+		scoreTargets:      len(score),
+		healthTargets:     len(health),
+		poolSize:          pool,
+		speed:             speedEnabled,
+		updates:           updatesEnabled,
+		channel:           channel,
 	}
 	return opts, summary, nil
 }
@@ -560,7 +589,7 @@ func (w *wizard) askSpeedURL() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if validHTTPURL(answer) && strings.Contains(answer, "{bytes}") {
+		if strings.Contains(answer, "{bytes}") && validHTTPSURL(strings.ReplaceAll(answer, "{bytes}", "1024")) {
 			return answer, nil
 		}
 		fmt.Fprintln(w.out, w.msg.InvalidSpeedTemplate)
@@ -598,7 +627,12 @@ func (w *wizard) askURL(label string) (string, error) {
 
 func validHTTPURL(raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https")
+	return err == nil && u.Hostname() != "" && u.User == nil && u.Fragment == "" && (u.Scheme == "http" || u.Scheme == "https")
+}
+
+func validHTTPSURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Hostname() != "" && u.User == nil && u.Fragment == "" && u.Scheme == "https"
 }
 
 func (w *wizard) askRequired(label string) (string, error) {
@@ -688,7 +722,16 @@ func (w *wizard) printSummary(s wizardSummary) {
 	fmt.Fprintln(w.out)
 	fmt.Fprintln(w.out, w.msg.SummaryTitle)
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryPlatform, s.platform)
-	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummarySubscriptions, s.subscriptions)
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryXrayBinary, s.xrayBinary)
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryXrayConfigDir, s.xrayConfigDir)
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryBaseRouting, s.baseRouting)
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryInboundTags, strings.Join(s.inboundTags, ", "))
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryOutboundTag, s.outboundTag)
+	fmt.Fprintf(w.out, "%s: %d", w.msg.SummarySubscriptions, len(s.subscriptionNames))
+	if len(s.subscriptionNames) > 0 {
+		fmt.Fprintf(w.out, " (%s)", strings.Join(s.subscriptionNames, ", "))
+	}
+	fmt.Fprintln(w.out)
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryScoreTargets, s.scoreTargets)
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryHealthTargets, s.healthTargets)
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryPool, s.poolSize)
