@@ -41,7 +41,7 @@ class BootstrapTests(unittest.TestCase):
    self.assertEqual(entry['checksums'][0]['checksumValue'],hashlib.sha256((out/entry['fileName']).read_bytes()).hexdigest())
  def fixture(self,version="1.0.0-rc.2",platform='keenetic',unsafe=None):
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));assets=d/'assets';assets.mkdir();fake=d/'fake';fake.mkdir()
-  marker=d/'executed';order=d/'order.log';config_used=d/'config-used';config_path=d/'config-path'
+  marker=d/'executed';order=d/'order.log';config_used=d/'config-used';config_path=d/'config-path';ui_config_used=d/'ui-config-used';ui_config_path=d/'ui-config-path'
   with tarfile.open(assets/'release-files.tar.gz','w:gz') as tf:
    content=b'''#!/bin/sh
 set -eu
@@ -54,12 +54,19 @@ else
  test ! -e "$root/dist/kee-route-manager-launcher-linux-amd64"
 fi
 test -s "$KRM_CONFIG_FILE"
+if [ "$KRM_MODE" = local-ui ]; then
+ test -s "$KRM_UI_CONFIG_FILE"
+ printf '%s\n' "$KRM_UI_CONFIG_FILE" > "$KRM_TEST_UI_CONFIG_PATH"
+ cp "$KRM_UI_CONFIG_FILE" "$KRM_TEST_UI_CONFIG_USED"
+fi
 printf 'installer\n' >> "$KRM_TEST_ORDER"
 printf '%s\n' "$KRM_CONFIG_FILE" > "$KRM_TEST_CONFIG_PATH"
 cp "$KRM_CONFIG_FILE" "$KRM_TEST_CONFIG_USED"
 printf verified > "$KRM_TEST_MARKER"
 '''
    info=tarfile.TarInfo('install/'+platform+'/install.sh');info.size=len(content);info.mode=0o755;tf.addfile(info,io.BytesIO(content))
+   for path,body in (('configs/ui-keenetic.yaml',b'fixture-ui: keenetic\n'),('configs/ui-linux-openwrt.yaml',b'fixture-ui: linux-openwrt\n')):
+    info=tarfile.TarInfo(path);info.size=len(body);info.mode=0o600;tf.addfile(info,io.BytesIO(body))
    if unsafe:
     info=tarfile.TarInfo('../escape' if unsafe=='path' else 'link')
     if unsafe=='link':info.type=tarfile.SYMTYPE;info.linkname='/tmp'
@@ -101,7 +108,7 @@ exit 0
   self.sign_checksums(assets)
   pub=base64.b64decode((self.root/'public').read_text().strip()+'===');pem=base64.b64encode(bytes.fromhex('302a300506032b6570032100')+pub).decode()
   bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@','1.0.0-rc.2').replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
-  (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture')
+  (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture');(d/'ui.yaml').write_text('private ui fixture')
   scripts={'id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
 while [ "$#" -gt 0 ]; do
  if [ "$1" = -o ]; then out=$2; shift 2; else url=$1; shift; fi
@@ -110,7 +117,7 @@ printf 'fetch:%s\\n' "${url##*/}" >> "$KRM_TEST_ORDER"
 cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
 '''}
   for name,body in scripts.items():(fake/name).write_text(body);(fake/name).chmod(0o755)
-  env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_TEST_ASSETS=str(assets),KRM_TEST_MARKER=str(marker),KRM_TEST_ORDER=str(order),KRM_TEST_CONFIG_USED=str(config_used),KRM_TEST_CONFIG_PATH=str(config_path),KRM_CONFIG_FILE=str(d/'config.yaml'),KRM_MODE='local-ui')
+  env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_TEST_ASSETS=str(assets),KRM_TEST_MARKER=str(marker),KRM_TEST_ORDER=str(order),KRM_TEST_CONFIG_USED=str(config_used),KRM_TEST_CONFIG_PATH=str(config_path),KRM_TEST_UI_CONFIG_USED=str(ui_config_used),KRM_TEST_UI_CONFIG_PATH=str(ui_config_path),KRM_CONFIG_FILE=str(d/'config.yaml'),KRM_UI_CONFIG_FILE=str(d/'ui.yaml'),KRM_MODE='local-ui')
   return d,assets,marker,env
  def sign_checksums(self,assets):
   sums=''.join(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n' for f in sorted(assets.iterdir()) if f.name not in {'SHA256SUMS','SHA256SUMS.sig'})
@@ -136,6 +143,16 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   order=(d/'order.log').read_text().splitlines();wizard=order.index('ctl:init-config');installer=order.index('installer')
   self.assertGreater(wizard,max(i for i,v in enumerate(order) if v.startswith('fetch:')));self.assertLess(wizard,installer)
   self.assertIn('ctl:validate',order)
+ def test_missing_config_local_ui_uses_signed_ui_template(self):
+  for platform,expected in (('keenetic','fixture-ui: keenetic\n'),('openwrt','fixture-ui: linux-openwrt\n'),('linux-systemd','fixture-ui: linux-openwrt\n')):
+   with self.subTest(platform=platform):
+    d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';r=self.run_bootstrap_tty(d,e)
+    self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n');self.assertEqual((d/'ui-config-used').read_text(),expected)
+    order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertIn('installer',order)
+ def test_ui_mode_without_config_requires_prepared_ui_config(self):
+  d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='ui';r=self.run_bootstrap_tty(d,e)
+  self.assertNotEqual(r.returncode,0);self.assertIn('KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config',r.stderr);self.assertFalse(m.exists())
+  order=(d/'order.log').read_text().splitlines();self.assertNotIn('ctl:init-config',order);self.assertNotIn('installer',order)
  def test_invalid_manifest_signature_never_runs_wizard(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';p=a/'manifest-rc.json.sig';s=p.read_text();p.write_text(('A' if s[:1]!='A' else 'B')+s[1:])
   r=self.run_bootstrap_tty(d,e);self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists())
