@@ -190,7 +190,6 @@ func TestExistingOutputFileIsNotSilentlyOverwritten(t *testing.T) {
 	}
 }
 
-
 func TestWriteConfigWithoutOverwriteRefusesExistingFile(t *testing.T) {
 	cfg, _, _, err := runWizardToFile(t, wizardScript("2", false, false, "y"))
 	if err != nil {
