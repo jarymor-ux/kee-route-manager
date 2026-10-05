@@ -305,7 +305,6 @@ func TestPasswordStdinCreatesPrivateCredentialsOnly(t *testing.T) {
 	}
 }
 
-
 func TestInitConfigCommandRunsOfflineWithInjectedIO(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	input := strings.Join([]string{
