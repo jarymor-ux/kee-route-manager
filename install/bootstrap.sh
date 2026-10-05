@@ -27,6 +27,7 @@ case "$(uname -m)" in
 esac
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/krm-bootstrap.XXXXXX")
 cd "$WORK"
+WORK=$(pwd -P)
 cat > trusted-public.pem <<'KEY'
 @PUBLIC_PEM@
 KEY

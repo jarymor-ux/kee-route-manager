@@ -126,10 +126,10 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   sums=''.join(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n' for f in sorted(assets.iterdir()) if f.name not in {'SHA256SUMS','SHA256SUMS.sig'})
   (assets/'SHA256SUMS').write_text(sums)
   subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(assets/'SHA256SUMS'),'--out',str(assets/'SHA256SUMS.sig')],check=True)
- def run_bootstrap(self,d,env):return subprocess.run(['sh',str(d/'bootstrap.sh')],env=env,input='',capture_output=True,text=True)
- def run_bootstrap_tty(self,d,env):
+ def run_bootstrap(self,d,env,cwd=None):return subprocess.run(['sh',str(d/'bootstrap.sh')],env=env,cwd=cwd,input='',capture_output=True,text=True)
+ def run_bootstrap_tty(self,d,env,cwd=None):
   master,slave=pty.openpty()
-  try:return subprocess.run(['sh',str(d/'bootstrap.sh')],env=env,stdin=slave,capture_output=True,text=True)
+  try:return subprocess.run(['sh',str(d/'bootstrap.sh')],env=env,cwd=cwd,stdin=slave,capture_output=True,text=True)
   finally:os.close(slave);os.close(master)
  def test_valid_release_installs(self):
   for platform in PLATFORMS:
@@ -146,6 +146,11 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   order=(d/'order.log').read_text().splitlines();wizard=order.index('ctl:init-config');installer=order.index('installer')
   self.assertGreater(wizard,max(i for i,v in enumerate(order) if v.startswith('fetch:')));self.assertLess(wizard,installer)
   self.assertIn('ctl:validate',order)
+ def test_missing_config_supports_relative_tmpdir(self):
+  d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';(d/'relative-tmp').mkdir();e['TMPDIR']='relative-tmp'
+  r=self.run_bootstrap_tty(d,e,cwd=d)
+  self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n')
+  self.assertEqual(list((d/'relative-tmp').iterdir()),[])
  def test_missing_config_pins_bootstrap_platform(self):
   for platform in PLATFORMS:
    with self.subTest(platform=platform):
@@ -174,6 +179,13 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';p=a/'kee-route-managerctl-linux-amd64';p.write_bytes(p.read_bytes()+b'BAD')
   r=self.run_bootstrap_tty(d,e);self.assertNotEqual(r.returncode,0);self.assertIn('checksum mismatch',r.stderr);self.assertFalse(m.exists())
   self.assertNotIn('ctl:init-config',(d/'order.log').read_text())
+ def test_configless_tampering_never_runs_wizard(self):
+  for name in ['manifest-rc.json','manifest-rc.json.sig','SHA256SUMS','SHA256SUMS.sig','release-files.tar.gz','kee-route-managerd-linux-amd64','kee-route-managerctl-linux-amd64','kee-route-manager-ui-linux-amd64','kee-route-manager-launcher-linux-amd64']:
+   with self.subTest(asset=name):
+    d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';p=a/name;p.write_bytes(p.read_bytes()+b'BAD')
+    r=self.run_bootstrap_tty(d,e);self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists(),r.stderr)
+    order=(d/'order.log').read_text() if (d/'order.log').exists() else ''
+    self.assertNotIn('ctl:init-config',order);self.assertNotIn('installer',order)
  def test_missing_config_without_tty_fails_after_verification(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap(d,e)
   self.assertNotEqual(r.returncode,0);self.assertIn('No configuration was provided and interactive terminal is unavailable.',r.stderr)

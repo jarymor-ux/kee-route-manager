@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow fresh core/local-ui bootstrap without a pre-created controller config: after signed release verification, run the offline wizard pinned to the bootstrap platform; configless local-ui uses the signed platform UI template.
+
 ## 1.1.0-rc.7 — 2026-10-04
 
 Experimental prerelease. Hardware acceptance remains separate from CI.
