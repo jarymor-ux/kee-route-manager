@@ -131,6 +131,17 @@ func TestYAMLSubsetRejectsUnsupportedSyntax(t *testing.T) {
 	}
 }
 
+func TestYAMLSubsetKeepsPlainScalarMapKeysAsStrings(t *testing.T) {
+	value, err := parseYAMLSubset([]byte("headers:\n  123: value\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, ok := value.(map[string]any)["headers"].(map[string]any)
+	if !ok || headers["123"] != "value" {
+		t.Fatalf("headers = %#v", value)
+	}
+}
+
 func TestYAMLSubsetKeepsPlainTimestampLikeValuesAsStrings(t *testing.T) {
 	value, err := parseYAMLSubset([]byte("date: 2026-10-05\n"))
 	if err != nil {
