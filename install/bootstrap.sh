@@ -62,6 +62,9 @@ protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' manifest-rc
 [ "$version" = "@VERSION@" ] && [ "$channel" = rc ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
+if [ "$NEED_CONFIG" = 1 ] && [ "$MODE" = ui ]; then
+ fail 'KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config; init-config generates controller configuration only'
+fi
 fetch release-files.tar.gz release-files.tar.gz
 verify_file release-files.tar.gz
 mkdir payload
@@ -75,12 +78,7 @@ cp manifest-rc.json manifest-rc.json.sig SHA256SUMS SHA256SUMS.sig payload/dist/
 # The launcher verifies and installs a complete daemon/UI/ctl slot, including
 # the dormant UI binary in core-only mode. The launcher itself remains stable.
 for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do
- if [ "$MODE" = ui ]; then
-  case "$component" in
-   kee-route-managerd|kee-route-manager-launcher) continue;;
-   kee-route-managerctl) [ "$NEED_CONFIG" = 1 ] || continue;;
-  esac
- fi
+ case "$MODE:$component" in ui:kee-route-managerd|ui:kee-route-managerctl|ui:kee-route-manager-launcher) continue;; esac
  name=$component-linux-$ARCH
  fetch "$name" "$name"
  verify_file "$name"
@@ -105,5 +103,15 @@ EOF
  "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
  KRM_CONFIG_FILE=$GENERATED_CONFIG
  export KRM_CONFIG_FILE
+ if [ "$MODE" = local-ui ] && [ -z "${KRM_UI_CONFIG_FILE:-}" ]; then
+  case "$PLATFORM" in
+   keenetic) GENERATED_UI_CONFIG="$WORK/payload/configs/ui-keenetic.yaml";;
+   openwrt|linux-systemd) GENERATED_UI_CONFIG="$WORK/payload/configs/ui-linux-openwrt.yaml";;
+   *) fail 'unsupported platform for signed UI template';;
+  esac
+  [ -f "$GENERATED_UI_CONFIG" ] || fail 'signed UI configuration template is missing from release payload'
+  KRM_UI_CONFIG_FILE=$GENERATED_UI_CONFIG
+  export KRM_UI_CONFIG_FILE
+ fi
 fi
 KRM_MODE=$MODE KRM_CONFIG_FILE="$KRM_CONFIG_FILE" sh "payload/install/$PLATFORM/install.sh"
