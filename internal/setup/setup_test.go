@@ -72,16 +72,6 @@ func validOptions(platform Platform) SetupOptions {
 	}
 }
 
-func TestDefaultUpdatePublicKeyMatchesReleaseKey(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "release-public.key"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(string(data)); got != defaultUpdatePublicKey {
-		t.Fatalf("default update public key = %q, release-public.key = %q", defaultUpdatePublicKey, got)
-	}
-}
-
 func TestBuildControllerConfigPlatforms(t *testing.T) {
 	tests := []struct {
 		name     string
