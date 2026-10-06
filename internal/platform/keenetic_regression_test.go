@@ -21,6 +21,11 @@ func platformRegressionResponse(s string) *http.Response {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(s)), Header: make(http.Header)}
 }
 
+func regressionChecksum(n int) string { return fmt.Sprintf("%032x", n) }
+func regressionStartupConfig(checksum string) string {
+	return "! $$ Model: Keenetic\n! $$ Md5 checksum: " + checksum + "\n"
+}
+
 func TestRegressionWANDisconnected(t *testing.T) {
 	for _, connected := range []bool{true, false} {
 		t.Run(fmt.Sprint(connected), func(t *testing.T) {
@@ -52,6 +57,7 @@ func TestRegressionWANDisconnected(t *testing.T) {
 	}
 }
 
+
 func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	const mac = "00:11:22:33:44:55"
 	c := config.Default()
@@ -63,7 +69,13 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	state := map[string]any{"mac": mac, "conform": true, "access": "permit"}
 	var posts []map[string]any
 	saves := 0
-	unsaved := false
+	revision := 1
+	runningChecksum := regressionChecksum(revision)
+	savedChecksum := runningChecksum
+	touch := func() {
+		revision++
+		runningChecksum = regressionChecksum(revision)
+	}
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
@@ -77,7 +89,7 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 				return nil, err
 			}
 			posts = append(posts, body)
-			unsaved = true
+			touch()
 			if body["mac"] != mac {
 				t.Fatalf("unexpected mac: %#v", body)
 			}
@@ -95,11 +107,16 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 			}
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"ok"}]}`), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-			body, _ := json.Marshal(map[string]any{"fail-safe": map[string]any{"unsaved": unsaved}})
+			body, _ := json.Marshal(map[string]any{
+				"checksum": runningChecksum,
+				"fail-safe": map[string]any{"unsaved": false},
+			})
 			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
-			unsaved = false
+			savedChecksum = runningChecksum
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -139,15 +156,55 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 		t.Fatalf("default must remove explicit policy only after conform is enabled: %#v", posts[1])
 	}
 
-	// A previous request may have changed running config but lost the save result.
-	// Repeating the same request must not report success while config is still unsaved.
+	// Repeating an already-satisfied request is a pure no-op. It must never save
+	// unrelated pending configuration just because the router happens to be dirty.
 	posts = nil
-	unsaved = true
+	savedChecksum = regressionChecksum(999)
 	if err := k.SetClientPolicy(context.Background(), mac, "default"); err != nil {
 		t.Fatal(err)
 	}
-	if saves != 3 || len(posts) != 0 || unsaved {
-		t.Fatalf("unchanged unsaved policy was not persisted: posts=%#v saves=%d unsaved=%v", posts, saves, unsaved)
+	if saves != 2 || len(posts) != 0 {
+		t.Fatalf("no-op policy request wrote router state: posts=%#v saves=%d", posts, saves)
+	}
+}
+
+
+func TestRegressionKeeneticPolicyRefusesPreexistingUnsavedConfiguration(t *testing.T) {
+	const mac = "00:11:22:33:44:55"
+	c := config.Default()
+	c.Platform.Kind = "keenetic"
+	c.Platform.Keenetic.AllowPolicyChange = true
+	c.Platform.Keenetic.XKeenPolicyName = "XKeen"
+	k := newKeenetic(c, Runner{}).(*keenetic)
+
+	writes := 0
+	runningChecksum := regressionChecksum(2)
+	savedChecksum := regressionChecksum(1)
+	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
+			return platformRegressionResponse(`{"host":[{"mac":"00:11:22:33:44:55","conform":true,"access":"permit"}]}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
+			return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			body, _ := json.Marshal(map[string]any{"checksum": runningChecksum, "fail-safe": map[string]any{"unsaved": false}})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+		case r.Method == http.MethodPost:
+			writes++
+			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
+		}
+	})}
+
+	err := k.SetClientPolicy(context.Background(), mac, "xkeen")
+	if err == nil || !strings.Contains(err.Error(), "pre-existing unsaved") {
+		t.Fatalf("dirty router configuration was not rejected: %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("dirty router configuration was mutated: writes=%d", writes)
 	}
 }
 
@@ -164,6 +221,9 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	defer cancel()
 	policyWrite := 0
 	rollbackWrites := 0
+	saves := 0
+	savedChecksum := regressionChecksum(1)
+	runningChecksum := savedChecksum
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
@@ -171,6 +231,11 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 			return platformRegressionResponse(string(body)), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
 			return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			body, _ := json.Marshal(map[string]any{"checksum": runningChecksum, "fail-safe": map[string]any{"unsaved": false}})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -184,8 +249,12 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 				state["policy"] = policy
 				if policy == "Policy0" && policyWrite == 0 {
 					policyWrite++
+					runningChecksum = regressionChecksum(2)
 					cancel()
 					return nil, context.Canceled
+				}
+				if policy == "Policy2" {
+					runningChecksum = savedChecksum
 				}
 				rollbackWrites++
 				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
@@ -203,10 +272,9 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 				rollbackWrites++
 			}
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
-		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
-			rollbackWrites++
+			saves++
+			savedChecksum = runningChecksum
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -217,15 +285,19 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation not reported: %v", err)
 	}
-	if policyWrite != 1 || rollbackWrites < 2 {
-		t.Fatalf("rollback did not run through RCI: policyWrite=%d rollbackWrites=%d", policyWrite, rollbackWrites)
+	if policyWrite != 1 || rollbackWrites != 1 {
+		t.Fatalf("rollback did not restore through RCI: policyWrite=%d rollbackWrites=%d", policyWrite, rollbackWrites)
+	}
+	if saves != 0 {
+		t.Fatalf("rollback saved even though startup config was already original: saves=%d", saves)
 	}
 	if !truth(state["conform"]) || stringValue(state["policy"]) != "Policy2" || stringValue(state["access"]) != "permit" {
 		t.Fatalf("rollback state=%#v", state)
 	}
 }
 
-func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(t *testing.T) {
+
+func TestRegressionKeeneticPolicyRollbackDoesNotSaveAfterLostResponseWhenStartupIsOriginal(t *testing.T) {
 	const mac = "00:11:22:33:44:55"
 	c := config.Default()
 	c.Platform.Kind = "keenetic"
@@ -237,6 +309,8 @@ func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(
 	applyFailed := false
 	rollbackResponseLost := false
 	saves := 0
+	savedChecksum := regressionChecksum(1)
+	runningChecksum := savedChecksum
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
@@ -245,7 +319,10 @@ func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
 			return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+			body, _ := json.Marshal(map[string]any{"checksum": runningChecksum, "fail-safe": map[string]any{"unsaved": false}})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -259,10 +336,12 @@ func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(
 				state["policy"] = policy
 				if policy == "Policy0" && !applyFailed {
 					applyFailed = true
+					runningChecksum = regressionChecksum(2)
 					return nil, errors.New("apply response lost")
 				}
 				if policy == "Policy2" && !rollbackResponseLost {
 					rollbackResponseLost = true
+					runningChecksum = savedChecksum
 					return nil, errors.New("rollback response lost")
 				}
 				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
@@ -273,6 +352,7 @@ func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
+			savedChecksum = runningChecksum
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -289,13 +369,14 @@ func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(
 	if !rollbackResponseLost {
 		t.Fatal("rollback response-loss path was not exercised")
 	}
-	if saves != 1 {
-		t.Fatalf("verified rollback must be persisted exactly once, saves=%d", saves)
+	if saves != 0 {
+		t.Fatalf("verified rollback persisted unrelated config: saves=%d", saves)
 	}
 	if !truth(state["conform"]) || stringValue(state["policy"]) != "Policy2" || stringValue(state["access"]) != "permit" {
 		t.Fatalf("verified rollback state=%#v", state)
 	}
 }
+
 
 func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 	for _, mode := range []string{"write_failure", "restore_drift", "deadline"} {
@@ -313,6 +394,8 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 			state := map[string]any{"mac": mac, "conform": true, "policy": "Policy2", "access": "permit"}
 			applyFailed := false
 			saves := 0
+			savedChecksum := regressionChecksum(1)
+			runningChecksum := savedChecksum
 			k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 				if err := r.Context().Err(); err != nil {
 					return nil, err
@@ -324,7 +407,10 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 				case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
 					return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
 				case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-					return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+					body, _ := json.Marshal(map[string]any{"checksum": runningChecksum, "fail-safe": map[string]any{"unsaved": false}})
+					return platformRegressionResponse(string(body)), nil
+				case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+					return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
 				case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 					var body map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -337,6 +423,7 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 					if policy, ok := body["policy"].(string); ok {
 						if policy == "Policy0" && !applyFailed {
 							state["policy"] = policy
+							runningChecksum = regressionChecksum(2)
 							applyFailed = true
 							return nil, errors.New("apply response lost")
 						}
@@ -352,6 +439,9 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 							}
 						}
 						state["policy"] = policy
+						if policy == "Policy2" {
+							runningChecksum = savedChecksum
+						}
 						return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 					}
 					if conform, ok := body["conform"].(bool); ok && conform {
@@ -360,6 +450,7 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 					return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 				case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 					saves++
+					savedChecksum = runningChecksum
 					return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
 				default:
 					return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -395,17 +486,29 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 	}
 }
 
-func TestKeeneticWaitConfigurationSaved(t *testing.T) {
+
+func TestKeeneticWaitConfigurationSavedUsesRunningAndStartupChecksums(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
 	polls := 0
+	runningChecksum := regressionChecksum(2)
+	savedChecksum := regressionChecksum(1)
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
-		if r.Method != http.MethodGet || r.URL.Path != "/rci/show/last-change" {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			polls++
+			if polls == 3 {
+				savedChecksum = runningChecksum
+			}
+			body, _ := json.Marshal(map[string]any{
+				"checksum": runningChecksum,
+				"fail-safe": map[string]any{"unsaved": false},
+			})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
 		}
-		polls++
-		unsaved := polls < 3
-		body, _ := json.Marshal(map[string]any{"fail-safe": map[string]any{"unsaved": unsaved}})
-		return platformRegressionResponse(string(body)), nil
 	})}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -413,16 +516,28 @@ func TestKeeneticWaitConfigurationSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	if polls != 3 {
-		t.Fatalf("unexpected save poll count: %d", polls)
+		t.Fatalf("save confirmation did not wait for startup checksum: polls=%d", polls)
 	}
 }
+
+
 func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{Timeout: 20 * time.Millisecond}).(*keenetic)
+	runningChecksum := regressionChecksum(2)
+	savedChecksum := regressionChecksum(1)
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
-		if r.Method != http.MethodGet || r.URL.Path != "/rci/show/last-change" {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			body, _ := json.Marshal(map[string]any{
+				"checksum": runningChecksum,
+				"fail-safe": map[string]any{"unsaved": false},
+			})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
 		}
-		return platformRegressionResponse(`{"fail-safe":{"unsaved":true}}`), nil
 	})}
 	start := time.Now()
 	err := k.waitConfigurationSaved(context.Background())
@@ -433,6 +548,7 @@ func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
 		t.Fatalf("save wait exceeded bounded timeout: %v", time.Since(start))
 	}
 }
+
 func TestRCIPostRejectsNestedStatusError(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
