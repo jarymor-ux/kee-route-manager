@@ -59,7 +59,7 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 		return nil
 	}
 
-	_ = h.Update("subscriptions", 0, len(m.cfg.Subscriptions.Sources), "fetching subscriptions")
+	_ = h.Update("subscriptions", 0, len(m.SubscriptionSources()), "fetching subscriptions")
 	beforeFetch := m.store.State()
 	forceFetch := mode != "emergency"
 	fetched = m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
