@@ -84,7 +84,7 @@ func (s *SourceStore) Save(sources []config.Source) error {
 	if err != nil {
 		return fmt.Errorf("marshal subscription source store: %w", err)
 	}
-	data = append(data, '\\n')
+	data = append(data, '\n')
 	if len(data) > sourceStoreMaxBytes {
 		return errors.New("subscription source store is too large")
 	}
