@@ -38,6 +38,7 @@ type Manager struct {
 	cancel               context.CancelFunc
 	wg                   sync.WaitGroup
 	mu                   sync.RWMutex
+	subscriptionMu       sync.Mutex
 	routeMu              sync.Mutex
 	lifeMu               sync.Mutex
 	stopping             bool
