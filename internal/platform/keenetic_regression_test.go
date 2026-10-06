@@ -57,7 +57,6 @@ func TestRegressionWANDisconnected(t *testing.T) {
 	}
 }
 
-
 func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	const mac = "00:11:22:33:44:55"
 	c := config.Default()
@@ -167,7 +166,6 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 		t.Fatalf("no-op policy request wrote router state: posts=%#v saves=%d", posts, saves)
 	}
 }
-
 
 func TestRegressionKeeneticPolicyRefusesPreexistingUnsavedConfiguration(t *testing.T) {
 	const mac = "00:11:22:33:44:55"
@@ -296,7 +294,6 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	}
 }
 
-
 func TestRegressionKeeneticPolicyRollbackDoesNotSaveAfterLostResponseWhenStartupIsOriginal(t *testing.T) {
 	const mac = "00:11:22:33:44:55"
 	c := config.Default()
@@ -376,7 +373,6 @@ func TestRegressionKeeneticPolicyRollbackDoesNotSaveAfterLostResponseWhenStartup
 		t.Fatalf("verified rollback state=%#v", state)
 	}
 }
-
 
 func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 	for _, mode := range []string{"write_failure", "restore_drift", "deadline"} {
@@ -486,7 +482,6 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 	}
 }
 
-
 func TestKeeneticWaitConfigurationSavedUsesRunningAndStartupChecksums(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
 	polls := 0
@@ -519,7 +514,6 @@ func TestKeeneticWaitConfigurationSavedUsesRunningAndStartupChecksums(t *testing
 		t.Fatalf("save confirmation did not wait for startup checksum: polls=%d", polls)
 	}
 }
-
 
 func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{Timeout: 20 * time.Millisecond}).(*keenetic)
