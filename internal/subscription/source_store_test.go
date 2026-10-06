@@ -50,7 +50,7 @@ func TestSourceStoreRoundTrip(t *testing.T) {
 
 func TestSourceStoreRejectsInsecureFile(t *testing.T) {
 	store := NewSourceStore(t.TempDir())
-	if err := os.WriteFile(store.path, []byte(\`{"schema":1,"sources":[]}\`), 0o600); err != nil {
+	if err := os.WriteFile(store.path, []byte(`{"schema":1,"sources":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(store.path, 0o644); err != nil {
