@@ -160,7 +160,7 @@ func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Keenetic startup-config HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("keenetic startup-config HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
@@ -168,7 +168,7 @@ func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
 	}
 	match := keeneticSavedChecksumPattern.FindSubmatch(data)
 	if len(match) != 2 {
-		return "", fmt.Errorf("Keenetic startup-config missing MD5 checksum")
+		return "", fmt.Errorf("keenetic startup-config missing MD5 checksum")
 	}
 	return strings.ToLower(string(match[1])), nil
 }
