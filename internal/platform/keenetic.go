@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,6 +70,68 @@ func (k *keenetic) rci(ctx context.Context, path string) (map[string]any, error)
 		return nil, fmt.Errorf("RCI status error")
 	}
 	return v, nil
+}
+
+func (k *keenetic) rciPost(ctx context.Context, path string, body map[string]any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if err = rciResponseError(raw); err != nil {
+		return nil, err
+	}
+	v, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected RCI response")
+	}
+	return v, nil
+}
+
+func rciResponseError(v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		if strings.EqualFold(stringValue(x["status"]), "error") {
+			code := stringValue(x["code"])
+			if code != "" {
+				return fmt.Errorf("RCI status error (%s)", code)
+			}
+			return fmt.Errorf("RCI status error")
+		}
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 	sys, e := k.rci(ctx, "show/system")
@@ -225,34 +288,6 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if e != nil {
 		return e
 	}
-	var before map[string]any
-	for _, raw := range array(cfg["host"]) {
-		if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
-			before = v
-			break
-		}
-	}
-	if before == nil {
-		return fmt.Errorf("device must be registered")
-	}
-	policies, e := k.rci(ctx, "show/ip/policy")
-	if e != nil {
-		return e
-	}
-	pid := ""
-	for id, raw := range policies {
-		if p, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(p["description"]), k.cfg.Platform.Keenetic.XKeenPolicyName) {
-			pid = id
-			break
-		}
-	}
-	if choice == "xkeen" && !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
-		return fmt.Errorf("XKeen policy unavailable")
-	}
-	command := func(c context.Context, text string) error {
-		_, err := k.r.Run(c, []string{k.cfg.Platform.Keenetic.NDMCBinary, "-c", text})
-		return err
-	}
 	findHost := func(cfg map[string]any) map[string]any {
 		for _, raw := range array(cfg["host"]) {
 			if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
@@ -261,6 +296,42 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		}
 		return nil
 	}
+	before := findHost(cfg)
+	if before == nil {
+		return fmt.Errorf("device must be registered")
+	}
+
+	pid := ""
+	if choice == "xkeen" {
+		policies, err := k.rci(ctx, "show/ip/policy")
+		if err != nil {
+			return err
+		}
+		for id, raw := range policies {
+			if p, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(p["description"]), k.cfg.Platform.Keenetic.XKeenPolicyName) {
+				pid = id
+				break
+			}
+		}
+		if !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
+			return fmt.Errorf("XKeen policy unavailable")
+		}
+	}
+
+	postHost := func(c context.Context, fields map[string]any) error {
+		body := make(map[string]any, len(fields)+1)
+		body["mac"] = mac
+		for key, value := range fields {
+			body[key] = value
+		}
+		_, err := k.rciPost(c, "ip/hotspot/host", body)
+		return err
+	}
+	save := func(c context.Context) error {
+		_, err := k.rciPost(c, "system/configuration/save", map[string]any{})
+		return err
+	}
+
 	rollback := func(cause error) error {
 		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
 		timeout := k.r.Timeout
@@ -270,32 +341,79 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 		var errs []error
-		run := func(text string) {
-			if err := command(recovery, text); err != nil {
-				errs = append(errs, err)
+
+		currentCfg, err := k.rci(recovery, "ip/hotspot")
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			current := findHost(currentCfg)
+			if current == nil {
+				errs = append(errs, fmt.Errorf("device disappeared during client policy rollback"))
+			} else {
+				oldPolicy := stringValue(before["policy"])
+				oldConform := truth(before["conform"])
+				currentPolicy := stringValue(current["policy"])
+				currentConform := truth(current["conform"])
+
+				if oldConform {
+					if currentPolicy != "" {
+						if err := postHost(recovery, map[string]any{"policy": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if !currentConform {
+						if err := postHost(recovery, map[string]any{"conform": true}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				} else if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(oldPolicy) {
+					if currentConform {
+						if err := postHost(recovery, map[string]any{"conform": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if currentPolicy != oldPolicy {
+						if err := postHost(recovery, map[string]any{"policy": oldPolicy}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				} else {
+					if currentPolicy != "" {
+						if err := postHost(recovery, map[string]any{"policy": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if currentConform {
+						if err := postHost(recovery, map[string]any{"conform": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				}
+
+				oldAccess := stringValue(before["access"])
+				if stringValue(current["access"]) != oldAccess {
+					switch oldAccess {
+					case "permit":
+						if err := postHost(recovery, map[string]any{"permit": true}); err != nil {
+							errs = append(errs, err)
+						}
+					case "deny":
+						if err := postHost(recovery, map[string]any{"deny": true}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				}
 			}
 		}
-		old := stringValue(before["policy"])
-		if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(old) {
-			run("ip hotspot host " + mac + " policy " + old)
-		} else {
-			run("no ip hotspot host " + mac + " policy")
+		if err := save(recovery); err != nil {
+			errs = append(errs, err)
 		}
-		if access := stringValue(before["access"]); access == "permit" || access == "deny" {
-			run("ip hotspot host " + mac + " " + access)
-		}
-		if truth(before["conform"]) {
-			run("ip hotspot host " + mac + " conform")
-		} else {
-			run("no ip hotspot host " + mac + " conform")
-		}
-		run("system configuration save")
 		restoredCfg, err := k.rci(recovery, "ip/hotspot")
 		if err != nil {
 			errs = append(errs, err)
 		} else {
 			restored := findHost(restoredCfg)
-			if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != old || stringValue(restored["access"]) != stringValue(before["access"]) {
+			if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != stringValue(before["policy"]) || stringValue(restored["access"]) != stringValue(before["access"]) {
 				errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
 			}
 		}
@@ -304,30 +422,54 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		}
 		return cause
 	}
-	if e = command(ctx, "no ip hotspot host "+mac+" conform"); e != nil {
-		return rollback(e)
-	}
+
+	changed := false
 	if choice == "xkeen" {
-		e = command(ctx, "ip hotspot host "+mac+" policy "+pid)
+		if truth(before["conform"]) {
+			if e = postHost(ctx, map[string]any{"conform": map[string]any{"no": true}}); e != nil {
+				return rollback(e)
+			}
+			changed = true
+		}
+		if stringValue(before["policy"]) != pid {
+			if e = postHost(ctx, map[string]any{"policy": pid}); e != nil {
+				return rollback(e)
+			}
+			changed = true
+		}
 	} else {
-		e = command(ctx, "no ip hotspot host "+mac+" policy")
+		if stringValue(before["policy"]) != "" {
+			if e = postHost(ctx, map[string]any{"policy": map[string]any{"no": true}}); e != nil {
+				return rollback(e)
+			}
+			changed = true
+		}
+		if !truth(before["conform"]) {
+			if e = postHost(ctx, map[string]any{"conform": true}); e != nil {
+				return rollback(e)
+			}
+			changed = true
+		}
 	}
-	if e != nil {
-		return rollback(e)
+	if !changed {
+		return nil
 	}
+
 	afterCfg, e := k.rci(ctx, "ip/hotspot")
 	if e != nil {
 		return rollback(e)
 	}
 	after := findHost(afterCfg)
-	expected := ""
-	if choice == "xkeen" {
-		expected = pid
+	expectedPolicy := pid
+	expectedConform := false
+	if choice == "default" {
+		expectedPolicy = ""
+		expectedConform = true
 	}
-	if after == nil || truth(after["conform"]) || stringValue(after["policy"]) != expected || stringValue(after["access"]) != stringValue(before["access"]) {
+	if after == nil || truth(after["conform"]) != expectedConform || stringValue(after["policy"]) != expectedPolicy || stringValue(after["access"]) != stringValue(before["access"]) {
 		return rollback(fmt.Errorf("router did not apply policy safely"))
 	}
-	if e = command(ctx, "system configuration save"); e != nil {
+	if e = save(ctx); e != nil {
 		return rollback(e)
 	}
 	return nil
