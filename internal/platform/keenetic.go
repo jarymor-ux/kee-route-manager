@@ -474,6 +474,7 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		_, err := k.rciPost(c, "ip/hotspot/host", body)
 		return err
 	}
+	saveAttempted := false
 	save := func(c context.Context, expectedChecksum string) error {
 		currentChecksum, err := k.runningConfigChecksum(c)
 		if err != nil {
@@ -482,6 +483,11 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		if currentChecksum != expectedChecksum {
 			return fmt.Errorf("keenetic configuration changed before save: expected %s, got %s", expectedChecksum, currentChecksum)
 		}
+		if err := c.Err(); err != nil {
+			return err
+		}
+		// Even a lost HTTP response can leave an asynchronous save in flight.
+		saveAttempted = true
 		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
 			return err
 		}
@@ -599,8 +605,31 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		if err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
-		if startupChecksum == originalChecksum {
+		if startupChecksum == originalChecksum && !saveAttempted {
 			return cause
+		}
+		// The previous save may still be writing the mutation snapshot. Do not
+		// mistake the old startup revision for proof that no write is pending,
+		// or race a second save against it. Confirm the owned write first.
+		for startupChecksum == originalChecksum && saveAttempted {
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-recovery.Done():
+				timer.Stop()
+				return errors.Join(cause, fmt.Errorf("client policy rollback: preceding configuration save completion unconfirmed: %w", recovery.Err()))
+			case <-timer.C:
+			}
+			runningChecksum, err = k.runningConfigChecksum(recovery)
+			if err != nil {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+			}
+			if runningChecksum != originalChecksum {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
+			}
+			startupChecksum, err = k.startupConfigChecksum(recovery)
+			if err != nil {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+			}
 		}
 		if ownedMutationChecksum != "" && startupChecksum == ownedMutationChecksum {
 			if err := save(recovery, originalChecksum); err != nil {
@@ -639,6 +668,15 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	ownershipBaseline, err = k.configFile(ctx, "running-config.txt")
 	if err != nil {
 		return fmt.Errorf("read Keenetic running configuration: %w", err)
+	}
+	// Bind the baseline to the saved revision checked above. Otherwise an
+	// external unsaved edit during this read becomes part of our baseline.
+	baselineChecksum, err := k.runningConfigChecksum(ctx)
+	if err != nil {
+		return fmt.Errorf("verify Keenetic running configuration baseline: %w", err)
+	}
+	if baselineChecksum != originalChecksum {
+		return fmt.Errorf("external configuration drift while reading client policy baseline; refusing client policy change")
 	}
 
 	if choice == "xkeen" {
