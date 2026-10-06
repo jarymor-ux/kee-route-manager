@@ -447,19 +447,19 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 				}
 			}
 		}
+		// RCI writes can succeed on the router even when the HTTP response is lost.
+		// Treat read-back as the source of truth and never persist an unverified rollback.
+		restoredCfg, verifyErr := k.rci(recovery, "ip/hotspot")
+		if verifyErr != nil {
+			errs = append(errs, verifyErr)
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", errors.Join(errs...)))
+		}
+		restored := findHost(restoredCfg)
+		if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != stringValue(before["policy"]) || stringValue(restored["access"]) != stringValue(before["access"]) {
+			errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", errors.Join(errs...)))
+		}
 		if err := save(recovery); err != nil {
-			errs = append(errs, err)
-		}
-		restoredCfg, err := k.rci(recovery, "ip/hotspot")
-		if err != nil {
-			errs = append(errs, err)
-		} else {
-			restored := findHost(restoredCfg)
-			if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != stringValue(before["policy"]) || stringValue(restored["access"]) != stringValue(before["access"]) {
-				errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
-			}
-		}
-		if err := errors.Join(errs...); err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
 		return cause
