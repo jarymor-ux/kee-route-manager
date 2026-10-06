@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,6 +70,215 @@ func (k *keenetic) rci(ctx context.Context, path string) (map[string]any, error)
 		return nil, fmt.Errorf("RCI status error")
 	}
 	return v, nil
+}
+
+func (k *keenetic) rciPost(ctx context.Context, path string, body map[string]any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if err = rciResponseError(raw); err != nil {
+		return nil, err
+	}
+	v, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected RCI response")
+	}
+	return v, nil
+}
+
+func rciResponseError(v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		if strings.EqualFold(stringValue(x["status"]), "error") {
+			code := stringValue(x["code"])
+			if code != "" {
+				return fmt.Errorf("RCI status error (%s)", code)
+			}
+			return fmt.Errorf("RCI status error")
+		}
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
+
+func (k *keenetic) configFile(ctx context.Context, name string) ([]byte, error) {
+	u, err := url.Parse(k.cfg.Platform.Keenetic.RCIBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	basePath := strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(basePath, "/rci") {
+		return nil, fmt.Errorf("invalid Keenetic RCI base URL path")
+	}
+	u.Path = strings.TrimSuffix(basePath, "/rci") + "/ci/" + name
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("keenetic %s HTTP %d", name, resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
+	data, err := k.configFile(ctx, "startup-config.txt")
+	if err != nil {
+		return "", err
+	}
+	match := keeneticSavedChecksumPattern.FindSubmatch(data)
+	if len(match) != 2 {
+		return "", fmt.Errorf("keenetic startup-config missing MD5 checksum")
+	}
+	return strings.ToLower(string(match[1])), nil
+}
+
+func normalizePolicyOwnershipConfig(data []byte, mac string) string {
+	mac = strings.ToLower(mac)
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	inHotspot := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		indented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+		if !indented {
+			inHotspot = trimmed == "ip hotspot"
+			out = append(out, trimmed)
+			continue
+		}
+		if inHotspot {
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 3 && strings.EqualFold(fields[0], "host") && strings.EqualFold(fields[1], mac) &&
+				(strings.EqualFold(fields[2], "policy") || strings.EqualFold(fields[2], "conform")) {
+				continue
+			}
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
+func (k *keenetic) verifyPolicyMutationOwnership(ctx context.Context, baseline []byte, mac string) error {
+	current, err := k.configFile(ctx, "running-config.txt")
+	if err != nil {
+		return err
+	}
+	if normalizePolicyOwnershipConfig(baseline, mac) != normalizePolicyOwnershipConfig(current, mac) {
+		return fmt.Errorf("external configuration drift detected during client policy change")
+	}
+	return nil
+}
+
+func (k *keenetic) runningConfigChecksum(ctx context.Context) (string, error) {
+	state, err := k.rci(ctx, "show/last-change")
+	if err != nil {
+		return "", err
+	}
+	running := strings.ToLower(stringValue(state["checksum"]))
+	if !regexp.MustCompile("^[0-9a-f]{32}$").MatchString(running) {
+		return "", fmt.Errorf("RCI show/last-change missing configuration checksum")
+	}
+	return running, nil
+}
+
+func (k *keenetic) configurationChecksums(ctx context.Context) (string, string, error) {
+	running, err := k.runningConfigChecksum(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	saved, err := k.startupConfigChecksum(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	return running, saved, nil
+}
+
+func (k *keenetic) waitConfigurationSaved(ctx context.Context, expectedChecksum string) error {
+	if !regexp.MustCompile("^[0-9a-f]{32}$").MatchString(expectedChecksum) {
+		return fmt.Errorf("invalid expected Keenetic configuration checksum")
+	}
+	timeout := k.r.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	const pollInterval = 100 * time.Millisecond
+	for {
+		running, err := k.runningConfigChecksum(waitCtx)
+		if err != nil {
+			return err
+		}
+		if running != expectedChecksum {
+			return fmt.Errorf("keenetic configuration drift while waiting for save: expected %s, got %s", expectedChecksum, running)
+		}
+		saved, err := k.startupConfigChecksum(waitCtx)
+		if err != nil {
+			return err
+		}
+		if saved == expectedChecksum {
+			return nil
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-waitCtx.Done():
+			timer.Stop()
+			return waitCtx.Err()
+		case <-timer.C:
+		}
+	}
 }
 func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 	sys, e := k.rci(ctx, "show/system")
@@ -225,34 +435,6 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if e != nil {
 		return e
 	}
-	var before map[string]any
-	for _, raw := range array(cfg["host"]) {
-		if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
-			before = v
-			break
-		}
-	}
-	if before == nil {
-		return fmt.Errorf("device must be registered")
-	}
-	policies, e := k.rci(ctx, "show/ip/policy")
-	if e != nil {
-		return e
-	}
-	pid := ""
-	for id, raw := range policies {
-		if p, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(p["description"]), k.cfg.Platform.Keenetic.XKeenPolicyName) {
-			pid = id
-			break
-		}
-	}
-	if choice == "xkeen" && !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
-		return fmt.Errorf("XKeen policy unavailable")
-	}
-	command := func(c context.Context, text string) error {
-		_, err := k.r.Run(c, []string{k.cfg.Platform.Keenetic.NDMCBinary, "-c", text})
-		return err
-	}
 	findHost := func(cfg map[string]any) map[string]any {
 		for _, raw := range array(cfg["host"]) {
 			if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
@@ -261,6 +443,60 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		}
 		return nil
 	}
+	before := findHost(cfg)
+	if before == nil {
+		return fmt.Errorf("device must be registered")
+	}
+
+	pid := ""
+	if choice == "xkeen" {
+		policies, err := k.rci(ctx, "show/ip/policy")
+		if err != nil {
+			return err
+		}
+		for id, raw := range policies {
+			if p, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(p["description"]), k.cfg.Platform.Keenetic.XKeenPolicyName) {
+				pid = id
+				break
+			}
+		}
+		if !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
+			return fmt.Errorf("XKeen policy unavailable")
+		}
+	}
+
+	postHost := func(c context.Context, fields map[string]any) error {
+		body := make(map[string]any, len(fields)+1)
+		body["mac"] = mac
+		for key, value := range fields {
+			body[key] = value
+		}
+		_, err := k.rciPost(c, "ip/hotspot/host", body)
+		return err
+	}
+	saveAttempted := false
+	save := func(c context.Context, expectedChecksum string) error {
+		currentChecksum, err := k.runningConfigChecksum(c)
+		if err != nil {
+			return err
+		}
+		if currentChecksum != expectedChecksum {
+			return fmt.Errorf("keenetic configuration changed before save: expected %s, got %s", expectedChecksum, currentChecksum)
+		}
+		if err := c.Err(); err != nil {
+			return err
+		}
+		// Even a lost HTTP response can leave an asynchronous save in flight.
+		saveAttempted = true
+		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
+			return err
+		}
+		return k.waitConfigurationSaved(c, expectedChecksum)
+	}
+
+	originalChecksum := ""
+	ownedMutationChecksum := ""
+	var ownershipBaseline []byte
 	rollback := func(cause error) error {
 		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
 		timeout := k.r.Timeout
@@ -270,64 +506,232 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 		var errs []error
-		run := func(text string) {
-			if err := command(recovery, text); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		old := stringValue(before["policy"])
-		if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(old) {
-			run("ip hotspot host " + mac + " policy " + old)
-		} else {
-			run("no ip hotspot host " + mac + " policy")
-		}
-		if access := stringValue(before["access"]); access == "permit" || access == "deny" {
-			run("ip hotspot host " + mac + " " + access)
-		}
-		if truth(before["conform"]) {
-			run("ip hotspot host " + mac + " conform")
-		} else {
-			run("no ip hotspot host " + mac + " conform")
-		}
-		run("system configuration save")
-		restoredCfg, err := k.rci(recovery, "ip/hotspot")
+
+		currentCfg, err := k.rci(recovery, "ip/hotspot")
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			restored := findHost(restoredCfg)
-			if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != old || stringValue(restored["access"]) != stringValue(before["access"]) {
-				errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
+			current := findHost(currentCfg)
+			if current == nil {
+				errs = append(errs, fmt.Errorf("device disappeared during client policy rollback"))
+			} else {
+				oldPolicy := stringValue(before["policy"])
+				oldConform := truth(before["conform"])
+				currentPolicy := stringValue(current["policy"])
+				currentConform := truth(current["conform"])
+
+				if oldConform {
+					// Restore inherited routing first so latent policy repair cannot
+					// temporarily steer traffic through the wrong explicit policy.
+					if !currentConform {
+						if err := postHost(recovery, map[string]any{"conform": true}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(oldPolicy) {
+						if currentPolicy != oldPolicy {
+							if err := postHost(recovery, map[string]any{"policy": oldPolicy}); err != nil {
+								errs = append(errs, err)
+							}
+						}
+					} else if currentPolicy != "" {
+						if err := postHost(recovery, map[string]any{"policy": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				} else if regexp.MustCompile(`^Policy[0-9]+$`).MatchString(oldPolicy) {
+					// Stage the old explicit policy while inheritance is still active,
+					// then make it effective by disabling conform.
+					if currentPolicy != oldPolicy {
+						if err := postHost(recovery, map[string]any{"policy": oldPolicy}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if currentConform {
+						if err := postHost(recovery, map[string]any{"conform": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				} else {
+					if currentPolicy != "" {
+						if err := postHost(recovery, map[string]any{"policy": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+					if currentConform {
+						if err := postHost(recovery, map[string]any{"conform": map[string]any{"no": true}}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				}
+
+				oldAccess := stringValue(before["access"])
+				if stringValue(current["access"]) != oldAccess {
+					switch oldAccess {
+					case "permit":
+						if err := postHost(recovery, map[string]any{"permit": true}); err != nil {
+							errs = append(errs, err)
+						}
+					case "deny":
+						if err := postHost(recovery, map[string]any{"deny": true}); err != nil {
+							errs = append(errs, err)
+						}
+					}
+				}
 			}
 		}
-		if err := errors.Join(errs...); err != nil {
+		// RCI writes can succeed on the router even when the HTTP response is lost.
+		// Treat read-back as the source of truth and never persist an unverified rollback.
+		restoredCfg, verifyErr := k.rci(recovery, "ip/hotspot")
+		if verifyErr != nil {
+			errs = append(errs, verifyErr)
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", errors.Join(errs...)))
+		}
+		restored := findHost(restoredCfg)
+		if restored == nil || truth(restored["conform"]) != truth(before["conform"]) || stringValue(restored["policy"]) != stringValue(before["policy"]) || stringValue(restored["access"]) != stringValue(before["access"]) {
+			errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", errors.Join(errs...)))
+		}
+		// A global save is allowed only for configuration revisions owned by this
+		// operation. Generic "unsaved" state may include concurrent external changes.
+		runningChecksum, err := k.runningConfigChecksum(recovery)
+		if err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
-		return cause
+		if originalChecksum == "" || runningChecksum != originalChecksum {
+			return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
+		}
+		startupChecksum, err := k.startupConfigChecksum(recovery)
+		if err != nil {
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+		}
+		if startupChecksum == originalChecksum && !saveAttempted {
+			return cause
+		}
+		// The previous save may still be writing the mutation snapshot. Do not
+		// mistake the old startup revision for proof that no write is pending,
+		// or race a second save against it. Confirm the owned write first.
+		for startupChecksum == originalChecksum && saveAttempted {
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-recovery.Done():
+				timer.Stop()
+				return errors.Join(cause, fmt.Errorf("client policy rollback: preceding configuration save completion unconfirmed: %w", recovery.Err()))
+			case <-timer.C:
+			}
+			runningChecksum, err = k.runningConfigChecksum(recovery)
+			if err != nil {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+			}
+			if runningChecksum != originalChecksum {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
+			}
+			startupChecksum, err = k.startupConfigChecksum(recovery)
+			if err != nil {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+			}
+		}
+		if ownedMutationChecksum != "" && startupChecksum == ownedMutationChecksum {
+			if err := save(recovery, originalChecksum); err != nil {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+			}
+			return cause
+		}
+		return errors.Join(cause, fmt.Errorf("client policy rollback: startup configuration drift detected; refusing global save"))
 	}
-	if e = command(ctx, "no ip hotspot host "+mac+" conform"); e != nil {
-		return rollback(e)
-	}
+
+	needPolicyWrite := false
+	needConformWrite := false
 	if choice == "xkeen" {
-		e = command(ctx, "ip hotspot host "+mac+" policy "+pid)
+		needPolicyWrite = stringValue(before["policy"]) != pid
+		needConformWrite = truth(before["conform"])
 	} else {
-		e = command(ctx, "no ip hotspot host "+mac+" policy")
+		needPolicyWrite = stringValue(before["policy"]) != ""
+		needConformWrite = !truth(before["conform"])
 	}
-	if e != nil {
-		return rollback(e)
+	if !needPolicyWrite && !needConformWrite {
+		return nil
 	}
+
+	// system configuration save persists the complete running configuration, not
+	// only the host fields changed by KRM. Refuse to start a mutation while the
+	// router already has pending changes, otherwise KRM could make somebody
+	// else's configuration permanent.
+	runningChecksum, savedChecksum, err := k.configurationChecksums(ctx)
+	if err != nil {
+		return fmt.Errorf("check Keenetic configuration persistence: %w", err)
+	}
+	if runningChecksum != savedChecksum {
+		return fmt.Errorf("router has pre-existing unsaved configuration; refusing client policy change")
+	}
+	originalChecksum = runningChecksum
+	ownershipBaseline, err = k.configFile(ctx, "running-config.txt")
+	if err != nil {
+		return fmt.Errorf("read Keenetic running configuration: %w", err)
+	}
+	// Bind the baseline to the saved revision checked above. Otherwise an
+	// external unsaved edit during this read becomes part of our baseline.
+	baselineChecksum, err := k.runningConfigChecksum(ctx)
+	if err != nil {
+		return fmt.Errorf("verify Keenetic running configuration baseline: %w", err)
+	}
+	if baselineChecksum != originalChecksum {
+		return fmt.Errorf("external configuration drift while reading client policy baseline; refusing client policy change")
+	}
+
+	if choice == "xkeen" {
+		// Stage the target policy first. While conform is enabled this is latent,
+		// so disabling conform becomes the single effective routing switch.
+		if needPolicyWrite {
+			if e = postHost(ctx, map[string]any{"policy": pid}); e != nil {
+				return rollback(e)
+			}
+		}
+		if needConformWrite {
+			if e = postHost(ctx, map[string]any{"conform": map[string]any{"no": true}}); e != nil {
+				return rollback(e)
+			}
+		}
+	} else {
+		// Enable inheritance first so the segment policy becomes effective before
+		// the old explicit policy is removed from the host record.
+		if needConformWrite {
+			if e = postHost(ctx, map[string]any{"conform": true}); e != nil {
+				return rollback(e)
+			}
+		}
+		if needPolicyWrite {
+			if e = postHost(ctx, map[string]any{"policy": map[string]any{"no": true}}); e != nil {
+				return rollback(e)
+			}
+		}
+	}
+
 	afterCfg, e := k.rci(ctx, "ip/hotspot")
 	if e != nil {
 		return rollback(e)
 	}
 	after := findHost(afterCfg)
-	expected := ""
-	if choice == "xkeen" {
-		expected = pid
+	expectedPolicy := pid
+	expectedConform := false
+	if choice == "default" {
+		expectedPolicy = ""
+		expectedConform = true
 	}
-	if after == nil || truth(after["conform"]) || stringValue(after["policy"]) != expected || stringValue(after["access"]) != stringValue(before["access"]) {
+	if after == nil || truth(after["conform"]) != expectedConform || stringValue(after["policy"]) != expectedPolicy || stringValue(after["access"]) != stringValue(before["access"]) {
 		return rollback(fmt.Errorf("router did not apply policy safely"))
 	}
-	if e = command(ctx, "system configuration save"); e != nil {
+	ownedMutationChecksum, e = k.runningConfigChecksum(ctx)
+	if e != nil {
+		return rollback(e)
+	}
+	if ownedMutationChecksum == originalChecksum {
+		return rollback(fmt.Errorf("router policy changed without configuration checksum change"))
+	}
+	if e = k.verifyPolicyMutationOwnership(ctx, ownershipBaseline, mac); e != nil {
+		return rollback(e)
+	}
+	if e = save(ctx, ownedMutationChecksum); e != nil {
 		return rollback(e)
 	}
 	return nil
