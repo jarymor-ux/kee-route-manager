@@ -46,6 +46,12 @@ type Controller interface {
 	SwitchDirect(context.Context) error
 	RestoreOriginalXray(context.Context) error
 }
+type subscriptionController interface {
+	SubscriptionSources() []config.Source
+	SaveSubscription(context.Context, config.Source) error
+	DeleteSubscription(context.Context, string) error
+}
+
 type Server struct {
 	cfg      config.Config
 	mgr      Controller
@@ -103,6 +109,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/session", s.protect(s.session, false))
 	mux.HandleFunc("/api/v1/status", s.protect(s.status, false))
 	mux.HandleFunc("/api/v1/nodes", s.protect(s.nodes, false))
+	mux.HandleFunc("/api/v1/subscriptions", s.protect(s.subscriptions, false))
+	mux.HandleFunc("/api/v1/subscriptions/save", s.protect(s.saveSubscription, true))
+	mux.HandleFunc("/api/v1/subscriptions/delete", s.protect(s.deleteSubscription, true))
 	mux.HandleFunc("/api/v1/events", s.protect(s.events, false))
 	mux.HandleFunc("/api/v1/router/metrics", s.protect(s.metrics, false))
 	mux.HandleFunc("/api/v1/router/clients", s.protect(s.clients, false))
@@ -303,6 +312,51 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	}
 	writeJSON(w, 200, v)
 }
+func (s *Server) subscriptions(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	manager, ok := s.mgr.(subscriptionController)
+	if !ok {
+		jsonError(w, http.StatusNotImplemented, "subscription management unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, http.StatusOK, map[string]any{"sources": manager.SubscriptionSources()})
+}
+func (s *Server) saveSubscription(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	manager, ok := s.mgr.(subscriptionController)
+	if !ok {
+		jsonError(w, http.StatusNotImplemented, "subscription management unavailable")
+		return
+	}
+	var source config.Source
+	if err := decodeBody(w, r, &source); err != nil {
+		return
+	}
+	if err := manager.SaveSubscription(r.Context(), source); err != nil {
+		jsonError(w, http.StatusConflict, "subscription update rejected")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+func (s *Server) deleteSubscription(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	manager, ok := s.mgr.(subscriptionController)
+	if !ok {
+		jsonError(w, http.StatusNotImplemented, "subscription management unavailable")
+		return
+	}
+	var request struct {
+		ID string `json:"id"`
+	}
+	if err := decodeBody(w, r, &request); err != nil {
+		return
+	}
+	if err := manager.DeleteSubscription(r.Context(), request.ID); err != nil {
+		jsonError(w, http.StatusConflict, "subscription delete rejected")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) events(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
