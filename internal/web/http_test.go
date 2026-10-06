@@ -94,3 +94,67 @@ func TestRejectTrailingBody(t *testing.T) {
 		t.Fatal("accepted multiple JSON values")
 	}
 }
+
+
+type fakeSubscriptionController struct {
+	*fakeController
+	sources []config.Source
+	saved   config.Source
+	deleted string
+	err     error
+}
+
+func (f *fakeSubscriptionController) SubscriptionSources() []config.Source {
+	return f.sources
+}
+func (f *fakeSubscriptionController) SaveSubscription(_ context.Context, source config.Source) error {
+	f.saved = source
+	return f.err
+}
+func (f *fakeSubscriptionController) DeleteSubscription(_ context.Context, id string) error {
+	f.deleted = id
+	return f.err
+}
+
+func TestSubscriptionManagementHandlers(t *testing.T) {
+	controller := &fakeSubscriptionController{
+		fakeController: &fakeController{},
+		sources: []config.Source{{
+			ID:      "primary",
+			Name:    "Primary",
+			URL:     "https://example.invalid/sub?token=private",
+			Enabled: true,
+			Headers: map[string]string{"Authorization": "Bearer private"},
+		}},
+	}
+	s := &Server{mgr: controller}
+
+	w := httptest.NewRecorder()
+	s.subscriptions(w, httptest.NewRequest(http.MethodGet, "/", nil), auth.Session{})
+	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("list: code=%d cache=%q body=%s", w.Code, w.Header().Get("Cache-Control"), w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"id":"primary"`) || !strings.Contains(w.Body.String(), `"headers":{"Authorization":"Bearer private"}`) {
+		t.Fatalf("list body = %s", w.Body.String())
+	}
+
+	body := `{"id":"backup","name":"Backup","url":"https://backup.invalid/sub","enabled":true,"headers":{"X-Test":"value"}}`
+	w = httptest.NewRecorder()
+	s.saveSubscription(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)), auth.Session{})
+	if w.Code != http.StatusOK || controller.saved.ID != "backup" || controller.saved.Headers["X-Test"] != "value" {
+		t.Fatalf("save: code=%d source=%#v body=%s", w.Code, controller.saved, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	s.deleteSubscription(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"id":"backup"}`)), auth.Session{})
+	if w.Code != http.StatusOK || controller.deleted != "backup" {
+		t.Fatalf("delete: code=%d id=%q body=%s", w.Code, controller.deleted, w.Body.String())
+	}
+
+	controller.err = errors.New("private subscription=https://secret.invalid/token")
+	w = httptest.NewRecorder()
+	s.saveSubscription(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)), auth.Session{})
+	if w.Code != http.StatusConflict || strings.Contains(w.Body.String(), "secret.invalid") || strings.Contains(w.Body.String(), "private") {
+		t.Fatalf("secret leaked in rejection: %d %s", w.Code, w.Body.String())
+	}
+}
