@@ -136,33 +136,41 @@ func rciResponseError(v any) error {
 
 var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
 
-func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
+func (k *keenetic) configFile(ctx context.Context, name string) ([]byte, error) {
 	u, err := url.Parse(k.cfg.Platform.Keenetic.RCIBaseURL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	basePath := strings.TrimRight(u.Path, "/")
 	if !strings.HasSuffix(basePath, "/rci") {
-		return "", fmt.Errorf("invalid Keenetic RCI base URL path")
+		return nil, fmt.Errorf("invalid Keenetic RCI base URL path")
 	}
-	u.Path = strings.TrimSuffix(basePath, "/rci") + "/ci/startup-config.txt"
+	u.Path = strings.TrimSuffix(basePath, "/rci") + "/ci/" + name
 	u.RawPath = ""
 	u.RawQuery = ""
 	u.Fragment = ""
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	resp, err := k.http.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("keenetic startup-config HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("keenetic %s HTTP %d", name, resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
+	data, err := k.configFile(ctx, "startup-config.txt")
 	if err != nil {
 		return "", err
 	}
@@ -171,6 +179,45 @@ func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("keenetic startup-config missing MD5 checksum")
 	}
 	return strings.ToLower(string(match[1])), nil
+}
+
+func normalizePolicyOwnershipConfig(data []byte, mac string) string {
+	mac = strings.ToLower(mac)
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	inHotspot := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		indented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+		if !indented {
+			inHotspot = trimmed == "ip hotspot"
+			out = append(out, trimmed)
+			continue
+		}
+		if inHotspot {
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 3 && strings.EqualFold(fields[0], "host") && strings.EqualFold(fields[1], mac) &&
+				(strings.EqualFold(fields[2], "policy") || strings.EqualFold(fields[2], "conform")) {
+				continue
+			}
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
+func (k *keenetic) verifyPolicyMutationOwnership(ctx context.Context, baseline []byte, mac string) error {
+	current, err := k.configFile(ctx, "running-config.txt")
+	if err != nil {
+		return err
+	}
+	if normalizePolicyOwnershipConfig(baseline, mac) != normalizePolicyOwnershipConfig(current, mac) {
+		return fmt.Errorf("external configuration drift detected during client policy change")
+	}
+	return nil
 }
 
 func (k *keenetic) runningConfigChecksum(ctx context.Context) (string, error) {
@@ -443,6 +490,7 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 
 	originalChecksum := ""
 	ownedMutationChecksum := ""
+	var ownershipBaseline []byte
 	rollback := func(cause error) error {
 		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
 		timeout := k.r.Timeout
@@ -588,6 +636,10 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		return fmt.Errorf("router has pre-existing unsaved configuration; refusing client policy change")
 	}
 	originalChecksum = runningChecksum
+	ownershipBaseline, err = k.configFile(ctx, "running-config.txt")
+	if err != nil {
+		return fmt.Errorf("read Keenetic running configuration: %w", err)
+	}
 
 	if choice == "xkeen" {
 		// Stage the target policy first. While conform is enabled this is latent,
@@ -637,6 +689,9 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	}
 	if ownedMutationChecksum == originalChecksum {
 		return rollback(fmt.Errorf("router policy changed without configuration checksum change"))
+	}
+	if e = k.verifyPolicyMutationOwnership(ctx, ownershipBaseline, mac); e != nil {
+		return rollback(e)
 	}
 	if e = save(ctx, ownedMutationChecksum); e != nil {
 		return rollback(e)
