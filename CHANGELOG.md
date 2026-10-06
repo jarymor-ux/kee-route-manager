@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add authenticated UI subscription management: list, add, edit, enable/disable and delete sources without restarting the controller. UI-managed sources are validated with the normal config rules, persisted privately in the controller state directory and applied to the live fetcher; secret URL paths/queries and header values are not rendered in the subscriptions table.
+
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
 ## 1.1.0-rc.7 — 2026-10-04
