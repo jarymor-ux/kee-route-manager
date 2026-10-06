@@ -197,14 +197,6 @@ func (k *keenetic) configurationChecksums(ctx context.Context) (string, string, 
 	return running, saved, nil
 }
 
-func (k *keenetic) configurationUnsaved(ctx context.Context) (bool, error) {
-	running, saved, err := k.configurationChecksums(ctx)
-	if err != nil {
-		return false, err
-	}
-	return running != saved, nil
-}
-
 func (k *keenetic) waitConfigurationSaved(ctx context.Context, expectedChecksum string) error {
 	if !regexp.MustCompile("^[0-9a-f]{32}$").MatchString(expectedChecksum) {
 		return fmt.Errorf("invalid expected Keenetic configuration checksum")
@@ -223,7 +215,7 @@ func (k *keenetic) waitConfigurationSaved(ctx context.Context, expectedChecksum 
 			return err
 		}
 		if running != expectedChecksum {
-			return fmt.Errorf("Keenetic configuration drift while waiting for save: expected %s, got %s", expectedChecksum, running)
+			return fmt.Errorf("keenetic configuration drift while waiting for save: expected %s, got %s", expectedChecksum, running)
 		}
 		saved, err := k.startupConfigChecksum(waitCtx)
 		if err != nil {
@@ -441,7 +433,7 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 			return err
 		}
 		if currentChecksum != expectedChecksum {
-			return fmt.Errorf("Keenetic configuration changed before save: expected %s, got %s", expectedChecksum, currentChecksum)
+			return fmt.Errorf("keenetic configuration changed before save: expected %s, got %s", expectedChecksum, currentChecksum)
 		}
 		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
 			return err
