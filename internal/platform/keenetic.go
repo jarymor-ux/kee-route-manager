@@ -133,6 +133,7 @@ func rciResponseError(v any) error {
 	}
 	return nil
 }
+
 var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
 
 func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
