@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
 
 type managedSourceFetcher interface {
