@@ -210,6 +210,78 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	}
 }
 
+func TestRegressionKeeneticPolicyRollbackPersistsVerifiedStateAfterLostResponse(t *testing.T) {
+	const mac = "00:11:22:33:44:55"
+	c := config.Default()
+	c.Platform.Kind = "keenetic"
+	c.Platform.Keenetic.AllowPolicyChange = true
+	c.Platform.Keenetic.XKeenPolicyName = "XKeen"
+	k := newKeenetic(c, Runner{}).(*keenetic)
+
+	state := map[string]any{"mac": mac, "conform": true, "policy": "Policy2", "access": "permit"}
+	applyFailed := false
+	rollbackResponseLost := false
+	saves := 0
+	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
+			body, _ := json.Marshal(map[string]any{"host": []any{state}})
+			return platformRegressionResponse(string(body)), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
+			return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return nil, err
+			}
+			if conform, ok := body["conform"].(map[string]any); ok && truth(conform["no"]) {
+				state["conform"] = false
+				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+			}
+			if policy, ok := body["policy"].(string); ok {
+				state["policy"] = policy
+				if policy == "Policy0" && !applyFailed {
+					applyFailed = true
+					return nil, errors.New("apply response lost")
+				}
+				if policy == "Policy2" && !rollbackResponseLost {
+					rollbackResponseLost = true
+					return nil, errors.New("rollback response lost")
+				}
+				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+			}
+			if conform, ok := body["conform"].(bool); ok && conform {
+				state["conform"] = true
+			}
+			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
+			saves++
+			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
+		}
+	})}
+
+	err := k.SetClientPolicy(context.Background(), mac, "xkeen")
+	if err == nil || !strings.Contains(err.Error(), "apply response lost") {
+		t.Fatalf("original mutation error not reported: %v", err)
+	}
+	if strings.Contains(err.Error(), "client policy rollback") {
+		t.Fatalf("verified rollback treated as failed: %v", err)
+	}
+	if !rollbackResponseLost {
+		t.Fatal("rollback response-loss path was not exercised")
+	}
+	if saves != 1 {
+		t.Fatalf("verified rollback must be persisted exactly once, saves=%d", saves)
+	}
+	if !truth(state["conform"]) || stringValue(state["policy"]) != "Policy2" || stringValue(state["access"]) != "permit" {
+		t.Fatalf("verified rollback state=%#v", state)
+	}
+}
+
 func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 	for _, mode := range []string{"write_failure", "restore_drift", "deadline"} {
 		t.Run(mode, func(t *testing.T) {
@@ -225,6 +297,7 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 			k := newKeenetic(c, Runner{Timeout: timeout}).(*keenetic)
 			state := map[string]any{"mac": mac, "conform": true, "policy": "Policy2", "access": "permit"}
 			applyFailed := false
+			saves := 0
 			k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 				if err := r.Context().Err(); err != nil {
 					return nil, err
@@ -271,6 +344,7 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 					}
 					return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 				case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
+					saves++
 					return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
 				default:
 					return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -281,6 +355,9 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 			err := k.SetClientPolicy(context.Background(), mac, "xkeen")
 			if err == nil || !strings.Contains(err.Error(), "client policy rollback") {
 				t.Fatalf("rollback failure hidden: %v", err)
+			}
+			if saves != 0 {
+				t.Fatalf("unverified rollback must not be persisted, saves=%d", saves)
 			}
 			switch mode {
 			case "write_failure":
