@@ -95,7 +95,6 @@ func TestRejectTrailingBody(t *testing.T) {
 	}
 }
 
-
 type fakeSubscriptionController struct {
 	*fakeController
 	sources []config.Source
