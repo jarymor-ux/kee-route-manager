@@ -63,6 +63,7 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	state := map[string]any{"mac": mac, "conform": true, "access": "permit"}
 	var posts []map[string]any
 	saves := 0
+	unsaved := false
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
@@ -76,6 +77,7 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 				return nil, err
 			}
 			posts = append(posts, body)
+			unsaved = true
 			if body["mac"] != mac {
 				t.Fatalf("unexpected mac: %#v", body)
 			}
@@ -93,9 +95,11 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 			}
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"ok"}]}`), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+			body, _ := json.Marshal(map[string]any{"fail-safe": map[string]any{"unsaved": unsaved}})
+			return platformRegressionResponse(string(body)), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
+			unsaved = false
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
@@ -111,11 +115,11 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	if saves != 1 || len(posts) != 2 {
 		t.Fatalf("xkeen writes=%d saves=%d posts=%#v", len(posts), saves, posts)
 	}
-	if conform, ok := posts[0]["conform"].(map[string]any); !ok || !truth(conform["no"]) {
-		t.Fatalf("xkeen must remove conform first: %#v", posts[0])
+	if posts[0]["policy"] != "Policy0" {
+		t.Fatalf("xkeen must stage Policy0 before changing effective routing: %#v", posts[0])
 	}
-	if posts[1]["policy"] != "Policy0" {
-		t.Fatalf("xkeen must assign Policy0: %#v", posts[1])
+	if conform, ok := posts[1]["conform"].(map[string]any); !ok || !truth(conform["no"]) {
+		t.Fatalf("xkeen must remove conform only after staging Policy0: %#v", posts[1])
 	}
 
 	posts = nil
@@ -128,11 +132,22 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 	if saves != 2 || len(posts) != 2 {
 		t.Fatalf("default writes=%d saves=%d posts=%#v", len(posts), saves, posts)
 	}
-	if policy, ok := posts[0]["policy"].(map[string]any); !ok || !truth(policy["no"]) {
-		t.Fatalf("default must remove explicit policy: %#v", posts[0])
+	if posts[0]["conform"] != true {
+		t.Fatalf("default must enable conform before removing latent policy: %#v", posts[0])
 	}
-	if posts[1]["conform"] != true {
-		t.Fatalf("default must enable conform: %#v", posts[1])
+	if policy, ok := posts[1]["policy"].(map[string]any); !ok || !truth(policy["no"]) {
+		t.Fatalf("default must remove explicit policy only after conform is enabled: %#v", posts[1])
+	}
+
+	// A previous request may have changed running config but lost the save result.
+	// Repeating the same request must not report success while config is still unsaved.
+	posts = nil
+	unsaved = true
+	if err := k.SetClientPolicy(context.Background(), mac, "default"); err != nil {
+		t.Fatal(err)
+	}
+	if saves != 3 || len(posts) != 0 || unsaved {
+		t.Fatalf("unchanged unsaved policy was not persisted: posts=%#v saves=%d unsaved=%v", posts, saves, unsaved)
 	}
 }
 
@@ -202,7 +217,7 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation not reported: %v", err)
 	}
-	if policyWrite != 1 || rollbackWrites < 3 {
+	if policyWrite != 1 || rollbackWrites < 2 {
 		t.Fatalf("rollback did not run through RCI: policyWrite=%d rollbackWrites=%d", policyWrite, rollbackWrites)
 	}
 	if !truth(state["conform"]) || stringValue(state["policy"]) != "Policy2" || stringValue(state["access"]) != "permit" {
