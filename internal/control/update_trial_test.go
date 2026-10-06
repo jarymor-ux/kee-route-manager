@@ -149,13 +149,26 @@ func startTrialProcess(t *testing.T, c config.Config, nonce string) (*exec.Cmd, 
 	return cmd, done
 }
 
-func waitTrialHealth(t *testing.T, c config.Config) map[string]any {
+func waitTrialHealth(t *testing.T, c config.Config, done ...<-chan error) map[string]any {
 	t.Helper()
 	cl := client.New(c.API.UnixSocket)
 	defer cl.Close()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		if len(done) > 0 && done[0] != nil {
+			select {
+			case err, ok := <-done[0]:
+				if !ok || err == nil {
+					t.Fatal("trial process exited before health became available")
+				}
+				t.Fatalf("trial process exited before health became available: %v", err)
+			default:
+			}
+		}
+
+		// The production health handler allows trialReady up to five seconds.
+		// Give a single probe enough time to complete under the race detector.
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		b, err := cl.Do(ctx, "GET", "/healthz", nil)
 		cancel()
 		if err == nil {
@@ -165,7 +178,7 @@ func waitTrialHealth(t *testing.T, c config.Config) map[string]any {
 			}
 			return health
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("trial health never became available")
 	return nil
@@ -175,8 +188,8 @@ func TestTrialProcessStaysReadOnlyAndActivatesWithContinuousOwnership(t *testing
 	c, marker, public := trialFixture(t)
 	nonce := strings.Repeat("a", 64)
 	before := protectedTrialTree(t, c)
-	cmd, _ := startTrialProcess(t, c, nonce)
-	health := waitTrialHealth(t, c)
+	cmd, done := startTrialProcess(t, c, nonce)
+	health := waitTrialHealth(t, c, done)
 	if health["status"] != "trial_ready" || health["version"] != "trial-fixture" || health["update_nonce"] != nonce || health["pid"] != float64(cmd.Process.Pid) || health["reconciled"] != true {
 		t.Fatalf("unexpected health: %#v", health)
 	}
@@ -199,7 +212,7 @@ func TestTrialProcessStaysReadOnlyAndActivatesWithContinuousOwnership(t *testing
 		t.Fatalf("public activation code=%d", resp.StatusCode)
 	}
 	for i := 0; i < 3; i++ {
-		waitTrialHealth(t, c)
+		waitTrialHealth(t, c, done)
 	}
 	if after := protectedTrialTree(t, c); !reflect.DeepEqual(before, after) {
 		t.Fatal("trial changed persistent state/cache/Xray tree")
@@ -239,8 +252,8 @@ func TestTrialProcessStaysReadOnlyAndActivatesWithContinuousOwnership(t *testing
 func TestTrialRefusesDriftAtHealthAndActivation(t *testing.T) {
 	c, _, _ := trialFixture(t)
 	nonce := strings.Repeat("c", 64)
-	startTrialProcess(t, c, nonce)
-	waitTrialHealth(t, c)
+	_, done := startTrialProcess(t, c, nonce)
+	waitTrialHealth(t, c, done)
 	path := filepath.Join(c.Paths.StateDir, "state.json")
 	if err := os.WriteFile(path, []byte(`{"schema_version":999}`), 0600); err != nil {
 		t.Fatal(err)
@@ -263,8 +276,8 @@ func TestTrialRefusesDriftAtHealthAndActivation(t *testing.T) {
 
 func TestPrepareIsLocalOnlyAndFreezesEveryMutation(t *testing.T) {
 	c, _, public := trialFixture(t)
-	cmd, _ := startTrialProcess(t, c, "")
-	waitTrialHealth(t, c)
+	cmd, done := startTrialProcess(t, c, "")
+	waitTrialHealth(t, c, done)
 	resp, err := public.Post("https://"+c.API.Listen+"/internal/update/prepare", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
