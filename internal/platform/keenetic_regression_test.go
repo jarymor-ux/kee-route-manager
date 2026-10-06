@@ -108,7 +108,7 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"ok"}]}`), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
 			body, _ := json.Marshal(map[string]any{
-				"checksum": runningChecksum,
+				"checksum":  runningChecksum,
 				"fail-safe": map[string]any{"unsaved": false},
 			})
 			return platformRegressionResponse(string(body)), nil
@@ -500,7 +500,7 @@ func TestKeeneticWaitConfigurationSavedUsesRunningAndStartupChecksums(t *testing
 				savedChecksum = runningChecksum
 			}
 			body, _ := json.Marshal(map[string]any{
-				"checksum": runningChecksum,
+				"checksum":  runningChecksum,
 				"fail-safe": map[string]any{"unsaved": false},
 			})
 			return platformRegressionResponse(string(body)), nil
@@ -529,7 +529,7 @@ func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
 			body, _ := json.Marshal(map[string]any{
-				"checksum": runningChecksum,
+				"checksum":  runningChecksum,
 				"fail-safe": map[string]any{"unsaved": false},
 			})
 			return platformRegressionResponse(string(body)), nil
