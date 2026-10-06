@@ -94,8 +94,6 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"ok"}]}`), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
 			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
-		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
-			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
@@ -190,6 +188,8 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 				rollbackWrites++
 			}
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			rollbackWrites++
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
