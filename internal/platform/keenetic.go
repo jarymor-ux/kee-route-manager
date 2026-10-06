@@ -173,23 +173,392 @@ func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
 	return strings.ToLower(string(match[1])), nil
 }
 
-func (k *keenetic) configurationUnsaved(ctx context.Context) (bool, error) {
+func (k *keenetic) runningConfigChecksum(ctx context.Context) (string, error) {
 	state, err := k.rci(ctx, "show/last-change")
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	running := strings.ToLower(stringValue(state["checksum"]))
-	if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(running) {
-		return false, fmt.Errorf("RCI show/last-change missing configuration checksum")
+	if !regexp.MustCompile(`^[0-9a-f]{32}package platform
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
+)
+
+type keenetic struct {
+	cfg  config.Config
+	r    Runner
+	http *http.Client
+}
+
+func newKeenetic(c config.Config, r Runner) Adapter {
+	return &keenetic{c, r, &http.Client{Timeout: 8 * time.Second}}
+}
+func (k *keenetic) Kind() string { return "keenetic" }
+func (k *keenetic) Capabilities() Capabilities {
+	return Capabilities{Metrics: true, Clients: true, ClientPolicy: k.cfg.Platform.Keenetic.AllowPolicyChange, WakeOnLAN: true, Reboot: k.cfg.Platform.Keenetic.AllowReboot, SystemLogs: true, Diagnostics: true}
+}
+func (k *keenetic) RestartXray(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayRestartCommand)
+	return e
+}
+func (k *keenetic) XrayRunning(ctx context.Context) bool {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayStatusCommand)
+	return e == nil
+}
+func (k *keenetic) RestartKRM(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.KRMRestartCommand)
+	return e
+}
+func (k *keenetic) rci(ctx context.Context, path string) (map[string]any, error) {
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, e := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if e != nil {
+		return nil, e
+	}
+	resp, e := k.http.Do(req)
+	if e != nil {
+		return nil, e
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	b, e := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if e != nil {
+		return nil, e
+	}
+	var v map[string]any
+	if e = json.Unmarshal(b, &v); e != nil {
+		return nil, e
+	}
+	if _, bad := v["status"]; bad {
+		return nil, fmt.Errorf("RCI status error")
+	}
+	return v, nil
+}
+
+func (k *keenetic) rciPost(ctx context.Context, path string, body map[string]any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if err = rciResponseError(raw); err != nil {
+		return nil, err
+	}
+	v, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected RCI response")
+	}
+	return v, nil
+}
+
+func rciResponseError(v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		if strings.EqualFold(stringValue(x["status"]), "error") {
+			code := stringValue(x["code"])
+			if code != "" {
+				return fmt.Errorf("RCI status error (%s)", code)
+			}
+			return fmt.Errorf("RCI status error")
+		}
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
+
+func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
+	u, err := url.Parse(k.cfg.Platform.Keenetic.RCIBaseURL)
+	if err != nil {
+		return "", err
+	}
+	basePath := strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(basePath, "/rci") {
+		return "", fmt.Errorf("invalid Keenetic RCI base URL path")
+	}
+	u.Path = strings.TrimSuffix(basePath, "/rci") + "/ci/startup-config.txt"
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("keenetic startup-config HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	match := keeneticSavedChecksumPattern.FindSubmatch(data)
+	if len(match) != 2 {
+		return "", fmt.Errorf("keenetic startup-config missing MD5 checksum")
+	}
+	return strings.ToLower(string(match[1])), nil
+}
+
+).MatchString(running) {
+		return "", fmt.Errorf("RCI show/last-change missing configuration checksum")
+	}
+	return running, nil
+}
+
+func (k *keenetic) configurationChecksums(ctx context.Context) (string, string, error) {
+	running, err := k.runningConfigChecksum(ctx)
+	if err != nil {
+		return "", "", err
 	}
 	saved, err := k.startupConfigChecksum(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	return running, saved, nil
+}
+
+func (k *keenetic) configurationUnsaved(ctx context.Context) (bool, error) {
+	running, saved, err := k.configurationChecksums(ctx)
 	if err != nil {
 		return false, err
 	}
 	return running != saved, nil
 }
 
-func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
+func (k *keenetic) waitConfigurationSaved(ctx context.Context, expectedChecksum string) error {
+	if !regexp.MustCompile(`^[0-9a-f]{32}package platform
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
+)
+
+type keenetic struct {
+	cfg  config.Config
+	r    Runner
+	http *http.Client
+}
+
+func newKeenetic(c config.Config, r Runner) Adapter {
+	return &keenetic{c, r, &http.Client{Timeout: 8 * time.Second}}
+}
+func (k *keenetic) Kind() string { return "keenetic" }
+func (k *keenetic) Capabilities() Capabilities {
+	return Capabilities{Metrics: true, Clients: true, ClientPolicy: k.cfg.Platform.Keenetic.AllowPolicyChange, WakeOnLAN: true, Reboot: k.cfg.Platform.Keenetic.AllowReboot, SystemLogs: true, Diagnostics: true}
+}
+func (k *keenetic) RestartXray(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayRestartCommand)
+	return e
+}
+func (k *keenetic) XrayRunning(ctx context.Context) bool {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayStatusCommand)
+	return e == nil
+}
+func (k *keenetic) RestartKRM(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.KRMRestartCommand)
+	return e
+}
+func (k *keenetic) rci(ctx context.Context, path string) (map[string]any, error) {
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, e := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if e != nil {
+		return nil, e
+	}
+	resp, e := k.http.Do(req)
+	if e != nil {
+		return nil, e
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	b, e := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if e != nil {
+		return nil, e
+	}
+	var v map[string]any
+	if e = json.Unmarshal(b, &v); e != nil {
+		return nil, e
+	}
+	if _, bad := v["status"]; bad {
+		return nil, fmt.Errorf("RCI status error")
+	}
+	return v, nil
+}
+
+func (k *keenetic) rciPost(ctx context.Context, path string, body map[string]any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if err = rciResponseError(raw); err != nil {
+		return nil, err
+	}
+	v, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected RCI response")
+	}
+	return v, nil
+}
+
+func rciResponseError(v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		if strings.EqualFold(stringValue(x["status"]), "error") {
+			code := stringValue(x["code"])
+			if code != "" {
+				return fmt.Errorf("RCI status error (%s)", code)
+			}
+			return fmt.Errorf("RCI status error")
+		}
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
+
+func (k *keenetic) startupConfigChecksum(ctx context.Context) (string, error) {
+	u, err := url.Parse(k.cfg.Platform.Keenetic.RCIBaseURL)
+	if err != nil {
+		return "", err
+	}
+	basePath := strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(basePath, "/rci") {
+		return "", fmt.Errorf("invalid Keenetic RCI base URL path")
+	}
+	u.Path = strings.TrimSuffix(basePath, "/rci") + "/ci/startup-config.txt"
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("keenetic startup-config HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	match := keeneticSavedChecksumPattern.FindSubmatch(data)
+	if len(match) != 2 {
+		return "", fmt.Errorf("keenetic startup-config missing MD5 checksum")
+	}
+	return strings.ToLower(string(match[1])), nil
+}
+
+).MatchString(expectedChecksum) {
+		return fmt.Errorf("invalid expected Keenetic configuration checksum")
+	}
 	timeout := k.r.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -199,11 +568,18 @@ func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
 
 	const pollInterval = 100 * time.Millisecond
 	for {
-		unsaved, err := k.configurationUnsaved(waitCtx)
+		running, err := k.runningConfigChecksum(waitCtx)
 		if err != nil {
 			return err
 		}
-		if !unsaved {
+		if running != expectedChecksum {
+			return fmt.Errorf("Keenetic configuration drift while waiting for save: expected %s, got %s", expectedChecksum, running)
+		}
+		saved, err := k.startupConfigChecksum(waitCtx)
+		if err != nil {
+			return err
+		}
+		if saved == expectedChecksum {
 			return nil
 		}
 		timer := time.NewTimer(pollInterval)
@@ -409,12 +785,22 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		_, err := k.rciPost(c, "ip/hotspot/host", body)
 		return err
 	}
-	save := func(c context.Context) error {
+	save := func(c context.Context, expectedChecksum string) error {
+		currentChecksum, err := k.runningConfigChecksum(c)
+		if err != nil {
+			return err
+		}
+		if currentChecksum != expectedChecksum {
+			return fmt.Errorf("Keenetic configuration changed before save: expected %s, got %s", expectedChecksum, currentChecksum)
+		}
 		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
 			return err
 		}
-		return k.waitConfigurationSaved(c)
+		return k.waitConfigurationSaved(c, expectedChecksum)
 	}
+
+	originalChecksum := ""
+	ownedMutationChecksum := ""
 
 	rollback := func(cause error) error {
 		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
@@ -511,19 +897,31 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 			errs = append(errs, fmt.Errorf("router did not restore client policy safely"))
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", errors.Join(errs...)))
 		}
-		// The router's save command persists the complete running configuration.
-		// If restoring the host already made running == startup, saving would be
-		// unnecessary and could persist unrelated changes made outside KRM.
-		unsaved, err := k.configurationUnsaved(recovery)
+		// Never use a generic "unsaved" state as permission to save here: it may
+		// include concurrent changes made outside KRM. A rollback may persist only
+		// the exact original running configuration, and only when startup still
+		// contains the exact mutation checksum that this operation owned.
+		runningChecksum, err := k.runningConfigChecksum(recovery)
 		if err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
-		if unsaved {
-			if err := save(recovery); err != nil {
+		if originalChecksum == "" || runningChecksum != originalChecksum {
+			return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
+		}
+		startupChecksum, err := k.startupConfigChecksum(recovery)
+		if err != nil {
+			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
+		}
+		if startupChecksum == originalChecksum {
+			return cause
+		}
+		if ownedMutationChecksum != "" && startupChecksum == ownedMutationChecksum {
+			if err := save(recovery, originalChecksum); err != nil {
 				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 			}
+			return cause
 		}
-		return cause
+		return errors.Join(cause, fmt.Errorf("client policy rollback: startup configuration drift detected; refusing global save"))
 	}
 
 	needPolicyWrite := false
@@ -543,13 +941,14 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	// only the host fields changed by KRM. Refuse to start a mutation while the
 	// router already has pending changes, otherwise KRM could make somebody
 	// else's configuration permanent.
-	unsaved, err := k.configurationUnsaved(ctx)
+	runningChecksum, savedChecksum, err := k.configurationChecksums(ctx)
 	if err != nil {
 		return fmt.Errorf("check Keenetic configuration persistence: %w", err)
 	}
-	if unsaved {
+	if runningChecksum != savedChecksum {
 		return fmt.Errorf("router has pre-existing unsaved configuration; refusing client policy change")
 	}
+	originalChecksum = runningChecksum
 
 	if choice == "xkeen" {
 		// Stage the target policy first. While conform is enabled this is latent,
@@ -593,7 +992,14 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if after == nil || truth(after["conform"]) != expectedConform || stringValue(after["policy"]) != expectedPolicy || stringValue(after["access"]) != stringValue(before["access"]) {
 		return rollback(fmt.Errorf("router did not apply policy safely"))
 	}
-	if e = save(ctx); e != nil {
+	ownedMutationChecksum, e = k.runningConfigChecksum(ctx)
+	if e != nil {
+		return rollback(e)
+	}
+	if ownedMutationChecksum == originalChecksum {
+		return rollback(fmt.Errorf("router policy changed without configuration checksum change"))
+	}
+	if e = save(ctx, ownedMutationChecksum); e != nil {
 		return rollback(e)
 	}
 	return nil
