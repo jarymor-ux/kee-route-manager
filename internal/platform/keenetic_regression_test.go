@@ -324,6 +324,23 @@ func TestKeeneticWaitConfigurationSaved(t *testing.T) {
 		t.Fatalf("unexpected save poll count: %d", polls)
 	}
 }
+func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
+	k := newKeenetic(config.Default(), Runner{Timeout: 20 * time.Millisecond}).(*keenetic)
+	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet || r.URL.Path != "/rci/show/last-change" {
+			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
+		}
+		return platformRegressionResponse(`{"fail-safe":{"unsaved":true}}`), nil
+	})}
+	start := time.Now()
+	err := k.waitConfigurationSaved(context.Background())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("save wait deadline not reported: %v", err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("save wait exceeded bounded timeout: %v", time.Since(start))
+	}
+}
 func TestRCIPostRejectsNestedStatusError(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {

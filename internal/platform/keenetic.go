@@ -134,9 +134,16 @@ func rciResponseError(v any) error {
 	return nil
 }
 func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
+	timeout := k.r.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	const pollInterval = 100 * time.Millisecond
 	for {
-		state, err := k.rci(ctx, "show/last-change")
+		state, err := k.rci(waitCtx, "show/last-change")
 		if err != nil {
 			return err
 		}
@@ -153,9 +160,9 @@ func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
 		}
 		timer := time.NewTimer(pollInterval)
 		select {
-		case <-ctx.Done():
+		case <-waitCtx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return waitCtx.Err()
 		case <-timer.C:
 		}
 	}
