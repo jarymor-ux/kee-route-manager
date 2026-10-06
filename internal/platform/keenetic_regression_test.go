@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 )
@@ -91,6 +92,10 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 				state["conform"] = false
 			}
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"ok"}]}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+		case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+			return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
 			return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
@@ -141,7 +146,7 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	c.Platform.Keenetic.XKeenPolicyName = "XKeen"
 	k := newKeenetic(c, Runner{}).(*keenetic)
 
-	state := map[string]any{"mac": mac, "conform": true, "access": "permit"}
+	state := map[string]any{"mac": mac, "conform": true, "policy": "Policy2", "access": "permit"}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	policyWrite := 0
@@ -162,10 +167,15 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 				state["conform"] = false
 				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 			}
-			if _, ok := body["policy"].(string); ok {
-				policyWrite++
-				cancel()
-				return nil, context.Canceled
+			if policy, ok := body["policy"].(string); ok {
+				state["policy"] = policy
+				if policy == "Policy0" && policyWrite == 0 {
+					policyWrite++
+					cancel()
+					return nil, context.Canceled
+				}
+				rollbackWrites++
+				return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
 			}
 			if policy, ok := body["policy"].(map[string]any); ok && truth(policy["no"]) {
 				delete(state, "policy")
@@ -192,14 +202,128 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation not reported: %v", err)
 	}
-	if policyWrite != 1 || rollbackWrites < 2 {
+	if policyWrite != 1 || rollbackWrites < 3 {
 		t.Fatalf("rollback did not run through RCI: policyWrite=%d rollbackWrites=%d", policyWrite, rollbackWrites)
 	}
-	if !truth(state["conform"]) || stringValue(state["policy"]) != "" || stringValue(state["access"]) != "permit" {
+	if !truth(state["conform"]) || stringValue(state["policy"]) != "Policy2" || stringValue(state["access"]) != "permit" {
 		t.Fatalf("rollback state=%#v", state)
 	}
 }
 
+func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
+	for _, mode := range []string{"write_failure", "restore_drift", "deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			const mac = "00:11:22:33:44:55"
+			c := config.Default()
+			c.Platform.Kind = "keenetic"
+			c.Platform.Keenetic.AllowPolicyChange = true
+			c.Platform.Keenetic.XKeenPolicyName = "XKeen"
+			timeout := time.Second
+			if mode == "deadline" {
+				timeout = 30 * time.Millisecond
+			}
+			k := newKeenetic(c, Runner{Timeout: timeout}).(*keenetic)
+			state := map[string]any{"mac": mac, "conform": true, "policy": "Policy2", "access": "permit"}
+			applyFailed := false
+			k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+				if err := r.Context().Err(); err != nil {
+					return nil, err
+				}
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/rci/ip/hotspot":
+					body, _ := json.Marshal(map[string]any{"host": []any{state}})
+					return platformRegressionResponse(string(body)), nil
+				case r.Method == http.MethodGet && r.URL.Path == "/rci/show/ip/policy":
+					return platformRegressionResponse(`{"Policy0":{"description":"XKeen"}}`), nil
+				case r.Method == http.MethodGet && r.URL.Path == "/rci/show/last-change":
+					return platformRegressionResponse(`{"fail-safe":{"unsaved":false}}`), nil
+				case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						return nil, err
+					}
+					if conform, ok := body["conform"].(map[string]any); ok && truth(conform["no"]) {
+						state["conform"] = false
+						return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+					}
+					if policy, ok := body["policy"].(string); ok {
+						if policy == "Policy0" && !applyFailed {
+							state["policy"] = policy
+							applyFailed = true
+							return nil, errors.New("apply response lost")
+						}
+						if policy == "Policy2" {
+							switch mode {
+							case "write_failure":
+								return nil, errors.New("recovery-write-failed")
+							case "restore_drift":
+								return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+							case "deadline":
+								<-r.Context().Done()
+								return nil, r.Context().Err()
+							}
+						}
+						state["policy"] = policy
+						return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+					}
+					if conform, ok := body["conform"].(bool); ok && conform {
+						state["conform"] = true
+					}
+					return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
+				case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
+					return platformRegressionResponse(`{"status":[{"status":"message","message":"saving"}]}`), nil
+				default:
+					return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
+				}
+			})}
+
+			start := time.Now()
+			err := k.SetClientPolicy(context.Background(), mac, "xkeen")
+			if err == nil || !strings.Contains(err.Error(), "client policy rollback") {
+				t.Fatalf("rollback failure hidden: %v", err)
+			}
+			switch mode {
+			case "write_failure":
+				if !strings.Contains(err.Error(), "recovery-write-failed") {
+					t.Fatalf("rollback write failure hidden: %v", err)
+				}
+			case "restore_drift":
+				if !strings.Contains(err.Error(), "did not restore") {
+					t.Fatalf("rollback verification drift hidden: %v", err)
+				}
+			case "deadline":
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("rollback deadline hidden: %v", err)
+				}
+				if time.Since(start) > time.Second {
+					t.Fatalf("rollback exceeded bounded recovery timeout: %v", time.Since(start))
+				}
+			}
+		})
+	}
+}
+
+func TestKeeneticWaitConfigurationSaved(t *testing.T) {
+	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
+	polls := 0
+	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet || r.URL.Path != "/rci/show/last-change" {
+			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
+		}
+		polls++
+		unsaved := polls < 3
+		body, _ := json.Marshal(map[string]any{"fail-safe": map[string]any{"unsaved": unsaved}})
+		return platformRegressionResponse(string(body)), nil
+	})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := k.waitConfigurationSaved(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if polls != 3 {
+		t.Fatalf("unexpected save poll count: %d", polls)
+	}
+}
 func TestRCIPostRejectsNestedStatusError(t *testing.T) {
 	k := newKeenetic(config.Default(), Runner{}).(*keenetic)
 	k.http = &http.Client{Transport: platformRegressionRT(func(r *http.Request) (*http.Response, error) {

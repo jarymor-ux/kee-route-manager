@@ -133,6 +133,33 @@ func rciResponseError(v any) error {
 	}
 	return nil
 }
+func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
+	const pollInterval = 100 * time.Millisecond
+	for {
+		state, err := k.rci(ctx, "show/last-change")
+		if err != nil {
+			return err
+		}
+		failSafe, ok := state["fail-safe"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("RCI show/last-change missing fail-safe state")
+		}
+		unsaved, ok := failSafe["unsaved"]
+		if !ok {
+			return fmt.Errorf("RCI show/last-change missing unsaved state")
+		}
+		if !truth(unsaved) {
+			return nil
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
 func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 	sys, e := k.rci(ctx, "show/system")
 	if e != nil {
@@ -328,8 +355,10 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		return err
 	}
 	save := func(c context.Context) error {
-		_, err := k.rciPost(c, "system/configuration/save", map[string]any{})
-		return err
+		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
+			return err
+		}
+		return k.waitConfigurationSaved(c)
 	}
 
 	rollback := func(cause error) error {
@@ -356,7 +385,399 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 				currentConform := truth(current["conform"])
 
 				if oldConform {
-					if currentPolicy != "" {
+					if regexp.MustCompile(`^Policy[0-9]+package platform
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
+)
+
+type keenetic struct {
+	cfg  config.Config
+	r    Runner
+	http *http.Client
+}
+
+func newKeenetic(c config.Config, r Runner) Adapter {
+	return &keenetic{c, r, &http.Client{Timeout: 8 * time.Second}}
+}
+func (k *keenetic) Kind() string { return "keenetic" }
+func (k *keenetic) Capabilities() Capabilities {
+	return Capabilities{Metrics: true, Clients: true, ClientPolicy: k.cfg.Platform.Keenetic.AllowPolicyChange, WakeOnLAN: true, Reboot: k.cfg.Platform.Keenetic.AllowReboot, SystemLogs: true, Diagnostics: true}
+}
+func (k *keenetic) RestartXray(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayRestartCommand)
+	return e
+}
+func (k *keenetic) XrayRunning(ctx context.Context) bool {
+	_, e := k.r.Run(ctx, k.cfg.Platform.XrayStatusCommand)
+	return e == nil
+}
+func (k *keenetic) RestartKRM(ctx context.Context) error {
+	_, e := k.r.Run(ctx, k.cfg.Platform.KRMRestartCommand)
+	return e
+}
+func (k *keenetic) rci(ctx context.Context, path string) (map[string]any, error) {
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, e := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if e != nil {
+		return nil, e
+	}
+	resp, e := k.http.Do(req)
+	if e != nil {
+		return nil, e
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	b, e := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if e != nil {
+		return nil, e
+	}
+	var v map[string]any
+	if e = json.Unmarshal(b, &v); e != nil {
+		return nil, e
+	}
+	if _, bad := v["status"]; bad {
+		return nil, fmt.Errorf("RCI status error")
+	}
+	return v, nil
+}
+
+func (k *keenetic) rciPost(ctx context.Context, path string, body map[string]any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(k.cfg.Platform.Keenetic.RCIBaseURL, "/") + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("RCI HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if err = rciResponseError(raw); err != nil {
+		return nil, err
+	}
+	v, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected RCI response")
+	}
+	return v, nil
+}
+
+func rciResponseError(v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		if strings.EqualFold(stringValue(x["status"]), "error") {
+			code := stringValue(x["code"])
+			if code != "" {
+				return fmt.Errorf("RCI status error (%s)", code)
+			}
+			return fmt.Errorf("RCI status error")
+		}
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if err := rciResponseError(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func (k *keenetic) waitConfigurationSaved(ctx context.Context) error {
+	const pollInterval = 100 * time.Millisecond
+	for {
+		state, err := k.rci(ctx, "show/last-change")
+		if err != nil {
+			return err
+		}
+		failSafe, ok := state["fail-safe"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("RCI show/last-change missing fail-safe state")
+		}
+		unsaved, ok := failSafe["unsaved"]
+		if !ok {
+			return fmt.Errorf("RCI show/last-change missing unsaved state")
+		}
+		if !truth(unsaved) {
+			return nil
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
+	sys, e := k.rci(ctx, "show/system")
+	if e != nil {
+		return Metrics{}, e
+	}
+	ifs, e := k.rci(ctx, "show/interface")
+	if e != nil {
+		return Metrics{}, e
+	}
+	wan := map[string]any{}
+	for _, raw := range ifs {
+		if v, ok := raw.(map[string]any); ok && truth(v["defaultgw"]) && fmt.Sprint(v["connected"]) == "yes" {
+			wan = v
+			break
+		}
+	}
+	name := stringValue(wan["id"])
+	if name != "" && !regexp.MustCompile(`^[A-Za-z0-9_/.-]+$`).MatchString(name) {
+		return Metrics{}, fmt.Errorf("invalid interface id")
+	}
+	stats := map[string]any{}
+	if name != "" {
+		stats, e = k.rci(ctx, "show/interface/stat?name="+url.QueryEscape(name))
+		if e != nil {
+			return Metrics{}, e
+		}
+	}
+	connected := name != ""
+	m := Metrics{UpdatedAt: time.Now().UTC(), WANConnected: &connected, WANName: name, WANDescription: stringValue(wan["description"]), WANIP: stringValue(wan["address"]), RXBytes: uint64(number(stats["rxbytes"])), TXBytes: uint64(number(stats["txbytes"])), RXMbps: number(stats["rxspeed"]) * 8 / 1e6, TXMbps: number(stats["txspeed"]) * 8 / 1e6, Connections: int64(number(sys["conntotal"]) - number(sys["connfree"])), UptimeSeconds: int64(number(sys["uptime"]))}
+	if cp, e := k.rci(ctx, "show/system/cpustat"); e == nil {
+		if busy, ok := cp["busy"].(map[string]any); ok {
+			v := number(busy["cur"])
+			m.CPUPercent = &v
+		}
+	}
+	if m.CPUPercent == nil {
+		v := number(sys["cpuload"])
+		m.CPUPercent = &v
+	}
+	mem := strings.Split(stringValue(sys["memory"]), "/")
+	if len(mem) == 2 {
+		used, _ := strconv.ParseInt(mem[0], 10, 64)
+		total, _ := strconv.ParseInt(mem[1], 10, 64)
+		m.RAMUsedMB = used / 1024
+		m.RAMTotalMB = total / 1024
+		if total > 0 {
+			v := 100 * float64(used) / float64(total)
+			m.RAMPercent = &v
+		}
+	}
+	for _, raw := range ifs {
+		if v, ok := raw.(map[string]any); ok && stringValue(v["type"]) == "Port" {
+			m.Ports = append(m.Ports, Port{ID: stringValue(v["id"]), Link: v["link"], Speed: v["speed"]})
+		}
+	}
+	sort.Slice(m.Ports, func(i, j int) bool { return m.Ports[i].ID < m.Ports[j].ID })
+	if b, e := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); e == nil {
+		v, _ := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
+		if v > 1000 {
+			v /= 1000
+		}
+		m.TemperatureC = &v
+	}
+	return m, nil
+}
+func (k *keenetic) Clients(ctx context.Context) ([]Client, error) {
+	live, e := k.rci(ctx, "show/ip/hotspot")
+	if e != nil {
+		return nil, e
+	}
+	cfg, e := k.rci(ctx, "ip/hotspot")
+	if e != nil {
+		return nil, e
+	}
+	policies, e := k.rci(ctx, "show/ip/policy")
+	if e != nil {
+		return nil, e
+	}
+	rules := map[string]map[string]any{}
+	for _, raw := range array(cfg["host"]) {
+		if v, ok := raw.(map[string]any); ok {
+			rules[strings.ToLower(stringValue(v["mac"]))] = v
+		}
+	}
+	segments := map[string]string{}
+	for _, raw := range array(cfg["policy"]) {
+		if v, ok := raw.(map[string]any); ok {
+			segments[stringValue(v["interface"])] = stringValue(v["policy"])
+		}
+	}
+	out := []Client{}
+	for _, raw := range array(live["host"]) {
+		h, ok := raw.(map[string]any)
+		if !ok || (!truth(h["active"]) && !truth(h["registered"])) {
+			continue
+		}
+		mac := strings.ToLower(stringValue(h["mac"]))
+		rule := rules[mac]
+		inherit := truth(rule["conform"])
+		pid := stringValue(rule["policy"])
+		if inherit {
+			if iface, ok := h["interface"].(map[string]any); ok {
+				pid = segments[stringValue(iface["id"])]
+			}
+		}
+		desc := pid
+		if p, ok := policies[pid].(map[string]any); ok && stringValue(p["description"]) != "" {
+			desc = stringValue(p["description"])
+		}
+		if desc == "" {
+			desc = "Default policy"
+		}
+		out = append(out, Client{MAC: mac, Registered: truth(h["registered"]), Name: stringValue(h["name"]), Hostname: stringValue(h["hostname"]), IP: stringValue(h["ip"]), Active: truth(h["active"]), Link: stringValue(h["link"]), SSID: stringValue(h["ssid"]), RSSI: int(number(h["rssi"])), RXBytes: uint64(number(h["rxbytes"])), TXBytes: uint64(number(h["txbytes"])), Access: stringValue(h["access"]), ConnectionPolicy: desc, PolicyInherited: inherit, PolicyID: pid})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Active != out[j].Active {
+			return out[i].Active
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+func (k *keenetic) Wake(ctx context.Context, mac string) error {
+	if !validMAC(mac) {
+		return fmt.Errorf("invalid MAC")
+	}
+	xs, e := k.Clients(ctx)
+	if e != nil {
+		return e
+	}
+	known := false
+	for _, c := range xs {
+		if c.Registered && strings.EqualFold(c.MAC, mac) {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return fmt.Errorf("device must be registered")
+	}
+	_, e = k.r.Run(ctx, []string{k.cfg.Platform.Keenetic.NDMCBinary, "-c", "ip hotspot wake " + strings.ToLower(mac)})
+	return e
+}
+func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) error {
+	if !k.cfg.Platform.Keenetic.AllowPolicyChange {
+		return fmt.Errorf("policy changes disabled")
+	}
+	if !validMAC(mac) || (choice != "xkeen" && choice != "default") {
+		return fmt.Errorf("invalid policy request")
+	}
+	mac = strings.ToLower(mac)
+	cfg, e := k.rci(ctx, "ip/hotspot")
+	if e != nil {
+		return e
+	}
+	findHost := func(cfg map[string]any) map[string]any {
+		for _, raw := range array(cfg["host"]) {
+			if v, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(v["mac"]), mac) {
+				return v
+			}
+		}
+		return nil
+	}
+	before := findHost(cfg)
+	if before == nil {
+		return fmt.Errorf("device must be registered")
+	}
+
+	pid := ""
+	if choice == "xkeen" {
+		policies, err := k.rci(ctx, "show/ip/policy")
+		if err != nil {
+			return err
+		}
+		for id, raw := range policies {
+			if p, ok := raw.(map[string]any); ok && strings.EqualFold(stringValue(p["description"]), k.cfg.Platform.Keenetic.XKeenPolicyName) {
+				pid = id
+				break
+			}
+		}
+		if !regexp.MustCompile(`^Policy[0-9]+$`).MatchString(pid) {
+			return fmt.Errorf("XKeen policy unavailable")
+		}
+	}
+
+	postHost := func(c context.Context, fields map[string]any) error {
+		body := make(map[string]any, len(fields)+1)
+		body["mac"] = mac
+		for key, value := range fields {
+			body[key] = value
+		}
+		_, err := k.rciPost(c, "ip/hotspot/host", body)
+		return err
+	}
+	save := func(c context.Context) error {
+		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
+			return err
+		}
+		return k.waitConfigurationSaved(c)
+	}
+
+	rollback := func(cause error) error {
+		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
+		timeout := k.r.Timeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer cancel()
+		var errs []error
+
+		currentCfg, err := k.rci(recovery, "ip/hotspot")
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			current := findHost(currentCfg)
+			if current == nil {
+				errs = append(errs, fmt.Errorf("device disappeared during client policy rollback"))
+			} else {
+				oldPolicy := stringValue(before["policy"])
+				oldConform := truth(before["conform"])
+				currentPolicy := stringValue(current["policy"])
+				currentConform := truth(current["conform"])
+
+).MatchString(oldPolicy) {
+						if currentPolicy != oldPolicy {
+							if err := postHost(recovery, map[string]any{"policy": oldPolicy}); err != nil {
+								errs = append(errs, err)
+							}
+						}
+					} else if currentPolicy != "" {
 						if err := postHost(recovery, map[string]any{"policy": map[string]any{"no": true}}); err != nil {
 							errs = append(errs, err)
 						}
