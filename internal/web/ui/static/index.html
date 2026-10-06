@@ -28,6 +28,7 @@
 </header>
 <nav id="tabs">
   <button data-tab="overview" class="active">Обзор</button>
+  <button data-tab="subscriptions">Подписки</button>
   <button data-tab="nodes">Узлы</button>
   <button data-tab="router">Роутер</button>
   <button data-tab="events">События</button>
@@ -41,6 +42,14 @@
   </div>
   <h2>Горячий пул</h2><div id="pool" class="pool-grid"></div>
   <h2>Источники</h2><div id="sources" class="grid sources-grid"></div>
+</section>
+<section id="tab-subscriptions" class="tab">
+  <div class="section-head">
+    <div><h2>Подписки</h2><p>Источники узлов. Изменения применяются сразу и сохраняются приватно.</p></div>
+    <button id="add-subscription" class="primary">Добавить подписку</button>
+  </div>
+  <div class="table-wrap"><table class="subscriptions-table"><thead><tr><th>Название</th><th>ID</th><th>Источник</th><th>Headers</th><th>Состояние</th><th>Действия</th></tr></thead><tbody id="subscriptions-body"></tbody></table></div>
+  <p class="sub subscriptions-note">После первого изменения через UI управляемый список подписок хранится отдельно в state-dir и имеет приоритет над <code>subscriptions.sources</code> из YAML.</p>
 </section>
 <section id="tab-nodes" class="tab">
   <div class="section-head"><div><h2>Все узлы</h2><p>Общий дедуплицированный пул подписок</p></div><input id="node-search" placeholder="Поиск по имени или источнику"></div>
@@ -67,6 +76,22 @@
   <div id="events-list" class="events"></div>
 </section>
 </main>
+<div id="subscription-modal" class="modal hidden">
+  <form id="subscription-form" class="dialog subscription-dialog" autocomplete="off">
+    <h2 id="subscription-title">Подписка</h2>
+    <p>URL и headers могут содержать секреты. Они сохраняются только в приватном хранилище controller.</p>
+    <label>ID<input id="subscription-id" required maxlength="32" pattern="[a-z][a-z0-9_-]{0,31}" placeholder="primary"></label>
+    <label>Название<input id="subscription-name" maxlength="128" placeholder="Основная подписка"></label>
+    <label>URL<input id="subscription-url" required spellcheck="false" placeholder="https://provider.example/subscription"></label>
+    <label class="checkbox-label"><input id="subscription-enabled" type="checkbox" checked> Включена</label>
+    <label>Headers (JSON)<textarea id="subscription-headers" spellcheck="false" placeholder="{}"></textarea></label>
+    <div id="subscription-error" class="error"></div>
+    <div class="dialog-actions">
+      <button id="subscription-cancel" type="button" class="ghost">Отмена</button>
+      <button type="submit" class="primary">Сохранить</button>
+    </div>
+  </form>
+</div>
 <div id="toast" class="toast hidden"></div>
 <script src="/assets/app.js" defer></script>
 </body></html>
