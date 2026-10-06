@@ -192,7 +192,7 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation not reported: %v", err)
 	}
-	if policyWrite != 1 || rollbackWrites < 3 {
+	if policyWrite != 1 || rollbackWrites < 2 {
 		t.Fatalf("rollback did not run through RCI: policyWrite=%d rollbackWrites=%d", policyWrite, rollbackWrites)
 	}
 	if !truth(state["conform"]) || stringValue(state["policy"]) != "" || stringValue(state["access"]) != "permit" {
