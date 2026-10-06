@@ -190,15 +190,33 @@ async function appChecks() {
   h.context.injection = injection;
   h.run(`renderPool({ pool: [{ index: 0, label: injection, node_id: 'node', score: 1 }], active_slot: 0 });
     renderSources({ provider: { name: injection, status: 'healthy', last_error: injection, node_count: 1 } });
+    subscriptionData = [{ id: 'primary', name: injection, url: 'https://user:password@example.test/private?token=secret', enabled: true, headers: { Authorization: 'Bearer secret' } }]; renderSubscriptions();
     nodesData = [{ label: injection, sources: [injection], network: 'ws', security: 'tls', measurement: {} }]; renderNodes();
     statusData = { capabilities: { wake_on_lan: true, client_policy: true } };
     renderClients([{ name: injection, mac: injection, ip: injection, connection_policy: injection }]);
     renderMetrics({ ports: [{ id: injection, link: injection, speed: injection }] });`);
-  for (const selector of ['#pool', '#sources', '#nodes-body', '#clients-body', '#ports']) {
+  for (const selector of ['#pool', '#sources', '#subscriptions-body', '#nodes-body', '#clients-body', '#ports']) {
     const html = h.select(selector).innerHTML;
     assert(!html.includes('<img'), `${selector} must escape provider/router text`);
     assert(html.includes('&lt;img'), `${selector} must preserve escaped text`);
   }
+  const subscriptionHTML = h.select('#subscriptions-body').innerHTML;
+  assert(!subscriptionHTML.includes('password'), 'subscription URL credentials must not be rendered in the table');
+  assert(!subscriptionHTML.includes('/private'), 'subscription URL path must not be rendered in the table');
+  assert(!subscriptionHTML.includes('token=secret'), 'subscription URL query must not be rendered in the table');
+  assert(!subscriptionHTML.includes('Bearer secret'), 'subscription header values must not be rendered in the table');
+
+  h.run("csrf = 'subscription-csrf'; openSubscriptionEditor('primary')");
+  h.select('#subscription-name').value = 'Updated';
+  h.respond({ status: 200, ok: true, data: { ok: true } });
+  await h.run('saveSubscription({ preventDefault() {} })');
+  const saveRequest = h.requests.find((r) => r.url.endsWith('/subscriptions/save'));
+  assert(saveRequest, 'subscription save request must be sent');
+  assert.equal(saveRequest.options.method, 'POST');
+  assert.equal(saveRequest.options.headers['X-KRM-CSRF'], 'subscription-csrf');
+  assert.equal(JSON.parse(saveRequest.options.body).id, 'primary');
+  assert.equal(h.select('#subscription-url').value, '', 'editor secrets must be cleared after save');
+
   h.select('#node-search').value = 'missing';
   h.run('renderNodes()');
   assert(h.select('#nodes-body').innerHTML.includes('Нет узлов'));

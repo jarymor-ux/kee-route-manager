@@ -4,6 +4,7 @@ const $ = (selector) => document.querySelector(selector);
 let csrf = '';
 let statusData = null;
 let nodesData = [];
+let subscriptionData = [];
 let pollTimer;
 let pendingUpdate = null;
 let updateState = null;
@@ -36,6 +37,8 @@ function showLogin() {
   clearInterval(pollTimer);
   pendingUpdate = null;
   updateState = null;
+  subscriptionData = [];
+  clearSubscriptionEditor();
   renderUpdate();
   $('#login').classList.remove('hidden');
   $('#password').value = '';
@@ -195,6 +198,123 @@ function renderSources(sources) {
       <div class="sub">${esc(source.last_error || `Обновлено ${fmtAge(source.last_success_at)}`)}</div>
     </article>`;
   }).join('') : '<article class="card"><div class="sub">Источники ещё не загружены</div></article>';
+}
+
+function subscriptionEndpointLabel(raw) {
+  const value = String(raw || '');
+  if (value.startsWith('file:')) return 'Локальный файл';
+  const match = value.match(/^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)/i);
+  if (!match) return value ? 'URL задан' : '—';
+  const authority = match[2].replace(/^[^@]*@/, '');
+  return `${match[1]}://${authority}`;
+}
+
+function renderSubscriptions() {
+  const body = $('#subscriptions-body');
+  body.innerHTML = subscriptionData.map((source) => {
+    const headerCount = Object.keys(source.headers || {}).length;
+    return `<tr>
+      <td><strong>${esc(source.name || source.id)}</strong></td>
+      <td><code>${esc(source.id)}</code></td>
+      <td>${esc(subscriptionEndpointLabel(source.url))}</td>
+      <td>${headerCount ? `${headerCount} шт.` : '—'}</td>
+      <td>${source.enabled ? badge('Включена', 'ok') : badge('Выключена')}</td>
+      <td><div class="subscription-actions">
+        <button class="ghost compact subscription-edit" data-id="${esc(source.id)}">Изменить</button>
+        <button class="danger-outline compact subscription-delete" data-id="${esc(source.id)}">Удалить</button>
+      </div></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Подписки не настроены</td></tr>';
+
+  document.querySelectorAll('.subscription-edit').forEach((button) => {
+    button.onclick = () => openSubscriptionEditor(button.dataset.id);
+  });
+  document.querySelectorAll('.subscription-delete').forEach((button) => {
+    button.onclick = () => deleteSubscription(button.dataset.id);
+  });
+}
+
+async function loadSubscriptions() {
+  try {
+    const data = await api('/api/v1/subscriptions');
+    subscriptionData = Array.isArray(data.sources) ? data.sources : [];
+    renderSubscriptions();
+  } catch (error) {
+    subscriptionData = [];
+    renderSubscriptions();
+    toast(error.message, true);
+  }
+}
+
+function clearSubscriptionEditor() {
+  $('#subscription-id').value = '';
+  $('#subscription-id').readOnly = false;
+  $('#subscription-name').value = '';
+  $('#subscription-url').value = '';
+  $('#subscription-enabled').checked = true;
+  $('#subscription-headers').value = '';
+  $('#subscription-error').textContent = '';
+  $('#subscription-modal').classList.add('hidden');
+}
+
+function openSubscriptionEditor(id = '') {
+  const source = subscriptionData.find((item) => item.id === id);
+  $('#subscription-title').textContent = source ? 'Изменить подписку' : 'Добавить подписку';
+  $('#subscription-id').value = source?.id || '';
+  $('#subscription-id').readOnly = Boolean(source);
+  $('#subscription-name').value = source?.name || '';
+  $('#subscription-url').value = source?.url || '';
+  $('#subscription-enabled').checked = source ? Boolean(source.enabled) : true;
+  $('#subscription-headers').value = source?.headers && Object.keys(source.headers).length
+    ? JSON.stringify(source.headers, null, 2) : '';
+  $('#subscription-error').textContent = '';
+  $('#subscription-modal').classList.remove('hidden');
+  setTimeout(() => (source ? $('#subscription-name') : $('#subscription-id')).focus(), 0);
+}
+
+function parseSubscriptionHeaders() {
+  const raw = $('#subscription-headers').value.trim();
+  if (!raw) return {};
+  const headers = JSON.parse(raw);
+  if (!headers || Array.isArray(headers) || typeof headers !== 'object'
+      || Object.values(headers).some((value) => typeof value !== 'string')) {
+    throw new Error('Headers должны быть JSON-объектом со строковыми значениями');
+  }
+  return headers;
+}
+
+async function saveSubscription(event) {
+  event.preventDefault();
+  $('#subscription-error').textContent = '';
+  try {
+    const source = {
+      id: $('#subscription-id').value.trim(),
+      name: $('#subscription-name').value.trim(),
+      url: $('#subscription-url').value.trim(),
+      enabled: Boolean($('#subscription-enabled').checked),
+      headers: parseSubscriptionHeaders(),
+    };
+    await api('/api/v1/subscriptions/save', { method: 'POST', body: JSON.stringify(source) });
+    clearSubscriptionEditor();
+    toast('Подписка сохранена');
+    await loadSubscriptions();
+    setTimeout(loadStatus, 100);
+  } catch (error) {
+    $('#subscription-error').textContent = error.message;
+  }
+}
+
+async function deleteSubscription(id) {
+  const source = subscriptionData.find((item) => item.id === id);
+  if (!source || !confirm(`Удалить подписку «${source.name || source.id}»?`)) return;
+  try {
+    await api('/api/v1/subscriptions/delete', { method: 'POST', body: JSON.stringify({ id }) });
+    toast('Подписка удалена');
+    await loadSubscriptions();
+    setTimeout(loadStatus, 100);
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 async function action(path, body, success) {
@@ -456,11 +576,15 @@ $('#tabs').onclick = (event) => {
   if (!button) return;
   document.querySelectorAll('#tabs button').forEach((item) => item.classList.toggle('active', item === button));
   document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item.id === `tab-${button.dataset.tab}`));
+  if (button.dataset.tab === 'subscriptions') loadSubscriptions();
   if (button.dataset.tab === 'nodes') loadNodes();
   if (button.dataset.tab === 'events') loadEvents();
   if (button.dataset.tab === 'router') loadRouter();
 };
 
+$('#add-subscription').onclick = () => openSubscriptionEditor();
+$('#subscription-cancel').onclick = clearSubscriptionEditor;
+$('#subscription-form').addEventListener('submit', saveSubscription);
 $('#benchmark').onclick = () => action('/api/v1/actions/benchmark', {}, 'Тестирование запущено');
 $('#direct').onclick = () => confirm('Перевести управляемый трафик напрямую, минуя VPN?')
   && action('/api/v1/actions/direct', {}, 'Включён прямой маршрут');

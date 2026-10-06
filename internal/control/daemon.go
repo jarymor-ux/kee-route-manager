@@ -71,8 +71,19 @@ func serveActive(ctx context.Context, c config.Config, version string) error {
 	if e != nil {
 		return e
 	}
+	sourceStore := subscription.NewSourceStore(c.Paths.StateDir)
+	if sources, ok, err := sourceStore.Load(); err != nil {
+		return fmt.Errorf("load managed subscription sources: %w", err)
+	} else if ok {
+		c.Subscriptions.Sources = sources
+		if err := c.Validate(); err != nil {
+			return fmt.Errorf("validate managed subscription sources: %w", err)
+		}
+	}
 	xm := xray.NewManager(c, r, p)
-	mgr := core.New(c, version, st, ops, p, xm, subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir), bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
+	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
+	fetcher.UseSourceStore(sourceStore)
+	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
 	srv, e := web.New(c, mgr, update.NewForConfig(c, version), nil)
 	if e != nil {
 		return e

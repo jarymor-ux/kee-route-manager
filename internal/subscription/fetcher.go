@@ -20,11 +20,13 @@ import (
 )
 
 type Fetcher struct {
-	cfg     config.Subscriptions
-	backoff []config.Duration
-	dir     string
-	client  *http.Client
-	now     func() time.Time
+	mu          sync.RWMutex
+	cfg         config.Subscriptions
+	backoff     []config.Duration
+	dir         string
+	client      *http.Client
+	now         func() time.Time
+	sourceStore *SourceStore
 }
 type Result struct {
 	Nodes  []model.Node
@@ -49,7 +51,35 @@ func New(cfg config.Subscriptions, b []config.Duration, cacheDir string) *Fetche
 		return nil
 	}}, now: func() time.Time { return time.Now().UTC() }}
 }
+func (f *Fetcher) UseSourceStore(store *SourceStore) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sourceStore = store
+}
+
+func (f *Fetcher) Sources() []config.Source {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return cloneSources(f.cfg.Sources)
+}
+
+func (f *Fetcher) ReplaceSources(sources []config.Source) error {
+	next := cloneSources(sources)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sourceStore == nil {
+		return errors.New("subscription source management unavailable")
+	}
+	if err := f.sourceStore.Save(next); err != nil {
+		return err
+	}
+	f.cfg.Sources = next
+	return nil
+}
+
 func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceState, force bool) Result {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	_ = os.MkdirAll(f.dir, 0700)
 	r := Result{States: map[string]model.SourceState{}}
 	type item struct {

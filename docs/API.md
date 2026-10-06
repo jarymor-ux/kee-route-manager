@@ -27,3 +27,14 @@ kee-route-managerctl update-apply --target-version VERSION --config PATH
 Offline: `validate`, `passwd --username NAME --password-stdin`, `route-candidates --file STRICT_JSON`. `passwd` must be run while no active sessions/controllers depend on changed credentials; installed controller reload requires explicit restart. No command starts another core manager. Optional `--socket PATH` selects a local control socket.
 
 System journal contract is `{ "output": "..." }` in backend and frontend. Audit diagnostics must be redacted before export. Full endpoint behavior is tested in `internal/web/server_test.go` and documented by routes in `internal/web/server.go`.
+
+
+## Subscription management
+
+Authenticated panel sessions can manage subscription sources at runtime:
+
+- `GET /api/v1/subscriptions` returns the configured sources, including URL and headers required by the editor. The response is marked `Cache-Control: no-store`; treat it as secret material.
+- `POST /api/v1/subscriptions/save` accepts one source object with `id`, `name`, `url`, `enabled` and `headers`. Existing IDs are replaced; new IDs are appended.
+- `POST /api/v1/subscriptions/delete` accepts `{ "id": "source-id" }`.
+
+Mutation endpoints require the normal session, CSRF token and same-origin check. They run the same configuration validation as startup, so invalid IDs/URLs/headers, the source limit and deletion of the last configured source are rejected. Successful changes are persisted before becoming live and schedule a benchmark; errors returned to the browser never include upstream URLs, headers or persistence details.
