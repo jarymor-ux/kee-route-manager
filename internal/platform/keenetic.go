@@ -137,6 +137,9 @@ func rciResponseError(v any) error {
 var keeneticSavedChecksumPattern = regexp.MustCompile(`(?im)^!\s*\$+\s*Md5 checksum:\s*([0-9a-f]{32})\s*$`)
 
 func (k *keenetic) configFile(ctx context.Context, name string) ([]byte, error) {
+	if name != "running-config.txt" && name != "startup-config.txt" {
+		return nil, fmt.Errorf("unsupported Keenetic configuration file")
+	}
 	u, err := url.Parse(k.cfg.Platform.Keenetic.RCIBaseURL)
 	if err != nil {
 		return nil, err
@@ -159,12 +162,18 @@ func (k *keenetic) configFile(ctx context.Context, name string) ([]byte, error) 
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
+		return k.configFileNDMC(ctx, name)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("keenetic %s HTTP %d", name, resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > 4<<20 {
+		return nil, fmt.Errorf("Keenetic configuration exceeds read limit")
 	}
 	return data, nil
 }

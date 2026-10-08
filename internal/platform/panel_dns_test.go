@@ -18,6 +18,8 @@ import (
 )
 
 type panelDNSFixture struct {
+	rejectDownloads                      bool
+	readCommands                         []string
 	mu                                   sync.Mutex
 	k                                    *keenetic
 	running, original, mutated, baseline string
@@ -44,12 +46,20 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"checksum": f.checksum()})
 		case "/ci/running-config.txt":
+			if f.rejectDownloads {
+				http.Error(w, "downloads denied", 403)
+				return
+			}
 			f.reads++
 			if f.injectRead == f.reads {
 				f.running += "ip name-server 8.8.8.8\n"
 			}
 			_, _ = fmt.Fprint(w, f.running)
 		case "/ci/startup-config.txt":
+			if f.rejectDownloads {
+				http.Error(w, "downloads denied", 403)
+				return
+			}
 			_, _ = fmt.Fprint(w, regressionStartupConfig(f.saved))
 		case "/rci/system/configuration/save":
 			if r.Method != "POST" {
@@ -71,6 +81,23 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			var args []string
 			if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
 				t.Error(err)
+			}
+			if len(args) == 2 && args[0] == "-c" && (args[1] == "more running-config" || args[1] == "more startup-config") {
+				f.readCommands = append(f.readCommands, args[1])
+				if args[1] == "more running-config" {
+					f.reads++
+					if f.injectRead == f.reads {
+						f.running += "ip name-server 8.8.8.8\n"
+					}
+					_, _ = fmt.Fprint(w, "\x1b[K"+regressionStartupConfig(f.checksum())+f.running+"!\n\x1b[K")
+				} else {
+					body := f.baseline
+					if f.saved == f.mutated {
+						body += "ip host alice.jopa 192.168.1.1\n"
+					}
+					_, _ = fmt.Fprint(w, "\x1b[K"+regressionStartupConfig(f.saved)+body+"!\n\x1b[K")
+				}
+				return
 			}
 			f.cmds = append(f.cmds, args)
 			if len(args) != 2 || args[0] != "-c" || args[1] != "ip host alice.jopa 192.168.1.1" {
@@ -94,7 +121,7 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 	// A real inert executable forwards its argv to the fixture. No router process,
 	// system service or host DNS is changed by these tests.
 	binary := filepath.Join(t.TempDir(), "ndmc-inert")
-	helper := fmt.Sprintf("#!/usr/bin/env python3\nimport json,sys,urllib.request\nreq=urllib.request.Request(%q,data=json.dumps(sys.argv[1:]).encode(),headers={'Content-Type':'application/json'})\ntry:\n urllib.request.urlopen(req,timeout=3).read()\nexcept Exception:\n sys.exit(1)\n", f.server.URL+"/native-ndmc")
+	helper := fmt.Sprintf("#!/usr/bin/env python3\nimport json,sys,urllib.request\nreq=urllib.request.Request(%q,data=json.dumps(sys.argv[1:]).encode(),headers={'Content-Type':'application/json'})\ntry:\n sys.stdout.buffer.write(urllib.request.urlopen(req,timeout=3).read())\nexcept Exception:\n sys.exit(1)\n", f.server.URL+"/native-ndmc")
 	if err := os.WriteFile(binary, []byte(helper), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -401,6 +428,61 @@ func TestPanelDNSRefusesForeignUIDJournalBackupAndDirectory(t *testing.T) {
 			defer f.mu.Unlock()
 			if f.running != before || f.saves != saves || len(f.cmds) != cmds {
 				t.Fatal("foreign-owned recovery file admitted persistent save")
+			}
+		})
+	}
+}
+
+func TestPanelDNSNativeFallbackPreservesWholeSaveAndDriftGuards(t *testing.T) {
+	for _, mode := range []string{"create", "noop", "unsaved", "conflict", "presave-drift", "lost-save"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newPanelDNSFixture(t)
+			f.rejectDownloads = true
+			switch mode {
+			case "noop":
+				f.running += "ip host alice.jopa 192.168.1.1\n"
+				f.saved = f.mutated
+			case "unsaved":
+				f.running += "ip name-server 8.8.8.8\n"
+			case "conflict":
+				f.running += "ip host alice.jopa 192.168.1.9\n"
+			case "presave-drift":
+				f.injectRead = 5
+			case "lost-save":
+				f.lostSave = true
+			}
+			err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1")
+			switch mode {
+			case "create", "noop":
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "unsaved", "presave-drift":
+				requirePanelDNSError(t, err, ErrPanelDNSDrift)
+			case "conflict":
+				requirePanelDNSError(t, err, ErrPanelDNSConflict)
+			case "lost-save":
+				requirePanelDNSError(t, err, ErrPanelDNSPending)
+			}
+			if mode == "lost-save" {
+				f.mu.Lock()
+				f.lostSave = false
+				f.mu.Unlock()
+				if err = f.k.ReconcilePanelAlias(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.readCommands) == 0 {
+				t.Fatal("DNS integration bypassed native fallback")
+			}
+			if mode == "create" || mode == "lost-save" {
+				if len(f.cmds) != 1 || f.saves != 1 || f.saved != f.mutated {
+					t.Fatal("native fallback lost DNS save identity")
+				}
+			} else if f.saves != 0 {
+				t.Fatal("native fallback saved unrelated changes")
 			}
 		})
 	}

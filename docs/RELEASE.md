@@ -1,6 +1,6 @@
 # Signed release publication
 
-The release lines are stable `1.2.0` from `main` and candidate `1.2.0-rc.1` from `release-candidate`. The builder and publication workflow support two version shapes: `MAJOR.MINOR.PATCH-rc.N` publishes to the `rc` channel with GitHub prerelease enabled; `MAJOR.MINOR.PATCH` publishes to `stable` with prerelease disabled. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Both channels use `latest=false`; discovery selects the channel explicitly. Stable-channel publication does not certify device hardware acceptance; all documented unrun platform checks remain visible. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
+The release lines are stable `1.2.1` from `main` and candidate `1.2.1-rc.1` from `release-candidate`. The builder and publication workflow support two version shapes: `MAJOR.MINOR.PATCH-rc.N` publishes to the `rc` channel with GitHub prerelease enabled; `MAJOR.MINOR.PATCH` publishes to `stable` with prerelease disabled. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Both channels use `latest=false`; discovery selects the channel explicitly. Stable-channel publication does not certify device hardware acceptance; all documented unrun platform checks remain visible. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 The CI workflow checks `main` (stable line), `release-candidate` (candidate line) and pull requests. Only a new `vMAJOR.MINOR.PATCH-rc.N` or `vMAJOR.MINOR.PATCH` tag, or a manual workflow run on that existing tag, can publish. Leading-zero version fields, other prerelease labels and build metadata are refused. The publication job depends on successful checks for the same commit, derives the version from the exact tag on the checked-out commit, and refuses moved tags and existing releases. RC tags must belong to `origin/release-candidate`; stable tags must belong to `origin/main`. A normal branch push does not publish.
 
@@ -36,7 +36,7 @@ Artifact signing and immutable tags are separate controls. The workflow signs re
 For a local signed build from the intended source commit:
 
 ```sh
-KRM_RELEASE_TAG=v1.2.0-rc.1 KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
+KRM_RELEASE_TAG=v1.2.1-rc.1 KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
 python3 scripts/verify-release.py release/dist
 
 # KRM_RELEASE_PUBLIC_KEY is reserved for isolated build/test fixtures.
@@ -74,3 +74,5 @@ The runtime editor can be delivered in an ordinary signed application update. Lo
 Upgrade the launcher before writing additional SNI identities: earlier binaries reject the new optional UI TLS field. Keep the original UI YAML/certificates for a coordinated maintenance rollback; the older UI cannot parse additional certificates. Restoring an older binary does not restore newer permission vocabulary, users or controller state. Never overwrite post-commit state from a backup.
 
 Fresh wizard settings: benchmark interval defaults to6h, new interactive subscription caching defaults off, UI binds loopback unless a private IPv4 is explicitly chosen; HTTPS9444 and optional local DNS certificate name are prompted. A hostname SAN does not register DNS. Prepared configs bypass these prompts and preserve their own cadence/cache/listen values.
+
+For firmware with loopback `/ci/` export denied, use v1.2.1+ application binaries. Configuration reads fall back to bounded validated local NDMC `more` commands after HTTP403/404; saved/running checksum and whole-config ownership checks remain mandatory. Existing v1.2.0 release files remain immutable.

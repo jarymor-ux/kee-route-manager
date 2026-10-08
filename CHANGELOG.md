@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.2.1 / 1.2.1-rc.1 — 2026-10-08
+
+- Support Keenetic firmware that denies loopback `/ci/` configuration export: read running/startup configuration through bounded, validated local `ndmc more` commands after HTTP 403/404. Keep whole-configuration ownership and running/saved checksum checks; reject malformed/truncated output without exposing secrets. This repairs DNS verification for panel address changes and the same guarded configuration reads used by policy operations. Published 1.2.0 assets remain unchanged.
+
 ## 1.2.0 / 1.2.0-rc.1 — 2026-10-08
 
 - Add Router → Settings with authenticated, revision-checked forms for benchmark, failover, health, subscription downloading and provider diversity. Validate before applying, preserve unrelated YAML and private sources, drain the old daemon runtime under its existing ownership locks, retain sessions and roll back failed initialization without restoring routing state. Configuration reload does not schedule an extra startup benchmark.
