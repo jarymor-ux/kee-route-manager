@@ -33,36 +33,36 @@ func (k *keenetic) configFileNDMC(ctx context.Context, name string) ([]byte, err
 		// Runner errors may contain stderr or stdout, including private config.
 		// Retain cancellation classification without propagating command text.
 		if errors.Is(err, context.Canceled) {
-			return nil, fmt.Errorf("Keenetic configuration read interrupted: %w", context.Canceled)
+			return nil, fmt.Errorf("keenetic configuration read interrupted: %w", context.Canceled)
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("Keenetic configuration read interrupted: %w", context.DeadlineExceeded)
+			return nil, fmt.Errorf("keenetic configuration read interrupted: %w", context.DeadlineExceeded)
 		}
-		return nil, fmt.Errorf("Keenetic configuration command failed")
+		return nil, fmt.Errorf("keenetic configuration command failed")
 	}
 	if len(data) == 0 || int64(len(data)) >= limit || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
-		return nil, fmt.Errorf("Keenetic configuration command returned incomplete output")
+		return nil, fmt.Errorf("keenetic configuration command returned incomplete output")
 	}
 	// Confirmed NDMC `more` transport: one CSI erase-line prefix and the same
 	// standalone trailer. Never strip escape sequences inside configuration.
 	clearLine := []byte("\x1b[K")
 	leading, trailing := bytes.HasPrefix(data, clearLine), bytes.HasSuffix(data, clearLine)
 	if leading != trailing {
-		return nil, fmt.Errorf("Keenetic configuration command returned incomplete framing")
+		return nil, fmt.Errorf("keenetic configuration command returned incomplete framing")
 	}
 	if leading {
 		if len(data) < 2*len(clearLine) {
-			return nil, fmt.Errorf("Keenetic configuration command returned incomplete framing")
+			return nil, fmt.Errorf("keenetic configuration command returned incomplete framing")
 		}
 		data = data[len(clearLine) : len(data)-len(clearLine)]
 	}
 	if bytes.IndexByte(data, '\x1b') >= 0 {
-		return nil, fmt.Errorf("Keenetic configuration command returned invalid framing")
+		return nil, fmt.Errorf("keenetic configuration command returned invalid framing")
 	}
 	text := strings.TrimSpace(string(data))
 	lines := strings.Split(text, "\n")
 	if !strings.HasPrefix(text, "!") || strings.TrimSpace(lines[len(lines)-1]) != "!" || len(keeneticSavedChecksumPattern.FindAllSubmatch(data, -1)) != 1 {
-		return nil, fmt.Errorf("Keenetic configuration command returned invalid configuration")
+		return nil, fmt.Errorf("keenetic configuration command returned invalid configuration")
 	}
 	// A header alone cannot prove that the command returned a complete config.
 	hasCommand := false
@@ -74,7 +74,7 @@ func (k *keenetic) configFileNDMC(ctx context.Context, name string) ([]byte, err
 		}
 	}
 	if !hasCommand {
-		return nil, fmt.Errorf("Keenetic configuration command returned incomplete configuration")
+		return nil, fmt.Errorf("keenetic configuration command returned incomplete configuration")
 	}
 	return data, nil
 }

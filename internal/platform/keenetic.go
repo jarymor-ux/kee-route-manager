@@ -173,7 +173,7 @@ func (k *keenetic) configFile(ctx context.Context, name string) ([]byte, error) 
 		return nil, err
 	}
 	if len(data) > 4<<20 {
-		return nil, fmt.Errorf("Keenetic configuration exceeds read limit")
+		return nil, fmt.Errorf("keenetic configuration exceeds read limit")
 	}
 	return data, nil
 }

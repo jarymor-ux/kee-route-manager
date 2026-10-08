@@ -47,7 +47,7 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			_ = json.NewEncoder(w).Encode(map[string]any{"checksum": f.checksum()})
 		case "/ci/running-config.txt":
 			if f.rejectDownloads {
-				http.Error(w, "downloads denied", 403)
+				http.Error(w, "downloads denied", http.StatusForbidden)
 				return
 			}
 			f.reads++
@@ -57,7 +57,7 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			_, _ = fmt.Fprint(w, f.running)
 		case "/ci/startup-config.txt":
 			if f.rejectDownloads {
-				http.Error(w, "downloads denied", 403)
+				http.Error(w, "downloads denied", http.StatusForbidden)
 				return
 			}
 			_, _ = fmt.Fprint(w, regressionStartupConfig(f.saved))
