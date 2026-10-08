@@ -247,7 +247,10 @@ func Serve(ctx context.Context, c config.Config) error {
 		_ = srv.Shutdown(cc)
 	}()
 	if c.Web.TLS.Enabled {
-		e = srv.ListenAndServeTLS(c.Web.TLS.CertFile, c.Web.TLS.KeyFile)
+		srv.TLSConfig, e = panelTLS(c.Web.TLS)
+		if e == nil {
+			e = srv.ListenAndServeTLS("", "")
+		}
 	} else {
 		e = srv.ListenAndServe()
 	}

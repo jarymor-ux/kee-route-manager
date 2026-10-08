@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,25 @@ var (
 )
 
 type Messages struct {
+	BenchmarkIntervalHelp    string
+	BenchmarkIntervalPrompt  string
+	SubscriptionCacheHelp    string
+	SubscriptionCachePrompt  string
+	UILocalHelp              string
+	UIBindPrompt             string
+	UIPortPrompt             string
+	UIHostnameHelp           string
+	UIHostnamePrompt         string
+	InvalidBenchmarkInterval string
+	InvalidUIBind            string
+	InvalidUIPort            string
+	InvalidUIHostname        string
+	SummaryBenchmarkInterval string
+	SummaryCache             string
+	SummaryUI                string
+	UIDNSInstruction         string
+	UITLSInstruction         string
+
 	PlatformTitle          string
 	PlatformHelp           string
 	XrayBinaryHelp         string
@@ -83,6 +103,25 @@ type Messages struct {
 }
 
 var messagesRU = Messages{
+	BenchmarkIntervalHelp:    "Полный бенчмарк запускается с выбранным интервалом. Минимум 1m, максимум 720h. Дополнительные тесты возможны при сбое маршрута и ручном запуске.",
+	BenchmarkIntervalPrompt:  "Интервал полного бенчмарка",
+	SubscriptionCacheHelp:    "При выключенном кеше подписка скачивается заново для каждого бенчмарка. Если загрузка не удалась, рабочий маршрут сохраняется.",
+	SubscriptionCachePrompt:  "Использовать кеш подписок? [д/Н]",
+	UILocalHelp:              "Панель доступна только на выбранном адресе: укажите существующий IPv4-адрес LAN, либо оставьте 127.0.0.1 для SSH-туннеля. Порт должен быть свободен; 443 может занимать админка роутера.",
+	UIBindPrompt:             "IPv4-адрес панели",
+	UIPortPrompt:             "HTTPS-порт панели",
+	UIHostnameHelp:           "Необязательное локальное DNS-имя, например alice.home.arpa или alice.jopa. Не используйте .local: для него нужен mDNS. DNS-запись установщик не создаёт.",
+	UIHostnamePrompt:         "Локальное имя панели (Enter — только IP)",
+	InvalidBenchmarkInterval: "Введите интервал от 1m до 720h, например 5m или 6h.",
+	InvalidUIBind:            "Введите существующий приватный IPv4-адрес LAN или loopback. Адреса 0.0.0.0 и публичные адреса не подходят.",
+	InvalidUIPort:            "Введите порт от 1 до 65535, кроме порта контроллера 9443.",
+	InvalidUIHostname:        "Введите полное DNS-имя без схемы, порта и пути; .local требует mDNS.",
+	SummaryBenchmarkInterval: "Интервал полного бенчмарка",
+	SummaryCache:             "Кеш подписок",
+	SummaryUI:                "Адрес панели",
+	UIDNSInstruction:         "В локальном DNS настройте запись A: %s → %s. Для этого имени используйте DNS роутера; установщик не меняет DNS.",
+	UITLSInstruction:         "Для HTTPS импортируйте сертификат панели в доверенные сертификаты браузера/устройства.",
+
 	PlatformTitle:          "Платформа:",
 	PlatformHelp:           "Выберите платформу, на которой будет работать Kee Route Manager.",
 	XrayBinaryHelp:         "Путь к исполняемому файлу Xray.",
@@ -145,6 +184,25 @@ var messagesRU = Messages{
 }
 
 var messagesEN = Messages{
+	BenchmarkIntervalHelp:    "Full benchmarks use this interval. Minimum 1m, maximum 720h. Route failures and manual actions may trigger additional tests.",
+	BenchmarkIntervalPrompt:  "Full benchmark interval",
+	SubscriptionCacheHelp:    "With caching disabled, every benchmark downloads the subscription again. Failed downloads preserve the working route.",
+	SubscriptionCachePrompt:  "Use subscription cache? [y/N]",
+	UILocalHelp:              "The panel binds only to the chosen address: enter an existing private LAN IPv4 address, or keep 127.0.0.1 for an SSH tunnel. The port must be free; 443 may be used by the router admin panel.",
+	UIBindPrompt:             "Panel IPv4 address",
+	UIPortPrompt:             "Panel HTTPS port",
+	UIHostnameHelp:           "Optional local DNS name, for example alice.home.arpa or alice.jopa. Avoid .local: it requires mDNS. The installer does not create DNS records.",
+	UIHostnamePrompt:         "Local panel hostname (Enter for IP only)",
+	InvalidBenchmarkInterval: "Enter an interval from 1m to 720h, for example 5m or 6h.",
+	InvalidUIBind:            "Enter an existing private LAN IPv4 or loopback address. Wildcard 0.0.0.0 and public addresses are not allowed.",
+	InvalidUIPort:            "Enter a port from 1 to 65535, excluding controller port 9443.",
+	InvalidUIHostname:        "Enter a full DNS name without a scheme, port or path; .local requires mDNS.",
+	SummaryBenchmarkInterval: "Full benchmark interval",
+	SummaryCache:             "Subscription cache",
+	SummaryUI:                "Panel address",
+	UIDNSInstruction:         "Configure a local DNS A record: %s → %s. Use the router DNS for this name; the installer does not change DNS.",
+	UITLSInstruction:         "For HTTPS, trust the panel certificate in your browser/device certificate store.",
+
 	PlatformTitle:          "Platform:",
 	PlatformHelp:           "Choose the platform where Kee Route Manager will run.",
 	XrayBinaryHelp:         "Path to the Xray executable.",
@@ -247,7 +305,7 @@ func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir s
 	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
 }
 
-func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) error {
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) (resultErr error) {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -273,6 +331,14 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 			prefix = "/opt"
 		}
 		cfg.API.TLS = config.TLS{Enabled: true, AutoGenerate: true, CertFile: prefix + "/etc/kee-route-manager/tls.crt", KeyFile: prefix + "/etc/kee-route-manager/tls.key"}
+	}
+	var uiOptions UIOptions
+	if uiPath != "" {
+		uiOptions, err = w.askLocalUI(platform)
+		if err != nil {
+			return err
+		}
+		summary.uiListen, summary.uiHostname = uiOptions.Listen, uiOptions.Hostname
 	}
 	w.printSummary(summary)
 	ok, err := w.askBool(w.msg.Create, true)
@@ -300,10 +366,26 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	}
 
 	if uiPath != "" {
-		ui, err := BuildUIConfig(UIOptions{Platform: platform, Upstream: "https://127.0.0.1:9443", UpstreamCAFile: managedUIUpstreamCAPath(platform)})
+		ui, err := BuildUIConfig(uiOptions)
 		if err != nil {
 			return err
 		}
+		if err := os.Mkdir(tlsDir, 0700); err != nil {
+			return fmt.Errorf("create private TLS directory: %w", err)
+		}
+		tlsIdentity, _ := os.Lstat(tlsDir)
+		var uiIdentity os.FileInfo
+		defer func() {
+			if resultErr == nil {
+				return
+			}
+			if current, err := os.Lstat(uiPath); err == nil && uiIdentity != nil && os.SameFile(current, uiIdentity) {
+				_ = os.Remove(uiPath)
+			}
+			if current, err := os.Lstat(tlsDir); err == nil && tlsIdentity != nil && os.SameFile(current, tlsIdentity) {
+				_ = os.RemoveAll(tlsDir)
+			}
+		}()
 		stagedTLS := cfg.API.TLS
 		stagedTLS.CertFile, stagedTLS.KeyFile = filepath.Join(tlsDir, "tls.crt"), filepath.Join(tlsDir, "tls.key")
 		if err := tlsutil.EnsureTLS(stagedTLS, cfg.API.Listen); err != nil {
@@ -312,6 +394,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		if err := writeConfig(uiPath, ui, false); err != nil {
 			return err
 		}
+		uiIdentity, _ = os.Lstat(uiPath)
 	}
 	if err := writeConfig(outputPath, cfg, allowOverwrite); err != nil {
 		return err
@@ -351,19 +434,22 @@ func (w *wizard) chooseLanguage() error {
 }
 
 type wizardSummary struct {
-	platform          string
-	xrayBinary        string
-	xrayConfigDir     string
-	baseRouting       string
-	inboundTags       []string
-	outboundTag       string
-	subscriptionNames []string
-	scoreTargets      int
-	healthTargets     int
-	poolSize          int
-	speed             bool
-	updates           bool
-	channel           string
+	platform             string
+	xrayBinary           string
+	xrayConfigDir        string
+	baseRouting          string
+	inboundTags          []string
+	outboundTag          string
+	subscriptionNames    []string
+	scoreTargets         int
+	healthTargets        int
+	poolSize             int
+	speed                bool
+	updates              bool
+	channel              string
+	benchmarkInterval    config.Duration
+	cacheEnabled         bool
+	uiListen, uiHostname string
 }
 
 func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error) {
@@ -430,6 +516,17 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		return SetupOptions{}, wizardSummary{}, err
 	}
 
+	fmt.Fprintln(w.out, w.msg.BenchmarkIntervalHelp)
+	interval, err := w.askBenchmarkInterval()
+	if err != nil {
+		return SetupOptions{}, wizardSummary{}, err
+	}
+	fmt.Fprintln(w.out, w.msg.SubscriptionCacheHelp)
+	cacheEnabled, err := w.askBool(w.msg.SubscriptionCachePrompt, false)
+	if err != nil {
+		return SetupOptions{}, wizardSummary{}, err
+	}
+
 	speedEnabled, err := w.askBool(w.msg.SpeedEnable, false)
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
@@ -460,10 +557,11 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 	update.Channel = channel
 
 	opts := SetupOptions{
-		Platform:      platform,
-		Subscriptions: subscriptions,
-		ScoreTargets:  score,
-		HealthTargets: health,
+		Platform:                 platform,
+		Subscriptions:            subscriptions,
+		SubscriptionCacheEnabled: &cacheEnabled,
+		ScoreTargets:             score,
+		HealthTargets:            health,
 		Xray: XrayOptions{
 			Binary:              binary,
 			ConfigDir:           configDir,
@@ -474,6 +572,7 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		},
 		Pool: PoolOptions{Size: pool},
 		Benchmark: BenchmarkOptions{
+			FullInterval:     interval,
 			SpeedEnabled:     speedEnabled,
 			SpeedURLTemplate: speedURL,
 		},
@@ -497,6 +596,8 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		speed:             speedEnabled,
 		updates:           updatesEnabled,
 		channel:           channel,
+		benchmarkInterval: interval,
+		cacheEnabled:      cacheEnabled,
 	}
 	return opts, summary, nil
 }
@@ -855,6 +956,20 @@ func (w *wizard) printSummary(s wizardSummary) {
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryScoreTargets, s.scoreTargets)
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryHealthTargets, s.healthTargets)
 	fmt.Fprintf(w.out, "%s: %d\n", w.msg.SummaryPool, s.poolSize)
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryBenchmarkInterval, s.benchmarkInterval.String())
+	cache := w.msg.Disabled
+	if s.cacheEnabled {
+		cache = w.msg.Enabled
+	}
+	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryCache, cache)
+	if s.uiListen != "" {
+		fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUI, panelURL(s.uiListen, s.uiHostname))
+		if s.uiHostname != "" {
+			host, _, _ := net.SplitHostPort(s.uiListen)
+			fmt.Fprintf(w.out, w.msg.UIDNSInstruction+"\n", s.uiHostname, host)
+		}
+		fmt.Fprintln(w.out, w.msg.UITLSInstruction)
+	}
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummarySpeed, speed)
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUpdates, updates)
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryChannel, s.channel)

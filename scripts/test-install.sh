@@ -203,8 +203,8 @@ answers='\n'.join([
  'y','X-Integration-Secret','integration-header-secret','n','n',
  'https://score.example.test/ping',
  'https://health.example.test/ping','y','https://independent.example.test/ping','n','',
- 'n','n','y',
-])+'\n'
+ '','n','n','n',
+]+(['','','alice.jopa'] if mode=='local-ui' else [])+['y'])+'\n'
 proc=subprocess.Popen(
  ['sh',work+'/bootstrap-'+platform+'.sh'],
  stdin=slave,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,
@@ -233,11 +233,15 @@ with open(sys.argv[1]) as output:
  cfg=json.load(output)
 assert cfg['update']['auto_apply'] is False
 assert cfg['benchmark']['speed']['enabled'] is False
+assert cfg['benchmark']['full_interval'] == '6h0m0s'
+assert cfg['subscriptions']['cache_enabled'] is False
 PYDEFAULTS
   [[ -L "$bin/kee-route-managerd" && -f "$bin/kee-route-manager-launcher" ]]
   if [[ "$mode" = local-ui ]]; then
    check_ui
    grep -Fq 'https://127.0.0.1:9443' "$ui_config"
+   grep -Fq '127.0.0.1:9444' "$ui_config"
+   grep -Fq 'alice.jopa' "$ui_config"
    grep -Fq "$prefix/etc/kee-route-manager-ui/controller-ca.crt" "$ui_config"
    [[ -s "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
    # The UI trusts exactly the local controller certificate, never insecure TLS.

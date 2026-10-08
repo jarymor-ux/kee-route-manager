@@ -1,6 +1,6 @@
 # Полная установка Kee Route Manager для AI-агента
 
-Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Текущие каналы: **v1.1.1** (Release) и **v1.1.1-rc.1** (Release Candidate). Поддержка платформ остаётся experimental до аппаратной приёмки каждой платформы; контейнерные проверки её не заменяют. Для установки используйте полный подписанный набор одного неизменяемого релиза; старые assets не обновляются. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
+Этот файл — инструкция от ссылки на репозиторий до проверенной установки. Прочитайте также корневой `AGENTS.md`. Текущие каналы: **v1.2.0** (Release) и **v1.2.0-rc.1** (Release Candidate). Поддержка платформ остаётся experimental до аппаратной приёмки каждой платформы; контейнерные проверки её не заменяют. Для установки используйте полный подписанный набор одного неизменяемого релиза; старые assets не обновляются. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
 
 **Прежний v1.0.0-rc.2 не использовать для новой установки:** его раздельные секции Xray `routing` перезаписывают друг друга. В новой версии routing объединён в выбранном base-файле и проверен с реальным Xray. Прежние опубликованные assets остаются неизменными.
 
@@ -237,3 +237,13 @@ KRM_MODE=ui sh install/PLATFORM/uninstall.sh
 ## 11. Отчёт
 
 Версия/tag/SHA256 assets, платформа/архитектура/Xray version, mode и сервисы, status/readiness без секретов, installation/login/PWA/benchmark/ownership/failure/reboot/restore/reinstall outcomes, остающиеся limitations. Никогда не публиковать backup, subscriptions, UUID/Reality data или private IP topology.
+
+## 12. v1.2.0 settings/address acceptance
+
+For new interactive local-ui installations, enter the desired benchmark interval/cache policy, then explicitly choose loopback or a private LAN IPv4, HTTPS port and optional DNS name. The default127.0.0.1 restricts access to the device/tunnel; it is not a usable LAN address on another computer. The wizard prints a local DNS record requirement and puts the name in the UI certificate SAN; CLI never mutates router DNS. Prepared config skips the wizard and retains its values.
+
+For an existing installation, use the signed launcher/application maintenance procedure rather than running a fresh installer over its record. Address editing requires the separately installed v1.2.0+ launcher. Back up controller/UI YAML, all UI certificates and private authorization/source/launcher metadata outside Git; retain SSH while changing UI. Preserve the existing listen IP/domain/port and benchmark/cache policy unless explicitly asked to change them.
+
+Verify Router → Settings loads the actual values and validate/no-op do not change YAML or scheduler. A real settings change must return202, complete as the same revision, retain valid sessions/Xray route/process and expose positive readiness. Check failed initialization rollback with isolated fixtures; do not inject faulty router/Xray settings on live hardware. Settings reload intentionally resets scheduler phase/history without changing the saved interval or starting another startup benchmark.
+
+Panel addressing: prepare a free local port/name, obtain the public certificate if it changed, apply, verify both the trial URL and original access, then explicitly confirm within five minutes. An unconfirmed trial must restore the original UI; prepare/apply must reject reserved/occupied ports and foreign IPs. No WAN rules are added. On Keenetic keep native/external configuration editors idle during an absent DNS alias addition; observed unsaved/drift state must refuse the write. Do not claim a power-loss or every-client hardware qualification from API/TLS checks alone.

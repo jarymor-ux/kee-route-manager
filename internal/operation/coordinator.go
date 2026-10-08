@@ -108,7 +108,7 @@ func (c *Coordinator) StartCompatible(kind, source string) (*Handle, error) {
 func compatible(a, b string) bool {
 	control := func(kind string) bool {
 		switch kind {
-		case "client-policy", "wake-on-lan", "switch-slot", "switch-direct":
+		case "client-policy", "wake-on-lan", "switch-slot", "switch-direct", "panel-dns":
 			return true
 		}
 		return false

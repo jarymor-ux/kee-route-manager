@@ -20,6 +20,7 @@ const SchemaVersion = 1
 var idRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 
 type Config struct {
+	sourcePath    string
 	SchemaVersion int           `json:"schema_version"`
 	Instance      Instance      `json:"instance"`
 	Paths         Paths         `json:"paths"`
@@ -67,11 +68,12 @@ type Web struct {
 	TLS             TLS      `json:"tls"`
 }
 type TLS struct {
-	Enabled      bool     `json:"enabled"`
-	AutoGenerate bool     `json:"auto_generate"`
-	CertFile     string   `json:"cert_file"`
-	KeyFile      string   `json:"key_file"`
-	Hosts        []string `json:"hosts"`
+	Enabled                bool             `json:"enabled"`
+	AutoGenerate           bool             `json:"auto_generate"`
+	CertFile               string           `json:"cert_file"`
+	KeyFile                string           `json:"key_file"`
+	Hosts                  []string         `json:"hosts"`
+	AdditionalCertificates []TLSCertificate `json:"additional_certificates,omitempty"`
 }
 type Platform struct {
 	Kind               string   `json:"kind"`
@@ -255,6 +257,19 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
+	return LoadBytes(data, path)
+}
+
+// SourcePath is the original configuration file, not any resolved runtime path.
+func (c Config) SourcePath() string { return c.sourcePath }
+
+// LoadBytes applies the same strict parsing, defaults and validation as Load.
+func LoadBytes(data []byte, path string) (Config, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve config path: %w", err)
+	}
+	path = absolute
 	raw, err := yamlSubsetToJSON(data)
 	if err != nil {
 		return Config{}, fmt.Errorf("parse YAML: %w", err)
@@ -267,6 +282,7 @@ func Load(path string) (Config, error) {
 	}
 	cfg.ApplyPlatformDefaults()
 	cfg.resolve(path)
+	cfg.sourcePath = path
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -290,6 +306,10 @@ func (c *Config) resolve(configPath string) {
 	c.API.UnixSocket = f(c.API.UnixSocket)
 	c.API.TLS.CertFile = f(c.API.TLS.CertFile)
 	c.API.TLS.KeyFile = f(c.API.TLS.KeyFile)
+	for i := range c.Web.TLS.AdditionalCertificates {
+		c.Web.TLS.AdditionalCertificates[i].CertFile = f(c.Web.TLS.AdditionalCertificates[i].CertFile)
+		c.Web.TLS.AdditionalCertificates[i].KeyFile = f(c.Web.TLS.AdditionalCertificates[i].KeyFile)
+	}
 	c.UIProxy.UpstreamCAFile = f(c.UIProxy.UpstreamCAFile)
 	c.Xray.Binary = f(c.Xray.Binary)
 	c.Xray.AssetDir = f(c.Xray.AssetDir)

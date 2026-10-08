@@ -61,6 +61,7 @@ type Server struct {
 	sessions *auth.SessionStore
 	limiter  *auth.Limiter
 	handler  http.Handler
+	settings SettingsController
 }
 
 func New(c config.Config, mgr Controller, up *update.Updater, restart func(context.Context) error) (*Server, error) {
@@ -133,6 +134,13 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/update/status", s.protect(s.updateStatus, false))
 	mux.HandleFunc("/api/v1/update/apply", s.protect(s.updateApply, true))
 	mux.HandleFunc("/api/v1/update/channel", s.protect(s.updateChannel, true))
+	mux.HandleFunc("/api/v1/settings", s.protect(s.settingsSnapshot, false))
+	mux.HandleFunc("/api/v1/settings/save", s.protect(s.settingsChange, true))
+	mux.HandleFunc("/api/v1/settings/validate", s.protect(s.settingsChange, true))
+	mux.HandleFunc("/api/v1/panel/status", s.protect(s.panelStatus, false))
+	mux.HandleFunc("/api/v1/panel/prepare", s.protect(s.panelChange, true))
+	mux.HandleFunc("/api/v1/panel/apply", s.protect(s.panelChange, true))
+	mux.HandleFunc("/api/v1/panel/confirm", s.protect(s.panelChange, true))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	return s.security(mux)
 }
@@ -170,7 +178,7 @@ func (s *Server) security(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), auditContextKey{}, audit))
 		next.ServeHTTP(aw, r)
 		if r.Method == http.MethodPost && aw.status >= 200 && aw.status < 300 && audit.actor != "" &&
-			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || r.URL.Path == "/api/v1/update/apply" || r.URL.Path == "/api/v1/update/channel") {
+			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || strings.HasPrefix(r.URL.Path, "/api/v1/panel/") || r.URL.Path == "/api/v1/update/apply" || r.URL.Path == "/api/v1/update/channel" || r.URL.Path == "/api/v1/settings/save") {
 			if manager, ok := s.mgr.(interface{ RecordAudit(event.Event) }); ok {
 				manager.RecordAudit(event.Event{Level: "info", Type: "api.action", Message: "Control action accepted", OperationID: audit.operation, Fields: map[string]any{"actor_id": audit.actor, "request_id": id, "path": r.URL.Path, "status": aw.status, "operation_id": audit.operation}})
 			}
@@ -720,6 +728,13 @@ func (s *Server) LocalHandler() http.Handler {
 	register("/api/v1/update/status", http.MethodGet, s.updateStatus)
 	register("/api/v1/update/apply", http.MethodPost, s.updateApply)
 	register("/api/v1/update/channel", http.MethodPost, s.updateChannel)
+	register("/api/v1/settings", http.MethodGet, s.settingsSnapshot)
+	register("/api/v1/settings/save", http.MethodPost, s.settingsChange)
+	register("/api/v1/settings/validate", http.MethodPost, s.settingsChange)
+	register("/api/v1/panel/status", http.MethodGet, s.panelStatus)
+	register("/api/v1/panel/prepare", http.MethodPost, s.panelChange)
+	register("/api/v1/panel/apply", http.MethodPost, s.panelChange)
+	register("/api/v1/panel/confirm", http.MethodPost, s.panelChange)
 	register("/api/v1/actions/restore-xray", http.MethodPost, func(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 		if e := s.mgr.RestoreOriginalXray(r.Context()); e != nil {
 			jsonError(w, 409, "restore rejected")

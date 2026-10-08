@@ -33,6 +33,7 @@
       <button data-tab="devices" data-permission="router.clients">Устройства и политики</button>
       <button data-tab="interfaces" data-permission="router.view">Интерфейсы и порты</button>
       <button data-tab="system" data-permission="router.system|router.reboot|updates.manage">Система и обновления</button>
+      <button data-tab="settings" data-permission="config.manage|users.manage">Настройки</button>
       <button data-tab="users" data-permission="users.manage">Пользователи и права</button>
     </div>
   </div>
@@ -93,6 +94,30 @@
   <h2>Порты</h2><div id="ports" class="grid ports-grid"></div>
 </section>
 <section id="tab-testing" class="tab"><div class="section-head"><div><h2>Тестирование VPN</h2><p>Измерения могут нагружать канал. Ручные изменения маршрута имеют приоритет.</p></div><div class="row"><button id="restart-xray" class="ghost" data-permission="vpn.control">Перезапустить Xray</button><button id="test-start" class="primary" data-permission="vpn.control">Запустить тест</button><button id="benchmark-cancel" class="danger-outline hidden" data-permission="vpn.control">Отменить тест</button></div></div><div id="operations-list" class="grid"></div><h2>Последние результаты</h2><p class="sub">Скорость теста не является текущим трафиком пользователей.</p><div id="test-results" class="table-wrap"></div></section>
+<section id="tab-settings" class="tab">
+  <div class="section-head"><div><h2>Настройки</h2><p>Текущие параметры тестирования, проверки связи и подписок.</p></div><button id="settings-refresh" type="button" class="ghost">Обновить данные</button></div>
+  <section class="panel-address" aria-labelledby="panel-address-title">
+    <h3 id="panel-address-title">Адрес панели</h3>
+    <p id="panel-current" class="sub">Загрузка текущего адреса…</p>
+    <p id="panel-status" class="sub" role="status" aria-live="polite"></p>
+    <form id="panel-form" autocomplete="off" class="hidden">
+      <div class="settings-grid"><label class="settings-field" for="panel-hostname"><span>Имя или IP панели</span><input id="panel-hostname" type="text" required maxlength="253" spellcheck="false" autocapitalize="none"><span class="sub">Например: alice.jopa или текущий IP. Доступ остаётся в локальной сети.</span></label><label class="settings-field" for="panel-port"><span>HTTPS-порт</span><input id="panel-port" type="number" required min="1" max="65535" step="1"><span class="sub">443 — адрес без порта в конце.</span></label><label class="settings-field" for="panel-listen-ip"><span>IP в локальной сети</span><input id="panel-listen-ip" readonly aria-readonly="true"><span class="sub">Смена IP и сетевых интерфейсов через панель недоступна.</span></label></div>
+      <p id="panel-dns" class="sub"></p>
+      <div id="panel-certificate" class="hidden"><p class="sub">Для нового имени может понадобиться доверие новому сертификату на каждом устройстве. Скачайте его и настройте доверие до применения. Сертификат прежнего адреса сохраняется.</p><a id="panel-certificate-download" class="ghost compact" download="panel.crt">Скачать публичный сертификат</a><p id="panel-certificate-fingerprint" class="sub"></p></div>
+      <p id="panel-preview" class="sub"></p>
+      <div id="panel-error" class="error" role="alert"></div>
+      <div class="row"><button id="panel-prepare" type="submit" class="ghost" disabled>Подготовить адрес</button><button id="panel-apply" type="button" class="primary hidden" disabled>Применить адрес</button><a id="panel-open" class="ghost compact hidden" target="_blank" rel="noopener noreferrer">Открыть новый адрес</a><button id="panel-confirm" type="button" class="primary hidden" disabled>Новый адрес работает</button><button id="panel-refresh" type="button" class="ghost">Обновить состояние</button></div>
+      <p id="panel-confirm-hint" class="sub" role="status"></p>
+      <p class="sub">После применения откройте новый адрес и проверьте вход. Затем нажмите «Новый адрес работает». Без подтверждения в течение 5 минут прежний адрес восстановится автоматически.</p>
+    </form>
+  </section>
+  <p class="sub">Сохранение применяет параметры и кратковременно переподключает панель. Текущий тест может быть остановлен. Подписки редактируются в разделе VPN → Подписки.</p>
+  <p id="settings-status" class="sub" role="status" aria-live="polite">Загрузка настроек…</p>
+  <form id="settings-form" autocomplete="off">
+    <div id="settings-fields"></div>
+    <div class="settings-savebar"><div><p id="settings-dirty" class="sub">Нет изменений</p><div id="settings-error" class="error" role="alert"></div></div><div class="settings-actions"><button id="settings-discard" type="button" class="ghost" disabled>Отменить изменения</button><button id="settings-validate" type="button" class="ghost" disabled>Проверить</button><button id="settings-save" type="submit" class="primary" disabled>Сохранить</button></div></div>
+  </form>
+</section>
 <section id="tab-users" class="tab"><div class="section-head"><div><h2>Пользователи и права</h2><p>Отзыв прав применяется к открытым сессиям. Последнего администратора нельзя удалить или заблокировать.</p></div><button id="add-user" class="primary" data-permission="users.manage">Добавить пользователя</button></div><div class="table-wrap"><table><thead><tr><th>Логин</th><th>Доступ</th><th>Права</th><th>Действия</th></tr></thead><tbody id="users-body"></tbody></table></div></section>
 <div id="no-access" class="card hidden">Нет доступных разделов. Обратитесь к администратору.</div>
 <section id="tab-events" class="tab">

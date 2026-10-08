@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.2.0 / 1.2.0-rc.1 — 2026-10-08
+
+- Add Router → Settings with authenticated, revision-checked forms for benchmark, failover, health, subscription downloading and provider diversity. Validate before applying, preserve unrelated YAML and private sources, drain the old daemon runtime under its existing ownership locks, retain sessions and roll back failed initialization without restoring routing state. Configuration reload does not schedule an extra startup benchmark.
+- Add supervised local panel hostname/HTTPS-port changes with explicit confirmation and a five-minute rollback window. Keep the previous listener during port trials, preserve its primary TLS identity through SNI, and supply a public certificate for a newly selected hostname. Only the existing private/loopback bind IP may be used. Update the separately maintained launcher to enable this capability.
+- Add guarded Keenetic local DNS alias creation and interrupted-write reconciliation. Preserve existing aliases and refuse conflicting names, pending unrelated configuration or observed drift. Other platforms require an existing matching local DNS record.
+- Extend the RU/EN installation wizard with benchmark interval, fresh-download/cache choice and explicit local UI bind address, HTTPS port and optional DNS certificate name. New interactive installations default to uncached downloads and loopback UI; prepared configurations and the global six-hour benchmark default remain unchanged. Clean up only newly created pair files after installation-config errors.
+
 - Add authenticated UI subscription management: list, add, edit, enable/disable and delete sources without restarting the controller. UI-managed sources are validated with the normal config rules, persisted privately in the controller state directory and applied to the live fetcher; secret URL paths/queries and header values are not rendered in the subscriptions table.
 
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.

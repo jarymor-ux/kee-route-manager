@@ -66,7 +66,11 @@ func main() {
 }
 
 func controllerConfig(args []string, command string) (config.Config, error) {
-	c, e := configflag.Load(args, command)
+	load := configflag.Load
+	if command == "serve" {
+		load = configflag.LoadStartup
+	}
+	c, e := load(args, command)
 	if e == nil && c.Instance.Role != "controller" {
 		e = fmt.Errorf("daemon requires instance.role=controller")
 	}

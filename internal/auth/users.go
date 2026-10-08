@@ -23,7 +23,7 @@ var ErrUserPermission = errors.New("permission denied")
 
 // Permissions is the closed server-side authorization vocabulary.
 func Permissions() []string {
-	return []string{"vpn.view", "vpn.control", "subscriptions.view", "subscriptions.manage", "router.view", "router.clients", "router.policy", "router.wake", "router.system", "router.reboot", "updates.manage", "users.manage", "events.view"}
+	return []string{"vpn.view", "vpn.control", "subscriptions.view", "subscriptions.manage", "router.view", "router.clients", "router.policy", "router.wake", "router.system", "router.reboot", "updates.manage", "users.manage", "config.manage", "events.view"}
 }
 
 // Roles are creation/editing templates; authorization always uses the saved permissions.
