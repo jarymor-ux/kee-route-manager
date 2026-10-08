@@ -8,9 +8,10 @@ go test ./...
 go vet ./...
 while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \))
 for script in scripts/*.sh; do bash -n "$script"; done
-node --check internal/web/ui/static/app.js
-node --check internal/web/ui/static/sw.js
+for script in internal/web/ui/static/*.js; do node --check "$script"; done
+node --check scripts/test-ui-browser.cjs
 node scripts/test-ui.js
+if [[ -n "${PLAYWRIGHT_MODULE_PATH:-}" ]]; then node scripts/test-ui-browser.cjs; fi
 bash scripts/test-architecture.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

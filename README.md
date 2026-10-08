@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.2.1` and Release Candidate `v1.2.1-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.3.0` and Release Candidate `v1.3.0-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -55,6 +55,8 @@ go test -race ./...
 ./scripts/fuzz-smoke.sh
 ./scripts/cross-build.sh
 ```
+
+Browser regressions use an already installed Playwright/Chromium: `PLAYWRIGHT_MODULE_PATH=/path/to/playwright node scripts/test-ui-browser.cjs`. The fixture serves local synthetic API data, checks desktop/mobile light/dark interactions, and writes temporary screenshots outside the checkout; it never connects to a router.
 
 Documentation: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [security](docs/SECURITY.md), [limitations](docs/KNOWN_LIMITATIONS.md), [release](docs/RELEASE.md), [breaking changes](docs/BREAKING_CHANGES.md), [changelog](CHANGELOG.md). Automated verification runs in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions).
 

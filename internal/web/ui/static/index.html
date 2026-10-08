@@ -10,23 +10,28 @@
   <title>Kee Route Manager</title>
 </head>
 <body>
-<div id="login" class="modal hidden">
+<a class="skip-link" href="#workspace">К содержимому</a>
+<div id="login" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
   <form id="login-form" class="dialog" autocomplete="on">
     <div class="brand-mark">KRM</div>
-    <h1>Kee Route Manager</h1>
+    <h1 id="login-title">Kee Route Manager</h1>
     <p>Вход в локальную панель управления</p>
     <label>Логин<input id="username" name="username" autocomplete="username" required></label>
     <label>Пароль<input id="password" name="password" type="password" autocomplete="current-password" required></label>
-    <div id="login-error" class="error"></div>
+    <div id="login-error" class="error" role="alert"></div>
     <button type="submit" class="primary">Войти</button>
   </form>
 </div>
-<header>
-  <div class="brand"><span class="brand-mark small">KRM</span><div><strong>Kee Route Manager</strong><span id="version">—</span></div></div>
-  <div class="header-status"><span id="status-dot" class="dot muted"></span><span id="status-text">Подключение…</span></div>
-  <button id="logout" class="ghost compact" title="Выйти">Выйти</button>
+<header class="workspace-header">
+  <button id="nav-toggle" class="ghost compact nav-toggle" aria-label="Открыть меню" aria-controls="tabs" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+  <div class="header-title"><span class="header-product">Kee Route Manager</span><h1 id="page-title">Дашборд</h1></div>
+  <div class="header-status"><span id="status-dot" class="dot muted" aria-hidden="true"></span><span id="status-text">Подключение…</span></div>
+  <button id="logout" class="ghost compact" title="Выйти из панели">Выйти</button>
 </header>
+<button id="nav-backdrop" class="nav-backdrop hidden" aria-label="Закрыть меню" tabindex="-1"></button>
 <nav id="tabs" aria-label="Основная навигация">
+  <div class="nav-brand"><span class="brand-mark small" aria-hidden="true">KRM</span><div><strong>Kee Route<br>Manager</strong><span id="version">—</span></div><button id="nav-close" class="ghost compact" aria-label="Закрыть меню">×</button></div>
+  <div class="nav-caption">Управление</div>
   <div class="nav-group" data-group="router"><button class="group-toggle" data-group="router" aria-expanded="false" aria-controls="menu-router">Роутер <span aria-hidden="true">⌄</span></button>
     <div id="menu-router" class="submenu hidden">
       <button data-tab="router" data-permission="router.view">Дашборд</button>
@@ -47,7 +52,7 @@
     </div>
   </div>
 </nav>
-<main>
+<main id="workspace" tabindex="-1">
 <section id="tab-overview" class="tab active">
   <div class="grid hero-grid">
     <article class="card hero"><div class="eyebrow">Текущий маршрут</div><div id="route-mode" class="hero-value">—</div><div id="active-node" class="sub">—</div><div class="row"><button id="benchmark" class="primary" data-permission="vpn.control">Запустить тест</button><button data-permission="vpn.control" id="direct" class="danger-outline">Прямой маршрут</button></div></article>
@@ -67,20 +72,21 @@
 </section>
 <section id="tab-nodes" class="tab">
   <h2>Горячий пул</h2><div id="pool" class="pool-grid"></div><p class="sub">Скорость и задержка узлов — результаты последнего тестирования.</p>
-  <div class="section-head"><div><h2>Все узлы</h2><p>Общий дедуплицированный пул подписок</p></div><input id="node-search" placeholder="Поиск по имени или источнику"></div>
-  <div class="table-wrap"><table><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость</th><th>Score</th><th>Состояние</th></tr></thead><tbody id="nodes-body"></tbody></table></div>
+  <div class="section-head"><div><h2>Все узлы</h2><p>Результаты последнего тестирования</p></div></div>
+  <div class="node-filters"><label class="filter-search"><span>Поиск</span><input id="node-search" type="search" placeholder="Имя или источник"></label><label><span>Источник</span><select id="node-source-filter"><option value="">Все источники</option></select></label><label><span>Состояние</span><select id="node-status-filter"><option value="">Все узлы</option><option value="healthy">Доступные</option><option value="error">С ошибкой</option><option value="unchecked">Не проверены</option><option value="active">Активный</option><option value="pool">В горячем пуле</option></select></label><label><span>Сортировка</span><select id="node-sort"><option value="label">По имени</option><option value="latency">По задержке</option><option value="speed">По скорости</option><option value="score">По оценке</option></select></label></div>
+  <div class="table-wrap"><table class="nodes-table"><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость</th><th>Оценка</th><th>Состояние</th></tr></thead><tbody id="nodes-body"></tbody></table></div>
 </section>
-<section id="tab-router" class="tab"><h2>Дашборд роутера</h2><p id="metrics-freshness" class="sub" role="status">Нет данных</p>
-  <div class="grid metrics-grid">
+<section id="tab-router" class="tab">
+  <div class="section-head dashboard-head"><div><h2>Роутер</h2><p id="metrics-freshness" role="status">Нет данных</p></div><label class="chart-range"><span>Период графиков</span><select id="chart-range"><option value="15">15 минут</option><option value="60" selected>Последний час</option></select></label></div>
+  <div class="grid metrics-grid" aria-label="Показатели роутера">
     <article class="card"><div class="eyebrow">CPU</div><div id="cpu" class="metric">—</div></article>
     <article class="card"><div class="eyebrow">RAM</div><div id="ram" class="metric">—</div></article>
     <article class="card"><div class="eyebrow">WAN</div><div id="wan" class="metric small-metric">—</div><div id="wan-detail" class="sub">—</div></article>
-    <article class="card"><div class="eyebrow">Общий трафик WAN</div><div id="traffic" class="metric small-metric">—</div></article>
-    <article class="card"><div class="eyebrow">Температура</div><div id="temperature" class="metric">—</div></article>
-    <article class="card"><div class="eyebrow">Аптайм</div><div id="uptime" class="metric small-metric">—</div></article>
+    <article class="card"><div class="eyebrow">Трафик WAN</div><div id="traffic" class="metric small-metric">—</div></article>
   </div>
-  <h2>Последний час</h2><p class="sub">После перезапуска история начинается заново. WAN показывает общий трафик интерфейса.</p>
-  <div class="grid chart-grid"><article class="card"><h3>CPU и RAM, %</h3><div id="usage-chart"></div></article><article class="card"><h3>WAN, Мбит/с</h3><div id="traffic-chart"></div></article></div>
+  <div class="grid chart-grid"><article class="card"><h3>CPU и RAM, %</h3><div id="usage-chart" class="chart-surface"></div></article><article class="card"><h3>WAN, Мбит/с</h3><div id="traffic-chart" class="chart-surface"></div></article></div>
+  <div class="router-context"><span>Температура <strong id="temperature">—</strong></span><span>Время работы <strong id="uptime">—</strong></span></div>
+  <p class="sub chart-note">После перезапуска история начинается заново. Пропуски означают отсутствие измерений. Трафик WAN учитывает весь интерфейс.</p>
 </section>
 <section id="tab-devices" class="tab">  <div class="section-head"><div><h2>Клиенты</h2><p id="clients-freshness">—</p></div></div>
   <div class="table-wrap"><table><thead><tr><th>Устройство</th><th>IP / MAC</th><th>Связь</th><th>Политика</th><th>Действия</th></tr></thead><tbody id="clients-body"></tbody></table></div>
@@ -96,12 +102,22 @@
 <section id="tab-testing" class="tab"><div class="section-head"><div><h2>Тестирование VPN</h2><p>Измерения могут нагружать канал. Ручные изменения маршрута имеют приоритет.</p></div><div class="row"><button id="restart-xray" class="ghost" data-permission="vpn.control">Перезапустить Xray</button><button id="test-start" class="primary" data-permission="vpn.control">Запустить тест</button><button id="benchmark-cancel" class="danger-outline hidden" data-permission="vpn.control">Отменить тест</button></div></div><div id="operations-list" class="grid"></div><h2>Последние результаты</h2><p class="sub">Скорость теста не является текущим трафиком пользователей.</p><div id="test-results" class="table-wrap"></div></section>
 <section id="tab-settings" class="tab">
   <div class="section-head"><div><h2>Настройки</h2><p>Текущие параметры тестирования, проверки связи и подписок.</p></div><button id="settings-refresh" type="button" class="ghost">Обновить данные</button></div>
+
+  <p class="sub">Сохранение применяет параметры и кратковременно переподключает панель. Текущий тест может быть остановлен. Подписки редактируются в разделе VPN → Подписки.</p>
+  <p id="settings-status" class="sub" role="status" aria-live="polite">Загрузка настроек…</p>
+  <form id="settings-form" autocomplete="off" novalidate>
+    <div id="settings-fields"></div>
+    <div class="settings-savebar"><div><p id="settings-dirty" class="sub">Нет изменений</p><div id="settings-error" class="error" role="alert"></div></div><div class="settings-actions"><button id="settings-discard" type="button" class="ghost" disabled>Отменить изменения</button><button id="settings-validate" type="button" class="ghost" disabled>Проверить</button><button id="settings-save" type="submit" class="primary" disabled>Сохранить</button></div></div>
+  </form>
   <section class="panel-address" aria-labelledby="panel-address-title">
     <h3 id="panel-address-title">Адрес панели</h3>
+    <ol class="panel-steps" aria-label="Смена адреса"><li id="panel-step-prepare" aria-current="step"><span aria-hidden="true">1</span> Подготовить</li><li id="panel-step-check"><span aria-hidden="true">2</span> Проверить доступ</li><li id="panel-step-confirm"><span aria-hidden="true">3</span> Подтвердить</li></ol>
     <p id="panel-current" class="sub">Загрузка текущего адреса…</p>
     <p id="panel-status" class="sub" role="status" aria-live="polite"></p>
     <form id="panel-form" autocomplete="off" class="hidden">
       <div class="settings-grid"><label class="settings-field" for="panel-hostname"><span>Имя или IP панели</span><input id="panel-hostname" type="text" required maxlength="253" spellcheck="false" autocapitalize="none"><span class="sub">Например: alice.jopa или текущий IP. Доступ остаётся в локальной сети.</span></label><label class="settings-field" for="panel-port"><span>HTTPS-порт</span><input id="panel-port" type="number" required min="1" max="65535" step="1"><span class="sub">443 — адрес без порта в конце.</span></label><label class="settings-field" for="panel-listen-ip"><span>IP в локальной сети</span><input id="panel-listen-ip" readonly aria-readonly="true"><span class="sub">Смена IP и сетевых интерфейсов через панель недоступна.</span></label></div>
+      <dl class="panel-addresses"><div><dt>Открытая панель</dt><dd id="panel-old-address">—</dd></div><div><dt>Подготовленный адрес</dt><dd id="panel-new-address">—</dd></div></dl>
+      <p id="panel-countdown" class="panel-countdown hidden" role="timer" aria-live="off"></p>
       <p id="panel-dns" class="sub"></p>
       <div id="panel-certificate" class="hidden"><p class="sub">Для нового имени может понадобиться доверие новому сертификату на каждом устройстве. Скачайте его и настройте доверие до применения. Сертификат прежнего адреса сохраняется.</p><a id="panel-certificate-download" class="ghost compact" download="panel.crt">Скачать публичный сертификат</a><p id="panel-certificate-fingerprint" class="sub"></p></div>
       <p id="panel-preview" class="sub"></p>
@@ -111,12 +127,6 @@
       <p class="sub">После применения откройте новый адрес и проверьте вход. Затем нажмите «Новый адрес работает». Без подтверждения в течение 5 минут прежний адрес восстановится автоматически.</p>
     </form>
   </section>
-  <p class="sub">Сохранение применяет параметры и кратковременно переподключает панель. Текущий тест может быть остановлен. Подписки редактируются в разделе VPN → Подписки.</p>
-  <p id="settings-status" class="sub" role="status" aria-live="polite">Загрузка настроек…</p>
-  <form id="settings-form" autocomplete="off">
-    <div id="settings-fields"></div>
-    <div class="settings-savebar"><div><p id="settings-dirty" class="sub">Нет изменений</p><div id="settings-error" class="error" role="alert"></div></div><div class="settings-actions"><button id="settings-discard" type="button" class="ghost" disabled>Отменить изменения</button><button id="settings-validate" type="button" class="ghost" disabled>Проверить</button><button id="settings-save" type="submit" class="primary" disabled>Сохранить</button></div></div>
-  </form>
 </section>
 <section id="tab-users" class="tab"><div class="section-head"><div><h2>Пользователи и права</h2><p>Отзыв прав применяется к открытым сессиям. Последнего администратора нельзя удалить или заблокировать.</p></div><button id="add-user" class="primary" data-permission="users.manage">Добавить пользователя</button></div><div class="table-wrap"><table><thead><tr><th>Логин</th><th>Доступ</th><th>Права</th><th>Действия</th></tr></thead><tbody id="users-body"></tbody></table></div></section>
 <div id="no-access" class="card hidden">Нет доступных разделов. Обратитесь к администратору.</div>
@@ -134,14 +144,20 @@
     <label>URL<input id="subscription-url" required spellcheck="false" placeholder="https://provider.example/subscription"></label>
     <label class="checkbox-label"><input id="subscription-enabled" type="checkbox" checked> Включена</label>
     <label>Headers (JSON)<textarea id="subscription-headers" spellcheck="false" placeholder="{}"></textarea></label>
-    <div id="subscription-error" class="error"></div>
+    <div id="subscription-error" class="error" role="alert"></div>
     <div class="dialog-actions">
       <button id="subscription-cancel" type="button" class="ghost">Отмена</button>
       <button type="submit" class="primary">Сохранить</button>
     </div>
   </form>
 </div>
-<div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-title"><form id="user-form" class="dialog user-dialog" autocomplete="off"><h2 id="user-title">Пользователь</h2><input id="user-id" type="hidden"><label>Логин<input id="user-name" autocomplete="off" required minlength="3" maxlength="64"></label><label>Пароль<input id="user-password" type="password" autocomplete="new-password" minlength="10"><span id="user-password-hint" class="sub"></span></label><label class="checkbox-label"><input id="user-enabled" type="checkbox" checked> Доступ включён</label><label>Шаблон роли<select id="user-role"><option value="">Выбрать шаблон…</option><option value="admin">Администратор</option><option value="viewer">Наблюдатель</option><option value="vpn-operator">Оператор VPN</option><option value="router-operator">Оператор роутера</option></select></label><fieldset><legend>Разрешения</legend><div id="user-permissions" class="permissions-grid"></div></fieldset><div id="user-error" class="error"></div><div class="dialog-actions"><button id="user-cancel" type="button" class="ghost">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form></div>
-<div id="toast" class="toast hidden"></div>
+<div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-title"><form id="user-form" class="dialog user-dialog" autocomplete="off"><h2 id="user-title">Пользователь</h2><input id="user-id" type="hidden"><label>Логин<input id="user-name" autocomplete="off" required minlength="3" maxlength="64"></label><label>Пароль<input id="user-password" type="password" autocomplete="new-password" minlength="10"><span id="user-password-hint" class="sub"></span></label><label class="checkbox-label"><input id="user-enabled" type="checkbox" checked> Доступ включён</label><label>Шаблон роли<select id="user-role"><option value="">Выбрать шаблон…</option><option value="admin">Администратор</option><option value="viewer">Наблюдатель</option><option value="vpn-operator">Оператор VPN</option><option value="router-operator">Оператор роутера</option></select></label><fieldset><legend>Разрешения</legend><div id="user-permissions" class="permissions-grid"></div></fieldset><div id="user-error" class="error" role="alert"></div><div class="dialog-actions"><button id="user-cancel" type="button" class="ghost">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/assets/app.js" defer></script>
+<script src="/assets/workspace.js" defer></script>
+<script src="/assets/charts.js" defer></script>
+<script src="/assets/dialogs.js" defer></script>
+<script src="/assets/settings.js" defer></script>
+<script src="/assets/panel.js" defer></script>
+<script src="/assets/boot.js" defer></script>
 </body></html>

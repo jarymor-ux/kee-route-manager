@@ -76,3 +76,9 @@ Upgrade the launcher before writing additional SNI identities: earlier binaries 
 Fresh wizard settings: benchmark interval defaults to6h, new interactive subscription caching defaults off, UI binds loopback unless a private IPv4 is explicitly chosen; HTTPS9444 and optional local DNS certificate name are prompted. A hostname SAN does not register DNS. Prepared configs bypass these prompts and preserve their own cadence/cache/listen values.
 
 For firmware with loopback `/ci/` export denied, use v1.2.1+ application binaries. Configuration reads fall back to bounded validated local NDMC `more` commands after HTTP403/404; saved/running checksum and whole-config ownership checks remain mandatory. Existing v1.2.0 release files remain immutable.
+
+## v1.3.0 workspace UI
+
+This release changes embedded static UI assets only; it does not change the controller schema or launcher protocol. An existing compatible protocol-1 launcher can apply the signed application bundle through its ordinary update flow. Keep benchmark intervals, subscription caching, local address and TLS identities from the installed configuration. Older standalone UI installations still need their documented separate maintenance.
+
+Router and VPN remain the two navigation groups. On desktop they appear in the sidebar; on narrow screens use the menu button. Router → Settings shows the basic controls first, with advanced groups below. Collapsed and conditionally hidden fields remain part of the complete settings draft. Graphs expose 15-minute/hour windows and sample inspection; missing measurements remain gaps. Panel address trials still require opening the candidate address and explicitly confirming it before the server deadline.
