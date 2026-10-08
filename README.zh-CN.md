@@ -2,9 +2,11 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-KRM 管理 Xray 节点池、订阅与故障切换。**Release `v1.1.1` 与 Release Candidate `v1.1.1-rc.1` 使用独立发布渠道。平台支持在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
+KRM 管理 Xray 节点池、订阅与故障切换。**Release `v1.2.0` 与 Release Candidate `v1.2.0-rc.1` 使用独立发布渠道。平台支持在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
 面板现在分为路由器和 VPN 两个菜单，提供指标仪表板、有限历史记录和由服务端验证权限的多用户管理。基准测试期间可以执行兼容的路由器操作和手动切换路由；重启操作先取消测试并等待清理。参见[凭据迁移和回滚限制](docs/API.md#credential-migration-and-recovery)。
+
+Router → Settings 提供运行配置表单、校验、版本冲突保护和初始化失败回滚，并支持受 launcher 管理的本地面板域名/HTTPS 端口试用及五分钟确认。地址功能需要单独维护的 v1.2.0+ launcher；普通应用更新不会替换它。路由器 IP、WAN 监听和池大小不在此表单范围内。新交互安装会询问测试间隔、缓存及本地 UI 地址；已有配置不改写。
 
 - `kee-route-managerd`：唯一的状态、Xray 与防火墙控制进程；可独立运行，提供 HTTPS 与 Unix socket API。
 - `kee-route-manager-ui`：独立 Web/PWA 与经过 TLS 验证的 API 代理，没有路由器控制逻辑。
@@ -21,7 +23,7 @@ Linux/OpenWrt 的 `firewall_mode: managed` 仍支持全新安装和普通运行�
 
 AI 代理应先阅读 [AGENTS.md](AGENTS.md)，再按照 [完整安装流程](docs/AGENT_INSTALL.md) 执行 SSH、备份、配置、core/UI 安装、TLS、验证、卸载及回滚。
 
-安装时使用已发布的签名版本 `v1.1.1`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
+安装时使用已发布的签名版本 `v1.2.0`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
 
 参见 [限制](docs/KNOWN_LIMITATIONS.md) 与 [发布流程](docs/RELEASE.md)。自动化验证见 [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions)。许可证：[Apache-2.0](LICENSE)。
 

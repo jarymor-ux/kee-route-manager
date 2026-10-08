@@ -16,6 +16,16 @@ func DefaultPath() string {
 }
 
 func Load(args []string, name string) (config.Config, error) {
+	return load(args, name, false)
+}
+
+// Only controller startup selects a read-only recovery baseline. Offline
+// validation and UI/CLI loading never recover or mutate controller files.
+func LoadStartup(args []string, name string) (config.Config, error) {
+	return load(args, name, true)
+}
+
+func load(args []string, name string, startup bool) (config.Config, error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	path := flags.String("config", DefaultPath(), "configuration path")
 	if err := flags.Parse(args); err != nil {
@@ -23,6 +33,9 @@ func Load(args []string, name string) (config.Config, error) {
 	}
 	if flags.NArg() != 0 {
 		return config.Config{}, fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	if startup {
+		return config.StartupConfig(*path)
 	}
 	return config.Load(*path)
 }

@@ -68,7 +68,7 @@ func (s *Server) launcherRequest(ctx context.Context, method, path string, body 
 		if err != nil {
 			return 0, nil, err
 		}
-	} else if path == "/apply" {
+	} else if path == "/apply" || path == "/panel/apply" || path == "/panel/confirm" {
 		var result struct {
 			Accepted bool `json:"accepted"`
 		}

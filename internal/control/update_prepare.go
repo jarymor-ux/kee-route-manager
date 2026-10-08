@@ -16,6 +16,7 @@ type updateGate struct {
 	prepared bool
 	manager  *core.Manager
 	version  string
+	settings *settingsRuntime
 }
 
 func replyUpdate(w http.ResponseWriter, status int, value any) {
@@ -65,6 +66,10 @@ func (g *updateGate) local(next http.Handler) http.Handler {
 		}
 		g.mu.Lock()
 		defer g.mu.Unlock()
+		if g.settings != nil && g.settings.applying() {
+			replyUpdate(w, http.StatusConflict, map[string]string{"error": "settings are being applied; retry update after completion"})
+			return
+		}
 		if !g.frozen {
 			g.frozen = true
 			if err := g.manager.PrepareUpdate(); err == nil {

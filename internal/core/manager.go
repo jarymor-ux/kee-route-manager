@@ -83,6 +83,16 @@ func New(c config.Config, version string, st *store.Store, ops *operation.Coordi
 	return &Manager{cfg: c, version: version, store: st, ops: ops, platform: p, xray: xm, fetcher: fetch, bench: be}
 }
 func (m *Manager) Start(parent context.Context) {
+	m.start(parent, true)
+}
+
+// Settings reload retains the working route and waits for the configured
+// benchmark interval instead of scheduling another startup download.
+func (m *Manager) StartReload(parent context.Context) {
+	m.start(parent, false)
+}
+
+func (m *Manager) start(parent context.Context, startupBenchmark bool) {
 	m.ctx, m.cancel = context.WithCancel(parent)
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	m.routeMu.Lock()
@@ -114,7 +124,7 @@ func (m *Manager) Start(parent context.Context) {
 	go m.platformLoop()
 	m.wg.Add(1)
 	go m.sourceLoop()
-	if err == nil {
+	if err == nil && startupBenchmark {
 		go func() { _ = m.RunBenchmark(m.ctx, "startup", "scheduler") }()
 	}
 }

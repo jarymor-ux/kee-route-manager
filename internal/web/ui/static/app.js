@@ -11,11 +11,13 @@ let roleTemplates = {};
 let activePage = '';
 let authGeneration = 0;
 let pollLoading = false;
-const pagePermissions = { router: 'router.view', devices: 'router.clients', interfaces: 'router.view', system: 'router.system|router.reboot|updates.manage', users: 'users.manage', overview: 'vpn.view', subscriptions: 'subscriptions.view|subscriptions.manage', nodes: 'vpn.view', testing: 'vpn.view', events: 'events.view' };
-const pageGroups = { router: 'router', devices: 'router', interfaces: 'router', system: 'router', users: 'router', overview: 'vpn', subscriptions: 'vpn', nodes: 'vpn', testing: 'vpn', events: 'vpn' };
+const pagePermissions = { router: 'router.view', devices: 'router.clients', interfaces: 'router.view', system: 'router.system|router.reboot|updates.manage', users: 'users.manage', settings: 'config.manage|users.manage', overview: 'vpn.view', subscriptions: 'subscriptions.view|subscriptions.manage', nodes: 'vpn.view', testing: 'vpn.view', events: 'events.view' };
+const pageGroups = { router: 'router', devices: 'router', interfaces: 'router', system: 'router', users: 'router', settings: 'router', overview: 'vpn', subscriptions: 'vpn', nodes: 'vpn', testing: 'vpn', events: 'vpn' };
 function can(permission) { return permission.split('|').some((item) => permissions.has(item)); }
 function requestPermission(path) {
   if (path.includes('/subscriptions')) return path.endsWith('/subscriptions') ? 'subscriptions.view|subscriptions.manage' : 'subscriptions.manage';
+  if (path.includes('/panel/')) return 'config.manage|users.manage';
+  if (path.includes('/settings')) return 'config.manage|users.manage';
   if (path.includes('/users')) return 'users.manage';
   if (path.includes('/update/')) return 'updates.manage';
   if (path.includes('/router/clients')) return 'router.clients';
@@ -63,12 +65,15 @@ async function api(path, options = {}) {
     showLogin();
     throw new Error('Требуется вход');
   }
-  if (!response.ok) throw new Error(errorMessage(data, response.status));
+  if (!response.ok) throw Object.assign(new Error(errorMessage(data, response.status)), { code: data?.code, status: response.status });
   return data;
 }
 
 function errorMessage(data, status) {
   const messages = {
+    settings_conflict: 'Настройки уже изменены. Обновите данные, затем повторите изменение.',
+    settings_invalid: 'Параметры не прошли проверку. Проверьте значения и повторите.',
+    settings_busy: 'Настройки уже применяются или выполняется несовместимая операция. Повторите позже.',
     busy: 'Сейчас выполняется несовместимая операция. Повторите после её завершения.',
     canceled: 'Операция отменена.',
     settings_changed: 'Настройки изменились во время теста. Его результат не применён.',
@@ -97,6 +102,8 @@ function showLogin() {
   permissionCatalog = [];
   roleTemplates = {};
   clearUserEditor();
+  clearSettingsEditor();
+  clearPanelEditor();
   ['pool', 'sources', 'nodes-body', 'subscriptions-body', 'clients-body', 'ports', 'events-list', 'tool-output', 'users-body', 'test-results', 'operations-list', 'usage-chart', 'traffic-chart'].forEach((id) => { $(`#${id}`).innerHTML = ''; $(`#${id}`).textContent = ''; });
   ['cpu', 'ram', 'wan', 'wan-detail', 'traffic', 'temperature', 'uptime', 'interface-summary', 'metrics-freshness', 'clients-freshness', 'pool-count', 'last-test', 'last-test-detail', 'route-mode', 'active-node', 'health', 'health-detail', 'operation', 'operation-detail'].forEach((id) => { $(`#${id}`).textContent = '—'; });
   applyPermissions();
@@ -755,6 +762,7 @@ function acceptSession(data) {
       subscriptionData = subscriptionData.map(({ url, headers, ...source }) => ({ ...source, header_count: source.header_count ?? Object.keys(headers || {}).length }));
       renderSubscriptions();
     }
+    if (!can('config.manage|users.manage')) { clearSettingsEditor(); clearPanelEditor(); }
     if (!can('users.manage')) { usersData = []; roleTemplates = {}; permissionCatalog = []; $('#users-body').innerHTML = ''; clearUserEditor(); }
     if (!can('vpn.view')) { statusData = null; nodesData = []; ['route-mode', 'active-node', 'health', 'health-detail', 'operation', 'operation-detail', 'pool-count', 'last-test', 'last-test-detail'].forEach((id) => { $(`#${id}`).textContent = '—'; }); ['pool', 'sources', 'nodes-body', 'operations-list', 'test-results'].forEach((id) => { $(`#${id}`).innerHTML = ''; }); }
     if (!can('router.clients')) { clientsData = []; $('#clients-body').innerHTML = ''; $('#clients-freshness').textContent = '—'; }
@@ -794,6 +802,14 @@ function navigate(page, updateHash = true) {
   if (!pagePermissions[page] || !can(pagePermissions[page])) {
     page = Object.keys(pagePermissions).find((item) => can(pagePermissions[item])) || '';
   }
+  if (activePage === 'settings' && page !== 'settings' && (settingsDirty || panelDirty) && can('config.manage|users.manage')) {
+    if (!confirm('Есть несохранённые настройки. Отменить изменения и перейти?')) {
+      if (window.location.hash !== '#settings') window.location.hash = '#settings';
+      return;
+    }
+    clearSettingsEditor();
+    if (!panelTrialActive()) clearPanelEditor();
+  }
   activePage = page;
   document.querySelectorAll('#tabs [data-tab]').forEach((button) => {
     const active = button.dataset.tab === page;
@@ -815,6 +831,10 @@ async function loadPage(page) {
   if (page === 'events') return loadEvents();
   if (['router', 'devices', 'interfaces'].includes(page)) return loadRouter();
   if (page === 'users') return loadUsers();
+  if (page === 'settings') {
+    if (!settingsSnapshot && !settingsLoading && !settingsSaving) await loadSettings();
+    return loadPanelStatus();
+  }
 }
 
 function renderOperations(operations) {
@@ -861,7 +881,7 @@ const permissionLabels = {
   'subscriptions.view': 'Просмотр подписок', 'subscriptions.manage': 'Изменение подписок и доступ к секретам',
   'router.view': 'Метрики и интерфейсы', 'router.clients': 'Просмотр устройств', 'router.policy': 'Изменение политик',
   'router.wake': 'Wake-on-LAN', 'router.system': 'Системный журнал и диагностика', 'router.reboot': 'Перезагрузка роутера',
-  'updates.manage': 'Управление обновлениями', 'users.manage': 'Управление пользователями и правами', 'events.view': 'Просмотр событий',
+  'config.manage': 'Редактирование настроек', 'updates.manage': 'Управление обновлениями', 'users.manage': 'Управление пользователями и правами', 'events.view': 'Просмотр событий',
 };
 
 async function loadUsers() {
@@ -943,6 +963,575 @@ async function deleteUser(id) {
     if (can('users.manage')) await loadUsers();
   } catch (error) { toast(error.message, true); }
 }
+
+let settingsSnapshot = null;
+let settingsRevision = '';
+let settingsPoolSize = 0;
+let settingsDirty = false;
+let settingsLoading = false;
+let settingsSaving = false;
+let settingsChecking = false;
+let settingsGeneration = 0;
+let settingsApplyTimer;
+let settingsApplyAttempts = 0;
+let settingsTargetRevision = '';
+let settingsNeedsRefresh = false;
+let settingsApplyDeadline = 0;
+
+// Only this allowlist is editable; credentials, listeners, TLS and routing stay private.
+const settingsSections = [
+  ['Тестирование', 'benchmark', [
+    ['full_interval', 'Интервал полного теста', 'duration', 'Например: 5m, 1h.'],
+    ['batch_size', 'Узлов в пакете', 'number'], ['latency_workers', 'Параллельных проверок задержки', 'number'],
+    ['requests_per_weight', 'Запросов на единицу веса', 'number'], ['finalists', 'Финалистов', 'number'],
+    ['min_improvement_percent', 'Минимальное улучшение, %', 'number'],
+    ['switch_cooldown', 'Пауза между переключениями', 'duration'],
+    ['stability_before_upgrade', 'Стабильность перед улучшением маршрута', 'duration'],
+  ]],
+  ['Измерение скорости', 'benchmark.speed', [
+    ['enabled', 'Измерять скорость', 'boolean'], ['workers', 'Параллельных измерений', 'number'],
+    ['url_template', 'Шаблон URL измерения', 'text', 'Используйте URL публичного сервиса без паролей и токенов.'],
+    ['warmup_bytes', 'Объём разогрева', 'bytes'], ['min_sample_bytes', 'Минимальный объём', 'bytes'],
+    ['max_sample_bytes', 'Максимальный объём', 'bytes'], ['target_duration', 'Длительность измерения', 'duration'],
+    ['repetitions', 'Повторов', 'number'],
+  ]],
+  ['Проверка связи', 'health', [
+    ['recovery_threshold', 'Успехов для восстановления', 'number'], ['request_timeout', 'Таймаут запроса', 'duration'],
+    ['max_response_bytes', 'Максимальный размер ответа', 'bytes'], ['hot_pool_freshness', 'Свежесть горячего пула', 'duration'],
+    ['provider_retry_backoff', 'Паузы повторных запросов подписки', 'durations', 'Через запятую, например: 30s, 1m, 5m.'],
+  ]],
+  ['Резервное переключение', 'failover', [
+    ['detection_interval', 'Интервал обнаружения отказа', 'duration'], ['failure_threshold', 'Ошибок до переключения', 'number'],
+    ['probe_timeout', 'Таймаут одной проверки', 'duration'], ['overall_deadline', 'Общий лимит проверки', 'duration'],
+    ['quorum', 'Необходимых успешных проверок', 'number'],
+  ]],
+  ['Загрузка подписок', 'subscriptions', [
+    ['cache_enabled', 'Использовать кэш подписок', 'boolean', 'При выключении каждое тестирование скачивает подписки заново; фоновое обновление отключено.'],
+    ['cache_ttl', 'Срок хранения кэша', 'duration'], ['refresh_interval', 'Интервал фонового обновления', 'duration', 'Действует только при включённом кэше.'],
+    ['request_timeout', 'Таймаут загрузки', 'duration'], ['max_response_bytes', 'Максимальный размер подписки', 'bytes'],
+    ['max_nodes_per_source', 'Максимум узлов из одной подписки', 'number'], ['max_sources', 'Максимум подписок', 'number'],
+    ['max_nodes', 'Максимум узлов всего', 'number'],
+  ]],
+  ['Разнообразие горячего пула', 'pool.provider_diversity', [
+    ['enabled', 'Ограничивать узлы одного провайдера', 'boolean'], ['max_per_provider', 'Максимум узлов одного провайдера', 'number'],
+  ]],
+];
+function settingsFieldID(path) { return `setting-${path.replaceAll('.', '-')}`; }
+function settingsValue(settings, path) { return path.split('.').reduce((value, key) => value?.[key], settings); }
+function cloneSettings(value) { return JSON.parse(JSON.stringify(value)); }
+function settingsCurrentDraft() {
+  const draft = cloneSettings(settingsSnapshot);
+  for (const [, prefix, fields] of settingsSections) {
+    const group = settingsValue(draft, prefix);
+    for (const [name, , type] of fields) {
+      const input = $(`#${settingsFieldID(`${prefix}.${name}`)}`);
+      if (type === 'boolean') group[name] = Boolean(input.checked);
+      else if (type === 'number' || type === 'decimal') {
+        const value = input.value.trim();
+        if (!value || !Number.isFinite(Number(value)) || (type === 'number' && !Number.isInteger(Number(value)))) throw new Error('Числовые поля должны содержать корректное число.');
+        group[name] = Number(value);
+      } else if (type === 'durations') group[name] = input.value.split(',').map((value) => value.trim()).filter(Boolean);
+      else group[name] = input.value.trim();
+    }
+  }
+  return draft;
+}
+function renderSettings(data) {
+  settingsSnapshot = cloneSettings(data.settings);
+  settingsRevision = data.revision;
+  settingsPoolSize = data.pool_size;
+  settingsDirty = false;
+  settingsNeedsRefresh = false;
+  $('#settings-fields').innerHTML = settingsSections.map(([title, prefix, fields]) => `<fieldset class="settings-section"><legend>${esc(title)}</legend><div class="settings-grid">${fields.map(([name, label, type, hint]) => {
+    const id = settingsFieldID(`${prefix}.${name}`);
+    const value = settingsValue(settingsSnapshot, `${prefix}.${name}`);
+    const input = type === 'boolean'
+      ? `<input id="${id}" type="checkbox" ${value ? 'checked' : ''}>`
+      : `<input id="${id}" type="${['number', 'decimal'].includes(type) ? 'number' : 'text'}" ${type === 'number' ? 'step="1"' : type === 'decimal' ? 'step="any"' : ''} value="${esc(type === 'durations' ? (value || []).join(', ') : value)}" ${type === 'text' ? '' : 'required'} ${hint ? `aria-describedby="${id}-hint"` : ''}>`;
+    return `<label for="${id}" class="settings-field ${type === 'boolean' ? 'settings-checkbox' : ''}"><span>${esc(label)}</span>${input}${hint ? `<span id="${id}-hint" class="sub">${esc(hint)}</span>` : ''}${type === 'bytes' ? '<span class="sub">Например: 64 KiB, 1 MiB.</span>' : ''}</label>`;
+  }).join('')}</div></fieldset>`).join('') + `<p class="sub">Размер горячего пула: <strong>${esc(data.pool_size)}</strong>. Изменение размера через панель пока недоступно.</p>`;
+  // Fill properties as well as markup, so typed values are never reset by background polling.
+  for (const [, prefix, fields] of settingsSections) for (const [name, , type] of fields) {
+    const input = $(`#${settingsFieldID(`${prefix}.${name}`)}`);
+    const value = settingsValue(settingsSnapshot, `${prefix}.${name}`);
+    if (type === 'boolean') input.checked = Boolean(value);
+    else input.value = String(type === 'durations' ? (value || []).join(', ') : value ?? '');
+  }
+  $('#settings-error').textContent = '';
+  $('#settings-status').textContent = 'Загружены действующие настройки. Время: секунды (s), минуты (m), часы (h).';
+  updateSettingsControls();
+}
+function updateSettingsControls() {
+  const busy = settingsLoading || settingsSaving || settingsChecking || panelTrialActive() || panelMutating;
+  const allowed = authenticated && can('config.manage|users.manage');
+  $('#settings-save').disabled = !allowed || !settingsSnapshot || !settingsDirty || settingsNeedsRefresh || busy;
+  $('#settings-save').textContent = settingsSaving ? 'Применение…' : 'Сохранить';
+  $('#settings-validate').disabled = !allowed || !settingsSnapshot || busy;
+  $('#settings-discard').disabled = !allowed || !settingsDirty || settingsSaving || settingsLoading || settingsChecking;
+  $('#settings-refresh').disabled = !allowed || busy;
+  document.querySelectorAll('#settings-fields input').forEach((input) => { input.disabled = !allowed || busy; });
+  $('#settings-dirty').textContent = settingsDirty ? 'Есть несохранённые изменения' : 'Нет изменений';
+  updatePanelControls();
+}
+function clearSettingsEditor() {
+  settingsGeneration++;
+  clearTimeout(settingsApplyTimer);
+  settingsApplyTimer = undefined;
+  settingsSnapshot = null;
+  settingsRevision = '';
+  settingsDirty = false;
+  settingsLoading = false;
+  settingsSaving = false;
+  settingsChecking = false;
+  settingsTargetRevision = '';
+  settingsNeedsRefresh = false;
+  settingsApplyDeadline = 0;
+  settingsApplyAttempts = 0;
+  $('#settings-fields').innerHTML = '';
+  $('#settings-error').textContent = '';
+  $('#settings-status').textContent = '';
+  updateSettingsControls();
+}
+async function loadSettings(force = false) {
+  if (!authenticated || !can('config.manage|users.manage') || settingsLoading || settingsSaving || settingsChecking || (!force && settingsSnapshot)) return;
+  if (settingsDirty && !confirm('Отменить несохранённые изменения и загрузить действующие настройки?')) return;
+  const generation = ++settingsGeneration;
+  settingsLoading = true;
+  $('#settings-error').textContent = '';
+  $('#settings-status').textContent = 'Загрузка настроек…';
+  updateSettingsControls();
+  try {
+    const data = await api('/api/v1/settings');
+    if (generation !== settingsGeneration || !authenticated || !can('config.manage|users.manage')) return;
+    renderSettings(data);
+  } catch (error) {
+    if (generation !== settingsGeneration) return;
+    $('#settings-error').textContent = error.message;
+    $('#settings-status').textContent = 'Не удалось загрузить настройки. Нажмите «Обновить данные».';
+  } finally {
+    if (generation === settingsGeneration) { settingsLoading = false; updateSettingsControls(); }
+  }
+}
+function settingsChanged() {
+  if (!settingsSnapshot || settingsSaving || settingsChecking) return;
+  try { settingsDirty = JSON.stringify(settingsCurrentDraft()) !== JSON.stringify(settingsSnapshot); }
+  catch { settingsDirty = true; }
+  $('#settings-error').textContent = '';
+  updateSettingsControls();
+}
+async function validateSettings() {
+  if (!authenticated || !can('config.manage|users.manage') || !settingsSnapshot || settingsSaving || settingsChecking || settingsLoading) return;
+  const generation = settingsGeneration;
+  settingsChecking = true;
+  updateSettingsControls();
+  try {
+    await api('/api/v1/settings/validate', { method: 'POST', body: JSON.stringify({ settings: settingsCurrentDraft(), revision: settingsRevision }) });
+    if (generation === settingsGeneration) { $('#settings-error').textContent = ''; $('#settings-status').textContent = 'Параметры корректны. Для применения нажмите «Сохранить».'; }
+  } catch (error) { if (generation === settingsGeneration) $('#settings-error').textContent = error.message; }
+  finally { if (generation === settingsGeneration) { settingsChecking = false; updateSettingsControls(); } }
+}
+async function saveSettings(event) {
+  event.preventDefault();
+  if (!authenticated || !can('config.manage|users.manage') || !settingsSnapshot || !settingsDirty || settingsNeedsRefresh || settingsSaving || settingsChecking || settingsLoading || panelTrialActive() || panelMutating) return;
+  const generation = ++settingsGeneration;
+  let draft;
+  try { draft = settingsCurrentDraft(); } catch (error) { $('#settings-error').textContent = error.message; return; }
+  settingsSaving = true;
+  settingsTargetRevision = '';
+  settingsApplyDeadline = Date.now() + 120000;
+  settingsApplyAttempts = 0;
+  $('#settings-error').textContent = '';
+  $('#settings-status').textContent = 'Сохранение и применение настроек…';
+  updateSettingsControls();
+  try {
+    const data = await api('/api/v1/settings/save', { method: 'POST', body: JSON.stringify({ settings: draft, revision: settingsRevision }) });
+    if (generation !== settingsGeneration) return;
+    if (!data.changed) {
+      settingsSaving = false;
+      settingsDirty = false;
+      settingsSnapshot = draft;
+      settingsRevision = data.revision || settingsRevision;
+      settingsTargetRevision = '';
+      $('#settings-status').textContent = 'Настройки уже действуют.';
+      updateSettingsControls();
+      return;
+    }
+    settingsTargetRevision = data.revision || '';
+    $('#settings-status').textContent = 'Настройки сохранены. Ожидаем применения и переподключения…';
+    await pollSettingsApply(generation);
+  } catch (error) {
+    if (generation !== settingsGeneration) return;
+    if (!error.status && authenticated && can('config.manage|users.manage')) {
+      // The connection can close after accepting a save; never submit it twice automatically.
+      $('#settings-status').textContent = 'Связь прервалась. Проверяем результат сохранения…';
+      await pollSettingsApply(generation);
+      return;
+    }
+    settingsSaving = false;
+    settingsTargetRevision = '';
+    settingsNeedsRefresh = error.code === 'settings_conflict';
+    $('#settings-error').textContent = error.message;
+    $('#settings-status').textContent = 'Настройки не применены. Изменения в форме сохранены.';
+    updateSettingsControls();
+  }
+}
+async function pollSettingsApply(generation) {
+  if (generation !== settingsGeneration || !settingsSaving || !authenticated || !can('config.manage|users.manage')) return;
+  settingsApplyAttempts++;
+  try {
+    const data = await api('/api/v1/settings', typeof AbortSignal === 'undefined' ? {} : { signal: AbortSignal.timeout(8000) });
+    if (generation !== settingsGeneration) return;
+    const state = data.apply?.status;
+    if (state === 'applied' && settingsTargetRevision && data.apply?.revision === settingsTargetRevision && data.revision === settingsTargetRevision) {
+      settingsSaving = false;
+      settingsTargetRevision = '';
+      renderSettings(data);
+      $('#settings-status').textContent = 'Настройки применены. Панель подключена.';
+      return;
+    }
+    if ((state === 'rolled_back' || state === 'failed') && settingsTargetRevision && data.apply?.revision === settingsTargetRevision) {
+      settingsSaving = false;
+      settingsTargetRevision = '';
+      settingsRevision = data.revision;
+      $('#settings-error').textContent = state === 'rolled_back' ? 'Не удалось применить параметры. Восстановлены предыдущие настройки; ваши изменения остались в форме.' : 'Не удалось применить параметры. Обновите данные и проверьте действующие настройки.';
+      $('#settings-status').textContent = 'Применение завершилось ошибкой.';
+      updateSettingsControls();
+      return;
+    }
+    if (!settingsTargetRevision && state !== 'applying') {
+      settingsSaving = false;
+      settingsNeedsRefresh = true;
+      $('#settings-error').textContent = 'Сервер доступен, но ответ на сохранение был потерян. Обновите данные, чтобы проверить действующие настройки.';
+      $('#settings-status').textContent = 'Результат сохранения требует проверки. Изменения остались в форме.';
+      updateSettingsControls();
+      return;
+    }
+  } catch {
+    if (generation !== settingsGeneration) return;
+  }
+  if (!authenticated || !can('config.manage|users.manage') || generation !== settingsGeneration) return;
+  if (settingsApplyAttempts >= 60 || Date.now() >= settingsApplyDeadline) {
+    settingsSaving = false;
+    settingsTargetRevision = '';
+    settingsNeedsRefresh = true;
+    $('#settings-error').textContent = 'Панель не подтвердила применение за 2 минуты. Обновите данные перед повторным сохранением.';
+    $('#settings-status').textContent = 'Результат применения пока неизвестен.';
+    updateSettingsControls();
+    return;
+  }
+  settingsApplyTimer = setTimeout(() => pollSettingsApply(generation), 2000);
+}
+function initializeSettingsEditor() {
+  $('#settings-form').addEventListener('input', settingsChanged);
+  $('#settings-form').addEventListener('change', settingsChanged);
+  $('#settings-form').addEventListener('submit', saveSettings);
+  $('#settings-validate').onclick = validateSettings;
+  $('#settings-refresh').onclick = () => loadSettings(true);
+  $('#settings-discard').onclick = () => {
+    if (panelTrialActive() && settingsSnapshot) { renderSettings({ settings: settingsSnapshot, revision: settingsRevision, pool_size: settingsPoolSize }); updatePanelControls(); }
+    else return loadSettings(true);
+  };
+  if (window.addEventListener) window.addEventListener('beforeunload', (event) => {
+    if (!settingsDirty && !settingsSaving && !panelDirty && (!panelTrialActive() || panelNavigationApproved)) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
+
+let panelState = null;
+let panelGeneration = 0;
+let panelLoading = false;
+let panelMutating = false;
+let panelDirty = false;
+let panelNeedsRefresh = false;
+let panelCertificateURL = '';
+let panelCertificatePEM = '';
+let panelTimer;
+let panelAttempts = 0;
+let panelTargetRevision = '';
+let panelDeadline = 0;
+let panelNavigationApproved = false;
+const panelStatuses = new Set(['idle', 'prepared', 'applying', 'awaiting_confirmation', 'applied', 'rolled_back', 'failed']);
+function panelTrialActive() { return ['applying', 'awaiting_confirmation'].includes(panelState?.status) || Boolean(panelTargetRevision); }
+function validPanelHostname(hostname) {
+  return typeof hostname === 'string' && hostname.length <= 253 && hostname === hostname.toLowerCase() && !validPanelIP(hostname) && !['localhost', 'local'].includes(hostname) && !hostname.endsWith('.local') && !hostname.endsWith('.localhost')
+    && hostname.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+function validPanelIP(ip) {
+  if (typeof ip !== 'string') return false;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return ip.split('.').every((part) => Number(part) <= 255);
+  if (!/^[a-fA-F0-9:]+$/.test(ip) || !ip.includes(':')) return false;
+  try { return new URL(`https://[${ip}]/`).hostname.startsWith('['); } catch { return false; }
+}
+function samePanelIP(first, second) {
+  if (!validPanelIP(first) || !validPanelIP(second)) return false;
+  const canonical = (ip) => new URL(`https://${ip.includes(':') ? `[${ip}]` : ip}/`).hostname;
+  return canonical(first) === canonical(second);
+}
+function validatedPanelStatus(data) {
+  if (!data || typeof data.supported !== 'boolean' || !panelStatuses.has(data.status)) throw new Error('Панель вернула некорректное состояние адреса.');
+  if (!data.supported) return { supported: false, status: data.status, error: typeof data.error === 'string' ? data.error : '' };
+  if (!(validPanelHostname(data.hostname) || samePanelIP(data.hostname, data.listen_ip)) || !Number.isInteger(data.port) || data.port < 1 || data.port > 65535
+      || !validPanelIP(data.listen_ip) || (data.revision !== undefined && typeof data.revision !== 'string') || (data.status !== 'idle' && !data.revision)
+      || typeof data.dns_automatic !== 'boolean' || typeof data.certificate_changed !== 'boolean') throw new Error('Панель вернула некорректные параметры адреса.');
+  let url;
+  try { url = new URL(data.url); } catch { throw new Error('Некорректная ссылка панели.'); }
+  if (url.protocol !== 'https:' || url.hostname.replace(/^\[|\]$/g, '') !== data.hostname || Number(url.port || 443) !== data.port
+      || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Ссылка панели не соответствует её имени и порту.');
+  if (data.certificate_pem !== undefined && (typeof data.certificate_pem !== 'string' || data.certificate_pem.length > 65536
+      || !/^-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*$/.test(data.certificate_pem))) throw new Error('Панель вернула некорректный публичный сертификат.');
+  if (data.confirmation_deadline && !Number.isFinite(Date.parse(data.confirmation_deadline))) throw new Error('Некорректный срок подтверждения адреса.');
+  return { ...data, revision: data.revision || '', url: url.origin };
+}
+function panelInput() {
+  const hostname = $('#panel-hostname').value.trim().toLowerCase();
+  const rawPort = $('#panel-port').value.trim();
+  const port = Number(rawPort);
+  if (!(validPanelHostname(hostname) || samePanelIP(hostname, panelState?.listen_ip)) || !rawPort || !Number.isInteger(port) || port < 1 || port > 65535 || port === 9443) throw new Error('Укажите локальное имя или текущий IP панели и HTTPS-порт 1–65535. Другой IP недоступен; порт 9443 занят API controller.');
+  return { hostname, port };
+}
+function panelDraftMatches() {
+  try { const input = panelInput(); return input.hostname === panelState?.hostname && input.port === panelState?.port; } catch { return false; }
+}
+function updatePanelControls() {
+  const allowed = authenticated && can('config.manage|users.manage') && panelState?.supported;
+  const trial = panelTrialActive();
+  const busy = panelLoading || panelMutating || settingsSaving || settingsLoading || settingsChecking;
+  $('#panel-hostname').disabled = !allowed || busy || trial;
+  $('#panel-port').disabled = !allowed || busy || trial;
+  $('#panel-prepare').disabled = !allowed || busy || trial || panelNeedsRefresh;
+  const prepared = panelState?.status === 'prepared' && panelDraftMatches();
+  $('#panel-apply').classList.toggle('hidden', !prepared);
+  $('#panel-apply').disabled = !allowed || busy || trial || panelNeedsRefresh || (panelState?.certificate_changed && !panelCertificateURL);
+  const confirm = panelState?.status === 'awaiting_confirmation' && (!panelTargetRevision || panelState.revision === panelTargetRevision);
+  $('#panel-confirm').classList.toggle('hidden', !confirm);
+  $('#panel-confirm').disabled = !allowed || busy || !confirm || settingsDirty || panelNeedsRefresh;
+  $('#panel-confirm-hint').textContent = confirm && settingsDirty ? 'Перед подтверждением отмените несохранённые настройки ниже: переход на новый адрес очистит черновик.' : '';
+  $('#panel-refresh').disabled = !allowed || panelLoading || panelMutating;
+  $('#panel-open').classList.toggle('hidden', !allowed || !['prepared', 'applying', 'awaiting_confirmation', 'applied'].includes(panelState?.status) || !panelDraftMatches());
+  $('#panel-certificate').classList.toggle('hidden', !allowed || !panelCertificateURL || !panelDraftMatches());
+}
+function clearPanelCertificate() {
+  if (panelCertificateURL) URL.revokeObjectURL(panelCertificateURL);
+  panelCertificateURL = '';
+  panelCertificatePEM = '';
+  $('#panel-certificate-download').removeAttribute('href');
+  $('#panel-certificate-fingerprint').textContent = '';
+  $('#panel-certificate').classList.add('hidden');
+}
+async function updatePanelCertificate(data, generation) {
+  if (!data.certificate_changed || !data.certificate_pem) { clearPanelCertificate(); return; }
+  if (panelCertificatePEM === data.certificate_pem) return;
+  clearPanelCertificate();
+  panelCertificatePEM = data.certificate_pem;
+  panelCertificateURL = URL.createObjectURL(new Blob([data.certificate_pem], { type: 'application/x-x509-ca-cert' }));
+  $('#panel-certificate-download').href = panelCertificateURL;
+  $('#panel-certificate-download').download = `${data.hostname}.crt`;
+  if (typeof crypto === 'undefined' || !crypto.subtle || typeof atob === 'undefined') return;
+  try {
+    const der = Uint8Array.from(atob(data.certificate_pem.replace(/-----[^-]+-----|\s/g, '')), (char) => char.charCodeAt(0));
+    const digest = await crypto.subtle.digest('SHA-256', der);
+    if (generation !== panelGeneration || panelCertificatePEM !== data.certificate_pem) return;
+    $('#panel-certificate-fingerprint').textContent = `SHA-256: ${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(':')}`;
+  } catch { if (generation === panelGeneration) $('#panel-certificate-fingerprint').textContent = 'Отпечаток сертификата можно проверить после скачивания.'; }
+}
+function renderPanelStatus(data) {
+  panelState = data;
+  $('#panel-form').classList.toggle('hidden', !data.supported);
+  if (!data.supported) {
+    clearPanelCertificate();
+    $('#panel-current').textContent = '';
+    $('#panel-status').textContent = data.error || 'Редактор адреса недоступен. Требуется обновить стабильный launcher.';
+    updatePanelControls();
+    return;
+  }
+  const origin = window.location.origin;
+  $('#panel-current').textContent = `Адрес этой панели: ${typeof origin === 'string' && origin.startsWith('https://') ? origin : data.url}. Локальный IP: ${data.listen_ip}.`;
+  if (!panelDirty) {
+    $('#panel-hostname').value = data.hostname;
+    $('#panel-port').value = String(data.port);
+  }
+  $('#panel-listen-ip').value = data.listen_ip;
+  $('#panel-dns').textContent = data.dns_automatic
+    ? 'На Keenetic локальная DNS-запись создаётся автоматически при применении. Устройства должны использовать DNS роутера.'
+    : `Перед применением настройте в локальном DNS запись ${data.hostname} → ${data.listen_ip}. Публичная регистрация домена не требуется.`;
+  $('#panel-preview').textContent = `Подготовленный адрес: ${data.url}`;
+  $('#panel-open').href = `${data.url}/#settings`;
+  const messages = {
+    idle: 'Действующий адрес загружен.', prepared: 'Адрес подготовлен. Проверьте DNS и доверие сертификату, затем примените.',
+    applying: 'Применяем адрес. Дождитесь возможности открыть его.', awaiting_confirmation: 'Откройте новый адрес, проверьте вход и подтвердите работу.',
+    applied: 'Новый адрес подтверждён.', rolled_back: 'Прежний адрес автоматически восстановлен. Подготовьте изменение заново.', failed: 'Не удалось применить адрес. Действующие настройки сохранены.',
+  };
+  $('#panel-status').textContent = messages[data.status] + (data.status === 'awaiting_confirmation' && data.confirmation_deadline ? ` Подтверждение до ${new Date(data.confirmation_deadline).toLocaleTimeString()}.` : '');
+  if (data.error) $('#panel-error').textContent = String(data.error);
+  updatePanelCertificate(data, panelGeneration).then(() => { if (panelState === data) updatePanelControls(); });
+  updatePanelControls();
+}
+function clearPanelEditor() {
+  panelGeneration++;
+  clearTimeout(panelTimer);
+  panelTimer = undefined;
+  panelState = null;
+  panelLoading = false;
+  panelMutating = false;
+  panelDirty = false;
+  panelNeedsRefresh = false;
+  panelTargetRevision = '';
+  panelDeadline = 0;
+  panelAttempts = 0;
+  panelNavigationApproved = false;
+  clearPanelCertificate();
+  ['panel-hostname', 'panel-port', 'panel-listen-ip'].forEach((id) => { $(`#${id}`).value = ''; });
+  ['panel-current', 'panel-status', 'panel-dns', 'panel-preview', 'panel-error', 'panel-confirm-hint'].forEach((id) => { $(`#${id}`).textContent = ''; });
+  $('#panel-open').removeAttribute('href');
+  $('#panel-form').classList.add('hidden');
+  updatePanelControls();
+}
+async function loadPanelStatus(force = false) {
+  if (!authenticated || !can('config.manage|users.manage') || panelLoading || panelMutating || (!force && panelTrialActive())) return;
+  const generation = panelGeneration;
+  panelLoading = true;
+  updatePanelControls();
+  try {
+    const data = validatedPanelStatus(await api('/api/v1/panel/status'));
+    if (generation !== panelGeneration) return;
+    if (force) { panelNeedsRefresh = false; $('#panel-error').textContent = ''; }
+    renderPanelStatus(data);
+    if (data.supported && ['applying', 'awaiting_confirmation'].includes(data.status)) {
+      panelTargetRevision = data.revision;
+      beginPanelPolling();
+    }
+  } catch (error) { if (generation === panelGeneration) { $('#panel-error').textContent = error.message; $('#panel-status').textContent = 'Не удалось получить адрес панели. ' + error.message; } }
+  finally { if (generation === panelGeneration) { panelLoading = false; updateSettingsControls(); } }
+}
+async function preparePanel(event) {
+  event.preventDefault();
+  if (!authenticated || !can('config.manage|users.manage') || !panelState?.supported || panelLoading || panelMutating || panelTrialActive() || panelNeedsRefresh || settingsSaving || settingsLoading || settingsChecking) return;
+  let input;
+  try { input = panelInput(); } catch (error) { $('#panel-error').textContent = error.message; return; }
+  const generation = ++panelGeneration;
+  panelMutating = true;
+  $('#panel-error').textContent = '';
+  updateSettingsControls();
+  try {
+    const fixedIP = panelState.listen_ip;
+    const data = validatedPanelStatus(await api('/api/v1/panel/prepare', { method: 'POST', body: JSON.stringify(input) }));
+    if (generation !== panelGeneration) return;
+    if (!data.supported || data.status !== 'prepared' || data.hostname !== input.hostname || data.port !== input.port || data.listen_ip !== fixedIP) throw new Error('Подготовленный адрес не соответствует запросу. Обновите состояние.');
+    panelDirty = false;
+    renderPanelStatus(data);
+  } catch (error) { if (generation === panelGeneration) { $('#panel-error').textContent = error.message; panelNeedsRefresh = true; } }
+  finally { if (generation === panelGeneration) { panelMutating = false; updateSettingsControls(); } }
+}
+function beginPanelPolling() {
+  clearTimeout(panelTimer);
+  panelAttempts = 0;
+  const serverDeadline = Date.parse(panelState?.confirmation_deadline || '');
+  panelDeadline = Math.min(Date.now() + 315000, Number.isFinite(serverDeadline) && serverDeadline > 0 ? serverDeadline + 15000 : Date.now() + 315000);
+  panelTimer = setTimeout(() => pollPanelTrial(panelGeneration), 2000);
+}
+async function applyPanel() {
+  if (!authenticated || !can('config.manage|users.manage') || panelState?.status !== 'prepared' || !panelDraftMatches() || panelLoading || panelMutating || panelTrialActive() || panelNeedsRefresh || (panelState.certificate_changed && !panelCertificateURL) || settingsSaving || settingsChecking || settingsLoading) return;
+  const generation = ++panelGeneration;
+  const revision = panelState.revision;
+  panelTargetRevision = revision;
+  panelMutating = true;
+  $('#panel-error').textContent = '';
+  updateSettingsControls();
+  try {
+    const result = await api('/api/v1/panel/apply', { method: 'POST', body: JSON.stringify({ revision }) });
+    if (generation !== panelGeneration) return;
+    if (!result.accepted) throw Object.assign(new Error('Панель не приняла изменение адреса.'), { status: 409 });
+    panelDirty = false;
+    renderPanelStatus({ ...panelState, status: 'applying' });
+    beginPanelPolling();
+  } catch (error) {
+    if (generation !== panelGeneration) return;
+    if (!error.status) {
+      $('#panel-status').textContent = 'Связь прервалась. Проверяем состояние адреса без повторного применения…';
+      beginPanelPolling();
+    } else {
+      panelTargetRevision = '';
+      panelNeedsRefresh = true;
+      $('#panel-error').textContent = error.message;
+    }
+  } finally { if (generation === panelGeneration) { panelMutating = false; updateSettingsControls(); } }
+}
+async function pollPanelTrial(generation) {
+  if (generation !== panelGeneration || !authenticated || !can('config.manage|users.manage') || !panelTrialActive() || panelMutating) return;
+  panelAttempts++;
+  try {
+    const data = validatedPanelStatus(await api('/api/v1/panel/status', typeof AbortSignal === 'undefined' ? {} : { signal: AbortSignal.timeout(8000) }));
+    if (generation !== panelGeneration) return;
+    if (data.supported && data.revision === panelTargetRevision) {
+      renderPanelStatus(data);
+      if (['applied', 'rolled_back', 'failed', 'idle'].includes(data.status)) {
+        panelTargetRevision = '';
+        clearTimeout(panelTimer);
+        updateSettingsControls();
+        return;
+      }
+    } else if (data.supported && ['rolled_back', 'failed', 'idle'].includes(data.status)) {
+      // Some launchers report the restored configuration revision after rollback.
+      panelTargetRevision = '';
+      panelNeedsRefresh = true;
+      $('#panel-status').textContent = 'Проверка завершилась. Обновите состояние, чтобы увидеть действующий адрес.';
+      updateSettingsControls();
+      return;
+    }
+  } catch { if (generation !== panelGeneration) return; }
+  if (generation !== panelGeneration || !authenticated || !can('config.manage|users.manage')) return;
+  if (panelAttempts >= 150 || Date.now() >= panelDeadline) {
+    panelTargetRevision = '';
+    panelNeedsRefresh = true;
+    panelState = panelState ? { ...panelState, status: 'failed' } : null;
+    $('#panel-error').textContent = 'Не удалось получить итог изменения адреса. Без подтверждения launcher возвращает прежний адрес через 5 минут. Обновите состояние по прежнему адресу.';
+    $('#panel-status').textContent = 'Связь с панелью требует проверки.';
+    updateSettingsControls();
+    return;
+  }
+  panelTimer = setTimeout(() => pollPanelTrial(generation), 2000);
+}
+async function confirmPanel() {
+  if (!authenticated || !can('config.manage|users.manage') || panelState?.status !== 'awaiting_confirmation' || panelLoading || panelMutating || settingsDirty || settingsSaving || settingsLoading || settingsChecking || panelNeedsRefresh) return;
+  const generation = ++panelGeneration;
+  const target = validatedPanelStatus(panelState);
+  panelMutating = true;
+  clearTimeout(panelTimer);
+  $('#panel-error').textContent = '';
+  updateSettingsControls();
+  try {
+    const result = await api('/api/v1/panel/confirm', { method: 'POST', body: JSON.stringify({ revision: target.revision }) });
+    if (generation !== panelGeneration) return;
+    if (!result.accepted) throw Object.assign(new Error('Подтверждение не принято. Обновите состояние.'), { status: 409 });
+    panelNavigationApproved = true;
+    $('#panel-status').textContent = 'Адрес подтверждён. Открываем его; при смене имени потребуется войти снова.';
+    window.location.assign(`${target.url}/#settings`);
+  } catch (error) {
+    if (generation !== panelGeneration) return;
+    panelNeedsRefresh = Boolean(error.status);
+    $('#panel-error').textContent = error.status ? error.message : 'Ответ на подтверждение потерян. Проверьте новый адрес; повторное подтверждение автоматически не отправляется.';
+    beginPanelPolling();
+  } finally { if (generation === panelGeneration) { panelMutating = false; updateSettingsControls(); } }
+}
+function initializePanelEditor() {
+  $('#panel-form').addEventListener('submit', preparePanel);
+  const changed = () => {
+    if (panelMutating || panelTrialActive()) return;
+    panelDirty = !panelDraftMatches();
+    $('#panel-error').textContent = '';
+    updatePanelControls();
+  };
+  $('#panel-hostname').addEventListener('input', changed);
+  $('#panel-port').addEventListener('input', changed);
+  $('#panel-apply').onclick = applyPanel;
+  $('#panel-confirm').onclick = confirmPanel;
+  $('#panel-refresh').onclick = () => loadPanelStatus(true);
+}
+
+// Configuration editor is initialized before the initial session request.
+initializeSettingsEditor();
+initializePanelEditor();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 session();

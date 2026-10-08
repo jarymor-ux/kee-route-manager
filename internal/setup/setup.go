@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -17,14 +18,15 @@ const (
 )
 
 type SetupOptions struct {
-	Platform      Platform
-	Subscriptions []config.Source
-	ScoreTargets  []config.Target
-	HealthTargets []config.Target
-	Xray          XrayOptions
-	Pool          PoolOptions
-	Benchmark     BenchmarkOptions
-	Update        UpdateOptions
+	Platform                 Platform
+	Subscriptions            []config.Source
+	SubscriptionCacheEnabled *bool
+	ScoreTargets             []config.Target
+	HealthTargets            []config.Target
+	Xray                     XrayOptions
+	Pool                     PoolOptions
+	Benchmark                BenchmarkOptions
+	Update                   UpdateOptions
 }
 
 type XrayOptions struct {
@@ -44,6 +46,7 @@ type PoolOptions struct {
 }
 
 type BenchmarkOptions struct {
+	FullInterval        config.Duration
 	SpeedEnabled        bool
 	SpeedWorkers        int
 	SpeedURLTemplate    string
@@ -68,6 +71,7 @@ type UpdateOptions struct {
 }
 
 type UIOptions struct {
+	Hostname           string
 	Platform           Platform
 	Listen             string
 	Upstream           string
@@ -107,6 +111,9 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 	cfg.UIProxy.UpstreamSPKISHA256 = ""
 	cfg.UIProxy.InsecureTLS = false
 	cfg.Subscriptions.Sources = cloneSources(opts.Subscriptions)
+	if opts.SubscriptionCacheEnabled != nil {
+		cfg.Subscriptions.CacheEnabled = *opts.SubscriptionCacheEnabled
+	}
 	cfg.Targets = appendTargets(nil, opts.ScoreTargets, "score")
 	cfg.Targets = appendTargets(cfg.Targets, opts.HealthTargets, "health")
 
@@ -136,6 +143,9 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 	}
 
 	applyBenchmarkOptions(&cfg.Benchmark, opts.Benchmark)
+	if cfg.Benchmark.FullInterval.Duration < time.Minute {
+		return config.Config{}, fmt.Errorf("benchmark.full_interval must be at least 1m")
+	}
 	applyUpdateOptions(&cfg.Update, opts.Update)
 
 	if err := cfg.Validate(); err != nil {
@@ -164,6 +174,7 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 
 	cfg.API.Enabled = false
 	cfg.Web.Enabled = true
+	cfg.Web.Listen = "127.0.0.1:9444"
 	if opts.Listen != "" {
 		cfg.Web.Listen = opts.Listen
 	}
@@ -171,6 +182,12 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	cfg.Web.TLS.Enabled = true
 	cfg.Web.TLS.AutoGenerate = true
 	cfg.Web.TLS.Hosts = []string{"localhost"}
+	if opts.Hostname != "" {
+		if !validPanelHostname(opts.Hostname) {
+			return config.Config{}, fmt.Errorf("invalid local panel hostname")
+		}
+		cfg.Web.TLS.Hosts = append(cfg.Web.TLS.Hosts, strings.ToLower(opts.Hostname))
+	}
 
 	upstream := opts.Upstream
 	if upstream == "" {
@@ -235,6 +252,9 @@ func applyControllerTemplate(cfg *config.Config, platform Platform) {
 }
 
 func applyBenchmarkOptions(dst *config.Benchmark, src BenchmarkOptions) {
+	if src.FullInterval.Duration != 0 {
+		dst.FullInterval = src.FullInterval
+	}
 	dst.Speed.Enabled = src.SpeedEnabled
 	if src.SpeedWorkers != 0 {
 		dst.Speed.Workers = src.SpeedWorkers

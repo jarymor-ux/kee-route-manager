@@ -1,6 +1,6 @@
 # Breaking changes
 
-## Current: v1.1.1 / v1.1.1-rc.1
+## Current: v1.2.0 / v1.2.0-rc.1
 
 1. A separately installed stable launcher supervises the daemon and, on Keenetic/OpenWrt local-ui installations, the UI. It imports a signed protocol-1 daemon/UI/CLI bundle into private release slots. The launcher, service scripts and configuration schema upgrades require separate maintenance.
 2. The shipped templates use `update.enabled: true` and `check_interval: 30m` to check for new versions automatically every 30 minutes. Applying one requires an explicit UI action or `kee-route-managerctl update-apply`; `auto_apply` must remain false. Discovery and downloads verify the pinned signing key, channel, platform, version and asset hashes.
@@ -35,3 +35,9 @@ The following describes the old release, not current installation guidance. Its 
 11. Keenetic fail-open independent of Xray is unsupported until a verified platform mechanism and real hardware evidence exist.
 
 That release did not promise compatibility with v1.0.0-rc.1 state/config. Its migration procedure required backup, routing restoration, uninstall and a clean installation. Use the current runbook for new installations.
+
+## Settings editor and panel addressing (v1.2.0)
+
+Runtime configuration editing is an allowlist rather than unrestricted YAML. It retains credentials, private subscriptions and infrastructure; pool size remains read-only. `config.manage` grants editor/address access; existing `users.manage` administrators retain access. Older versions may reject a user sidecar containing the newly granted permission, so retain private authorization backups for deliberate downgrade/recovery.
+
+Panel hostname/port trials need the separately maintained new launcher. Additional UI SNI certificates are an optional new schema field and cannot be loaded by old UI/launcher binaries; upgrade that parent first and retain a compatible UI config for maintenance rollback. New interactive installs default to fresh subscription downloads and loopback UI, and ask for an explicit LAN bind when remote access is desired. Prepared config and global defaults remain unchanged.

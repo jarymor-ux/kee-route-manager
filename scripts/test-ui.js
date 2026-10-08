@@ -90,8 +90,15 @@ function appHarness() {
   const requests = [];
   const intervals = new Set();
   let reloads = 0;
+  const assignments = [];
+  const blobURLs = new Set();
+  const revokedBlobs = [];
+  class TestURL extends URL {
+    static createObjectURL() { const value = `blob:ui-test-${blobURLs.size + revokedBlobs.length}`; blobURLs.add(value); return value; }
+    static revokeObjectURL(value) { blobURLs.delete(value); revokedBlobs.push(value); }
+  }
   const handlers = {};
-  const allPermissions = ['vpn.view', 'vpn.control', 'subscriptions.view', 'subscriptions.manage', 'router.view', 'router.clients', 'router.policy', 'router.wake', 'router.system', 'router.reboot', 'updates.manage', 'users.manage', 'events.view'];
+  const allPermissions = ['vpn.view', 'vpn.control', 'subscriptions.view', 'subscriptions.manage', 'router.view', 'router.clients', 'router.policy', 'router.wake', 'router.system', 'router.reboot', 'updates.manage', 'users.manage', 'config.manage', 'events.view'];
   const select = (selector) => {
     if (!elements.has(selector)) {
       const classes = new Set(['hidden']);
@@ -101,7 +108,7 @@ function appHarness() {
           add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
           toggle: (name, force) => { if (force) classes.add(name); else classes.delete(name); },
         },
-        setAttribute(name, value) { this[name] = value; },
+        setAttribute(name, value) { this[name] = value; }, removeAttribute(name) { delete this[name]; },
         addEventListener(name, fn) { this[name] = fn; }, focus() {},
       });
     }
@@ -112,9 +119,9 @@ function appHarness() {
   let response = { status: 401, ok: false, data: { error: 'unauthorized' } };
   let confirmResult = true;
   const context = vm.createContext({
-    document: { querySelector: select, querySelectorAll: selectAll }, navigator: {}, Date,
-    window: { location: { hash: '', reload: () => { reloads++; } }, addEventListener: (name, handler) => { handlers[name] = handler; } },
-    setTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
+    document: { querySelector: select, querySelectorAll: selectAll }, navigator: {}, Date, URL: TestURL, Blob,
+    window: { location: { hash: '', origin: 'https://alice.jopa', assign: (url) => assignments.push(url), reload: () => { reloads++; } }, addEventListener: (name, handler) => { handlers[name] = handler; } },
+    setTimeout() {}, clearTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
     setInterval: (fn) => { intervals.add(fn); return fn; }, confirm: () => confirmResult,
     fetch: async (url, options) => {
       requests.push({ url, options });
@@ -125,7 +132,7 @@ function appHarness() {
   context.allPermissions = allPermissions;
   vm.runInContext(source, context);
   vm.runInContext('permissions = new Set(allPermissions)', context);
-  return { allPermissions, handlers, many, context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+  return { allPermissions, handlers, many, assignments, blobURLs, revokedBlobs, context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
 }
 
 async function versionReloadChecks() {
@@ -686,7 +693,314 @@ async function updateChannelChecks() {
   assert.equal(h.requests.length,deniedCount);
 }
 
+async function settingsEditorChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run("authenticated=true;permissions=new Set(['config.manage'])");
+  // Build a complete fixture through the documented fields, then preserve the router's cadence/cache choice.
+  const settings = h.run(`(() => {
+    const value = {};
+    for (const [, prefix, fields] of settingsSections) {
+      let group = value;
+      for (const key of prefix.split('.')) group = group[key] ||= {};
+      for (const [name, , type] of fields) group[name] = type === 'boolean' ? false : ['number', 'decimal'].includes(type) ? 2 : type === 'bytes' ? '64 KiB' : type === 'durations' ? ['30s', '1m'] : type === 'text' ? '' : '5m';
+    }
+    value.benchmark.full_interval = '5m';
+    return value;
+  })()`);
+  const baseline = { settings, revision: 'original', pool_size: 5, apply: { status: 'idle' } };
+  h.respond({status:200,ok:true,data:baseline});
+  await h.run('loadSettings()');
+  assert.equal(h.select('#setting-benchmark-full_interval').value, '5m');
+  assert.equal(h.select('#setting-subscriptions-cache_enabled').checked, false);
+  assert(h.select('#settings-fields').innerHTML.includes('Изменение размера через панель пока недоступно'));
+  assert.equal(h.select('#settings-save').disabled, true);
+  assert.equal(h.run("permissionLabels['config.manage']"), 'Редактирование настроек');
+  const inputs = h.run('settingsSections.flatMap(([,prefix,fields])=>fields.map(([name])=>settingsFieldID(`${prefix}.${name}`)))').map((id)=>h.select(`#${id}`));
+  h.many.set('#settings-fields input',inputs);
+  h.select('#setting-benchmark-full_interval').value='10m';
+  h.run("settingsChanged();activePage='settings'");
+  assert.equal(h.run('settingsDirty'),true);
+  assert.equal(h.select('#settings-save').disabled,false);
+  const count=h.requests.filter((request)=>request.url.includes('/settings')).length;
+  await h.run("loadPage('settings');loadSettings()");
+  assert.equal(h.requests.filter((request)=>request.url.includes('/settings')).length,count,'background refresh cannot replace a dirty draft');
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'10m');
+  let prevented=false;
+  h.handlers.beforeunload({preventDefault(){prevented=true;}});
+  assert.equal(prevented,true,'browser exit warns about unsaved changes');
+  h.confirm(false);
+  h.run("navigate('router')");
+  assert.equal(h.run('activePage'),'settings','rejected navigation retains the draft');
+  await h.run('loadSettings(true)');
+  assert.equal(h.requests.filter((request)=>request.url.includes('/settings')).length,count,'rejected refresh also retains the draft');
+  h.confirm(true);
+
+  h.respond({status:200,ok:true,data:{valid:true}});
+  await h.run('validateSettings()');
+  const validation = h.requests.at(-1);
+  assert(validation.url.endsWith('/settings/validate'));
+  assert.equal(JSON.parse(validation.options.body).settings.benchmark.full_interval,'10m');
+  assert.equal(JSON.parse(validation.options.body).revision,'original');
+  assert.equal(h.run('settingsDirty'),true,'validation does not apply or erase edits');
+
+  h.respond({status:409,ok:false,data:{code:'settings_conflict',error:'conflict'}});
+  await h.run('saveSettings({preventDefault(){}})');
+  assert(h.select('#settings-error').textContent.includes('уже изменены'));
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'10m');
+  assert.equal(h.select('#settings-save').disabled,true,'revision conflict requires a refresh before another save');
+  h.respond({status:200,ok:true,data:baseline});
+  await h.run('loadSettings(true)');
+  h.select('#setting-benchmark-full_interval').value='10m';h.run('settingsChanged()');
+  let finishSave;
+  h.respond((url)=>url.endsWith('/save') ? new Promise((resolve)=>{finishSave=resolve;}) : {status:200,ok:true,data:{...baseline,apply:{status:'applying',revision:'candidate'}}});
+  const save=h.run('saveSettings({preventDefault(){}})');
+  assert.equal(h.select('#settings-save').disabled,true);
+  assert(inputs.every((input)=>input.disabled),'applying freezes draft fields');
+  const pendingCount=h.requests.length;
+  await h.run('saveSettings({preventDefault(){}});validateSettings();loadSettings(true)');
+  assert.equal(h.requests.length,pendingCount,'save, validate and refresh cannot overlap an accepted save');
+  finishSave({status:202,ok:true,data:{accepted:true,changed:true,revision:'candidate'}});
+  await save;
+  assert.equal(h.run('settingsSaving'),true,'apply readiness is required after acceptance');
+  h.respond({status:200,ok:true,data:{...baseline,revision:'other',apply:{status:'applied',revision:'other'}}});
+  await h.run('pollSettingsApply(settingsGeneration)');
+  assert.equal(h.run('settingsSaving'),true,"another user's applied revision cannot complete this save");
+  const changed=JSON.parse(JSON.stringify(settings));changed.benchmark.full_interval='10m0s';
+  h.respond({status:200,ok:true,data:{...baseline,settings:changed,revision:'candidate',apply:{status:'applied',revision:'candidate'}}});
+  await h.run('pollSettingsApply(settingsGeneration)');
+  assert.equal(h.run('settingsDirty'),false);
+  assert.equal(h.run('settingsSaving'),false);
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'10m0s','server-normalized strings are accepted by revision');
+  assert(h.select('#settings-status').textContent.includes('применены'));
+  assert.equal(h.reloads(),0,'settings saves do not trigger an unconditional document reload');
+
+  h.select('#setting-benchmark-full_interval').value='20m';h.run('settingsChanged()');
+  h.respond((url)=>({status:200,ok:true,data:url.endsWith('/save') ? {changed:true,accepted:true,revision:'rollback-candidate'} : {...baseline,apply:{status:'rolled_back',revision:'rollback-candidate'}}}));
+  await h.run('saveSettings({preventDefault(){}})');
+  assert.equal(h.run('settingsSaving'),false);
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'20m','rollback retains the user draft');
+  assert(h.select('#settings-error').textContent.includes('Восстановлены предыдущие'));
+
+  h.respond((url)=>{if(url.endsWith('/save'))throw new Error('connection lost');return {status:200,ok:true,data:{...baseline,apply:{status:'applied',revision:'someone-else'}}};});
+  await h.run('saveSettings({preventDefault(){}})');
+  assert.equal(h.run('settingsSaving'),false);
+  assert.equal(h.run('settingsDirty'),true);
+  assert.equal(h.select('#settings-save').disabled,true,'a lost save response must be reviewed, never resubmitted automatically');
+  assert(h.select('#settings-error').textContent.includes('ответ на сохранение был потерян'));
+
+  h.respond({status:200,ok:true,data:baseline});await h.run('loadSettings(true)');
+  let finishLoad;
+  h.respond(()=>new Promise((resolve)=>{finishLoad=resolve;}));
+  const loading=h.run('loadSettings(true)');
+  h.run("acceptSession({permissions:['vpn.view']})");
+  finishLoad({status:200,ok:true,data:baseline});
+  await loading;
+  assert.equal(h.run('settingsSnapshot'),null,'revocation clears editor state');
+  assert.equal(h.select('#settings-fields').innerHTML,'','revoked in-flight response cannot repopulate the form');
+  assert.equal(h.run('settingsLoading'),false);
+  const denied=h.requests.length;
+  await h.run('loadSettings();validateSettings();saveSettings({preventDefault(){}})');
+  assert.equal(h.requests.length,denied,'revoked settings endpoints are never fetched');
+  h.run("authenticated=true;permissions=new Set(['users.manage'])");
+  h.respond({status:200,ok:true,data:baseline});await h.run('loadSettings()');
+  assert(h.run('settingsSnapshot'),'existing user administrators retain access');
+  h.select('#setting-benchmark-full_interval').value='30m';h.run('settingsChanged()');
+  h.respond((url)=>({status:200,ok:true,data:url.endsWith('/save')?{accepted:true,changed:true,revision:'timeout-candidate'}:{...baseline,apply:{status:'applying',revision:'timeout-candidate'}}}));
+  await h.run('saveSettings({preventDefault(){}})');
+  h.run('settingsApplyAttempts=59');
+  await h.run('pollSettingsApply(settingsGeneration)');
+  assert.equal(h.run('settingsSaving'),false,'bounded reconnect exhaustion clears the spinner');
+  assert.equal(h.select('#settings-save').disabled,true,'timeout requires reviewing active values before another save');
+  h.respond({status:200,ok:true,data:baseline});await h.run('loadSettings(true)');
+  h.select('#setting-benchmark-full_interval').value='45m';h.run('settingsChanged()');
+  let finishRevokedSave;
+  h.respond(()=>new Promise((resolve)=>{finishRevokedSave=resolve;}));
+  const revokedSave=h.run('saveSettings({preventDefault(){}})');
+  h.run("acceptSession({permissions:['vpn.view']})");
+  const revokedRequests=h.requests.length;
+  finishRevokedSave({status:202,ok:true,data:{accepted:true,changed:true,revision:'revoked'}});
+  await revokedSave;
+  assert.equal(h.requests.length,revokedRequests,'a revoked save response cannot start apply polling');
+  assert.equal(h.run('settingsSaving'),false);
+  assert.equal(h.select('#settings-fields').innerHTML,'');
+  h.run('showLogin()');
+  assert.equal(h.run('settingsSnapshot'),null);
+  assert.equal(h.select('#settings-fields').innerHTML,'','logout clears configuration and pending apply');
+
+  h.run("authenticated=true;permissions=new Set(['config.manage'])");
+  h.respond({status:503,ok:false,data:{error:'temporarily unavailable'}});
+  await h.run('loadSettings()');
+  assert.equal(h.run('settingsLoading'),false,'failed loading releases busy state');
+  assert.equal(h.select('#settings-refresh').disabled,false,'failed loading can be retried');
+  h.respond({status:200,ok:true,data:baseline});await h.run('loadSettings()');
+  h.select('#setting-benchmark-full_interval').value='10m';h.run('settingsChanged()');
+  h.respond({status:422,ok:false,data:{code:'settings_invalid',error:'invalid'}});
+  await h.run('saveSettings({preventDefault(){}})');
+  assert.equal(h.run('settingsSaving'),false,'invalid response clears saving state');
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'10m');
+  assert(h.select('#settings-error').textContent.includes('Параметры не прошли проверку'));
+}
+
+async function panelEditorChecks() {
+  const h=appHarness();await new Promise(setImmediate);
+  h.run("authenticated=true;permissions=new Set(['config.manage']);csrf='panel-csrf'");
+  const idle={supported:true,hostname:'alice.jopa',port:443,listen_ip:'192.168.1.1',url:'https://alice.jopa',status:'idle',certificate_changed:false,dns_automatic:true};
+  const pem='-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n';
+  const candidate={...idle,hostname:'alice.home.arpa',port:9444,url:'https://alice.home.arpa:9444',revision:'panel-candidate',status:'prepared',certificate_changed:true,certificate_pem:pem};
+  const trial={...candidate,status:'awaiting_confirmation',confirmation_deadline:new Date(Date.now()+300000).toISOString()};
+  h.respond({status:200,ok:true,data:{supported:false,status:'idle',error:'stable launcher upgrade required'}});
+  await h.run('loadPanelStatus()');
+  assert.equal(h.select('#panel-form').classList.contains('hidden'),true);
+  assert(h.select('#panel-status').textContent.includes('upgrade required'),'unsupported capability has a visible reason');
+  h.respond({status:200,ok:true,data:idle});await h.run('loadPanelStatus(true)');
+  assert.equal(h.select('#panel-hostname').value,'alice.jopa');
+  assert.equal(h.select('#panel-port').value,'443');
+  assert(h.select('#panel-current').textContent.includes('https://alice.jopa'));
+  assert(h.select('#panel-dns').textContent.includes('автоматически'));
+  assert.equal(h.select('#panel-prepare').disabled,false);
+  h.select('#panel-hostname').value='alice.home.arpa';h.select('#panel-port').value='9444';h.select('#panel-hostname').input();
+  assert.equal(h.run('panelDirty'),true);
+  await h.run('loadPanelStatus()');
+  assert.equal(h.select('#panel-hostname').value,'alice.home.arpa','status polling retains typed address');
+  let finishPrepare;
+  h.respond(()=>new Promise((resolve)=>{finishPrepare=resolve;}));
+  const preparing=h.run('preparePanel({preventDefault(){}})');
+  assert.equal(h.select('#panel-prepare').disabled,true);
+  const before=h.requests.length;await h.run('preparePanel({preventDefault(){}});applyPanel()');
+  assert.equal(h.requests.length,before,'address mutations cannot overlap');
+  finishPrepare({status:200,ok:true,data:candidate});await preparing;await new Promise(setImmediate);
+  let request=h.requests.filter((item)=>item.url.endsWith('/prepare')).at(-1);
+  assert.deepEqual(JSON.parse(request.options.body),{hostname:'alice.home.arpa',port:9444});
+  assert.equal(request.options.headers['X-KRM-CSRF'],'panel-csrf');
+  assert.equal(h.select('#panel-open').href,'https://alice.home.arpa:9444/#settings');
+  assert.equal(h.select('#panel-certificate-download').download,'alice.home.arpa.crt');
+  assert.equal(h.blobURLs.size,1,'prepared public certificate can be downloaded as a Blob');
+  assert(!h.select('#panel-preview').innerHTML.includes(pem),'certificate bytes never enter HTML');
+  assert.equal(h.select('#panel-apply').disabled,false);
+  h.run('settingsSaving=true;updateSettingsControls()');
+  const applyingBlocked=h.requests.length;await h.run('applyPanel()');
+  assert.equal(h.requests.length,applyingBlocked,'core apply blocks address apply');
+  h.run('settingsSaving=false;settingsDirty=true;updateSettingsControls()');
+  h.select('#setting-benchmark-full_interval').value='17m';
+  h.respond((url)=>({status:200,ok:true,data:url.endsWith('/apply')?{accepted:true}:trial}));
+  await h.run('applyPanel()');
+  request=h.requests.filter((item)=>item.url.endsWith('/apply')).at(-1);
+  assert.deepEqual(JSON.parse(request.options.body),{revision:'panel-candidate'});
+  assert.equal(h.select('#panel-confirm').classList.contains('hidden'),true,'confirmation is not offered before readiness');
+  await h.run('pollPanelTrial(panelGeneration)');
+  assert.equal(h.select('#setting-benchmark-full_interval').value,'17m','address status cannot overwrite a core draft');
+  assert.equal(h.select('#panel-confirm').classList.contains('hidden'),false);
+  assert.equal(h.select('#panel-confirm').disabled,true,'confirming cannot silently discard a core draft');
+  assert(h.select('#panel-confirm-hint').textContent.includes('несохранённые'));
+  const confirmingBlocked=h.requests.length;await h.run('confirmPanel()');
+  assert.equal(h.requests.length,confirmingBlocked);
+  h.run('settingsDirty=false;updateSettingsControls()');
+  h.respond({status:202,ok:true,data:{accepted:true}});await h.run('confirmPanel()');
+  assert.deepEqual(h.assignments,['https://alice.home.arpa:9444/#settings'],'explicit accepted confirmation navigates to verified candidate');
+  request=h.requests.filter((item)=>item.url.endsWith('/confirm')).at(-1);
+  assert.deepEqual(JSON.parse(request.options.body),{revision:'panel-candidate'});
+  let prevented=false;h.handlers.beforeunload({preventDefault(){prevented=true;}});
+  assert.equal(prevented,false,'authorized confirmation navigation does not warn about its own trial');
+
+  h.run('clearPanelEditor()');assert.equal(h.blobURLs.size,0,'clearing revokes downloadable certificate');
+  h.respond({status:200,ok:true,data:{...idle,hostname:'192.168.1.1',url:'https://192.168.1.1'}});
+  await h.run('loadPanelStatus()');
+  assert.equal(h.select('#panel-hostname').value,'192.168.1.1','an existing IP-only panel can prepare its first DNS name');
+  h.select('#panel-hostname').value='alice.home.arpa';h.select('#panel-port').value='443';
+  const noPort={...candidate,port:443,url:'https://alice.home.arpa',revision:'no-port'};
+  h.respond({status:200,ok:true,data:noPort});await h.run('preparePanel({preventDefault(){}})');
+  assert.equal(h.select('#panel-open').href,'https://alice.home.arpa/#settings','443 is omitted in the generated URL');
+  h.respond({status:200,ok:true,data:{...noPort,dns_automatic:false}});await h.run('loadPanelStatus()');
+  assert(h.select('#panel-dns').textContent.includes('Перед применением настройте'));
+
+  // Server-supplied links must match the prepared hostname and port; arbitrary HTML/URLs are rejected.
+  for(const malformed of [
+    {...noPort,url:'http://alice.home.arpa'}, {...noPort,url:'https://attacker.example/'},
+    {...noPort,url:'https://alice.home.arpa:9999'}, {...noPort,url:'https://user:secret@alice.home.arpa'},
+    {...noPort,url:'https://alice.home.arpa/path'}, {...noPort,url:'javascript:alert(1)'},
+    {...noPort,hostname:'<img src=x onerror=alert(1)>',url:'https://attacker.example'},
+    {...noPort,certificate_pem:'<script>alert(1)</script>'}, {...noPort,port:'443'}, {...noPort,listen_ip:'0.0.0.bad'},
+  ]){
+    h.context.malformed=malformed;
+    assert.throws(()=>h.run('validatedPanelStatus(malformed)'));
+  }
+  h.context.ipv6={...idle,hostname:'::1',listen_ip:'::1',url:'https://[::1]'};
+  assert.equal(h.run('validatedPanelStatus(ipv6).url'),'https://[::1]','IPv6 baseline remains usable with brackets');
+  h.run('panelState=validatedPanelStatus(ipv6)');
+  h.select('#panel-hostname').value='::1';h.select('#panel-port').value='9444';
+  assert.equal(h.run('panelInput().hostname'),'::1','port-only change can retain the fixed IPv6 IP');
+  h.select('#panel-hostname').value='192.168.1.2';
+  assert.throws(()=>h.run('panelInput()'),/Другой IP недоступен/);
+  h.context.originalCandidate=noPort;h.run('renderPanelStatus(validatedPanelStatus(originalCandidate))');
+  h.select('#panel-hostname').value=noPort.hostname;h.select('#panel-port').value='443';
+  const safeURL=h.select('#panel-open').href;
+  h.respond({status:200,ok:true,data:{...noPort,url:'https://attacker.example'}});await h.run('loadPanelStatus()');
+  assert.equal(h.select('#panel-open').href,safeURL,'malformed responses cannot replace links');
+  assert(h.select('#panel-error').textContent.includes('не соответствует'));
+
+  h.run('clearPanelEditor()');h.respond({status:200,ok:true,data:idle});await h.run('loadPanelStatus()');
+  h.select('#panel-hostname').value='alice.home.arpa';h.select('#panel-port').value='9444';
+  h.respond({status:409,ok:false,data:{error:'panel preparation conflict'}});await h.run('preparePanel({preventDefault(){}})');
+  assert(h.select('#panel-error').textContent.includes('conflict'));
+  assert.equal(h.select('#panel-prepare').disabled,true,'preparation conflict requires status refresh');
+  h.respond({status:200,ok:true,data:candidate});await h.run('loadPanelStatus(true)');
+  h.respond((url)=>{if(url.endsWith('/apply'))throw new Error('connection lost');return {status:200,ok:true,data:trial};});
+  await h.run('applyPanel()');
+  const lostCount=h.requests.filter((item)=>item.url.endsWith('/apply')).length;
+  await h.run('pollPanelTrial(panelGeneration)');
+  assert.equal(h.requests.filter((item)=>item.url.endsWith('/apply')).length,lostCount,'lost apply response is never resubmitted automatically');
+  assert.equal(h.select('#panel-confirm').classList.contains('hidden'),false);
+  assert.equal(h.assignments.length,1,'trial readiness never automatically confirms or navigates');
+  h.respond({status:200,ok:true,data:{...idle,revision:'panel-candidate',status:'rolled_back'}});
+  await h.run('pollPanelTrial(panelGeneration)');
+  assert.equal(h.run('panelTrialActive()'),false);
+  assert(h.select('#panel-status').textContent.includes('восстановлен'));
+  assert.equal(h.select('#panel-hostname').value,'alice.jopa');
+  assert.equal(h.blobURLs.size,0,'rollback removes the unused certificate download');
+
+  h.select('#panel-hostname').value='alice.home.arpa';h.select('#panel-port').value='9444';
+  h.respond({status:200,ok:true,data:candidate});await h.run('preparePanel({preventDefault(){}})');
+  let finishRevoked;
+  h.respond(()=>new Promise((resolve)=>{finishRevoked=resolve;}));
+  const revoked=h.run('applyPanel()');
+  h.run("acceptSession({permissions:['vpn.view']})");
+  const revokedCount=h.requests.length;finishRevoked({status:202,ok:true,data:{accepted:true}});await revoked;
+  assert.equal(h.requests.length,revokedCount,'revoked apply response cannot start polling');
+  assert.equal(h.run('panelState'),null);
+  assert.equal(h.blobURLs.size,0,'permission revocation revokes certificate blobs');
+  assert.equal(h.select('#panel-hostname').value,'');
+  assert.equal(h.select('#panel-open').href,undefined);
+  await h.run('loadPanelStatus();preparePanel({preventDefault(){}});applyPanel();confirmPanel()');
+  assert.equal(h.requests.length,revokedCount,'revoked address requests are not fetched');
+
+  h.run("authenticated=true;permissions=new Set(['users.manage'])");
+  h.respond({status:200,ok:true,data:candidate});await h.run('loadPanelStatus()');
+  h.respond({status:202,ok:true,data:{accepted:true}});await h.run('applyPanel()');
+  h.respond({status:200,ok:true,data:{...candidate,status:'applying'}});
+  h.run('panelDeadline=Date.now()-1');await h.run('pollPanelTrial(panelGeneration)');
+  assert.equal(h.run('panelTrialActive()'),false,'UI timeout releases the trial busy state without claiming success');
+  assert.equal(h.select('#panel-prepare').disabled,true,'unknown address outcome requires a status refresh');
+  assert(h.select('#panel-error').textContent.includes('через 5 минут'));
+  h.run('clearPanelEditor()');
+  h.respond({status:200,ok:true,data:trial});await h.run('loadPanelStatus()');
+  const oldAssignments=h.assignments.length;
+  h.respond((url)=>{if(url.endsWith('/confirm'))throw new Error('confirmation connection lost');return {status:200,ok:true,data:trial};});
+  await h.run('confirmPanel()');
+  const confirmations=h.requests.filter((item)=>item.url.endsWith('/confirm')).length;
+  await h.run('pollPanelTrial(panelGeneration)');
+  assert.equal(h.requests.filter((item)=>item.url.endsWith('/confirm')).length,confirmations,'lost confirmation response is never blindly retried');
+  assert.equal(h.assignments.length,oldAssignments,'uncertain confirmation does not claim success or navigate');
+  assert(h.select('#panel-error').textContent.includes('подтверждение потерян'));
+  h.run('showLogin()');
+  assert.equal(h.run('panelState'),null);
+  assert.equal(h.select('#panel-form').classList.contains('hidden'),true);
+  assert.equal(h.blobURLs.size,0);
+}
+
 async function main() {
+  await panelEditorChecks();
+  await settingsEditorChecks();
   await updateChannelChecks();
   await errorTranslationChecks();
   await navigationPermissionChecks();

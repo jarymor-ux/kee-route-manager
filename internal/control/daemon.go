@@ -48,36 +48,41 @@ func Serve(ctx context.Context, c config.Config, version string) error {
 			return err
 		}
 	}
-	return serveActive(ctx, c, version)
+	return serveConfigured(ctx, c, version)
 }
 
 // Called with both ownership locks still held, including across trial activation.
-func serveActive(ctx context.Context, c config.Config, version string) error {
+func serveRuntime(ctx context.Context, c config.Config, version string, settings *settingsRuntime, candidate *config.SettingsTransaction, reloading bool) (bool, error) {
 	logs, e := logging.Setup(c.Paths.LogFile)
 	if e != nil {
-		return e
+		return false, e
 	}
 	defer logs.Close()
 	log.Printf("controller owner pid=%d", os.Getpid())
 	p, r, e := platform.New(c)
 	if e != nil {
-		return e
+		return false, e
+	}
+	if dns, ok := p.(interface{ ReconcilePanelAlias(context.Context) error }); ok {
+		if err := dns.ReconcilePanelAlias(ctx); err != nil {
+			return false, fmt.Errorf("local panel DNS recovery requires operator reconciliation")
+		}
 	}
 	st, e := store.New(c.Paths.StateDir, c.Paths.CacheDir, model.NewState(version, c.Xray.SlotTagPrefix, c.Pool.Size))
 	if e != nil {
-		return e
+		return false, e
 	}
 	ops, e := operation.New(c.Paths.StateDir)
 	if e != nil {
-		return e
+		return false, e
 	}
 	sourceStore := subscription.NewSourceStore(c.Paths.StateDir)
 	if sources, ok, err := sourceStore.Load(); err != nil {
-		return fmt.Errorf("load managed subscription sources: %w", err)
+		return false, fmt.Errorf("load managed subscription sources: %w", err)
 	} else if ok {
 		c.Subscriptions.Sources = sources
 		if err := c.Validate(); err != nil {
-			return fmt.Errorf("validate managed subscription sources: %w", err)
+			return false, fmt.Errorf("validate managed subscription sources: %w", err)
 		}
 	}
 	xm := xray.NewManager(c, r, p)
@@ -86,15 +91,38 @@ func serveActive(ctx context.Context, c config.Config, version string) error {
 	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
 	srv, e := web.New(c, mgr, update.NewForConfig(c, version), nil)
 	if e != nil {
-		return e
+		return false, e
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer mgr.Stop()
-	gate := &updateGate{manager: mgr, version: version}
+	gate := &updateGate{manager: mgr, version: version, settings: settings}
+	var activate <-chan struct{}
+	if settings != nil {
+		srv.UseSettings(settings)
+		srv.ReuseAuthentication(settings.server)
+		settings.server = srv
+		activate = settings.activate
+	}
 	log.Printf("controller %s control_socket=%s api_enabled=%t", version, c.API.UnixSocket, c.API.Enabled)
-	_, e = serveHTTP(ctx, c, gate.local(srv.LocalHandler()), gate.public(srv.Handler()), true, nil, func() { mgr.Start(ctx) })
-	return e
+	var startupError error
+	reload, e := serveHTTP(ctx, c, gate.local(srv.LocalHandler()), gate.public(srv.Handler()), true, activate, func() {
+		if reloading {
+			mgr.StartReload(ctx)
+		} else {
+			mgr.Start(ctx)
+		}
+		if candidate != nil {
+			startupError = settings.ready(candidate, mgr.Readiness())
+			if startupError != nil {
+				settings.ActivateSettings()
+			}
+		}
+	})
+	if startupError != nil {
+		return reload, startupError
+	}
+	return reload, e
 }
 
 // ListenUnix creates a local authorization boundary. It may only be called

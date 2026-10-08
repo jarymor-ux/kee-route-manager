@@ -59,6 +59,7 @@ Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `per
 | `router.reboot` | Reboot |
 | `updates.manage` | Update discovery/status/application and channel selection |
 | `users.manage` | List, create, edit, block and delete users |
+| `config.manage` | Validate/save runtime settings and manage a supervised local panel address |
 | `events.view` | Event journal |
 
 Session, logout and the minimal status response require authentication but no additional permission. Full VPN status requires `vpn.view`. Unknown protected routes fail closed. The owner-only local Unix socket retains OS owner authorization, independent of panel users.
@@ -70,6 +71,24 @@ Session, logout and the minimal status response require authentication but no ad
 At first startup, the schema-1 `web.credentials_file` becomes the full-permission account `legacy-admin` in memory. An explicit user change persists the private sidecar `<credentials_file>.users.json`; loading and update-trial validation never write it. Panel changes affect only the sidecar: the original credential file remains usable by older versions. Consequently, rolling back restores the original single account/password and ignores new users and revoked rights. Preserve both private files in backups; do not treat a downgrade as preserving panel authorization policy.
 
 For owner recovery, stop the controller, run the existing offline `passwd --username UNIQUE_NAME --password-stdin` command, and restart. A changed legacy credential fingerprint restores the stable `legacy-admin` account enabled with all permissions, preserving other accounts. Choose a name not held by another account. Merely restarting does not undo panel edits. The controller does not reload offline credentials while running. Invalid/corrupted user sidecars fail startup rather than silently restoring old credentials; restore a private backup, or move the corrupted sidecar aside while stopped to explicitly recreate the original administrator. Keep the moved file private.
+
+## Runtime settings and panel address
+
+These endpoints require `config.manage` or `users.manage`, plus CSRF and same-origin checks for POST. Existing user administrators retain access without rewriting credentials; granting `config.manage` separately permits settings management without user management. Responses use `Cache-Control: no-store`.
+
+- `GET /api/v1/settings` returns `{settings, revision, pool_size, apply}`. The allowlist covers benchmark/speed, active health controls, failover, subscription download/cache limits and provider diversity. It excludes sources/headers, paths, commands, targets, Xray/API/TLS and updates. Pool size is read-only.
+- `POST /api/v1/settings/validate` accepts `{settings, revision}` and validates the merged configuration without writing.
+- `POST /api/v1/settings/save` accepts the same complete DTO. Changes return `202 {accepted:true, changed:true, revision}` before runtime drain; a no-op returns200 without restart. Missing/unknown fields and null values are rejected. Stale file/runtime revisions return409; externally edited YAML requires an explicit owner restart first.
+- `apply.status` is `idle`, `applying`, `applied`, `rolled_back` or `failed`. `apply.revision` identifies the requested candidate; after rollback the file `revision` identifies the original. Failed startup restores only YAML, never controller state/Xray snapshots. Interrupted pending saves recover the verified baseline under the original ownership locks.
+
+Reload preserves daemon PID, UI origin/process, certificates, sessions and update channel. It cancels/joins current work, recreates managers, clears metric history and starts scheduler intervals anew. It suppresses the ordinary startup benchmark; the next scheduled run follows the saved interval. Accepted actions may finish before drain. Update preparation cannot overlap settings application.
+
+- `GET /api/v1/panel/status` returns address capability/status, hostname, fixed `listen_ip`, HTTPS port/URL, revision and `dns_automatic`. Older launchers and standalone/separately supervised UI return unsupported. Changes cannot alter the router IP or open a WAN listener.
+- `POST /api/v1/panel/prepare` accepts `{hostname, port}`. Use ASCII DNS labels (except `.local`/`.localhost`), or the existing bind IP for a port-only change. Controller port9443, foreign IPs, occupied ports and drift are rejected. The result contains a prepared revision and public certificate; private keys never leave the device.
+- `POST /api/v1/panel/apply` accepts `{revision}`. The daemon first verifies/creates local DNS. Keenetic preserves existing mappings, saves only an observed solely owned alias addition and retains prior aliases on panel rollback. Other platforms require existing DNS resolution to the fixed local IP. Port-only IP changes do not mutate DNS.
+- `POST /api/v1/panel/confirm` accepts `{revision}` and returns202 acceptance. The new endpoint must pass readiness again before commit. Without confirmation within five minutes, or on failed readiness, the old UI YAML/listener is restored. A port trial retains the original UI; a hostname-only change briefly restarts UI on its current port. Daemon/Xray, release slots and discovery channel stay intact.
+
+Panel states: `idle`, `prepared`, `applying`, `awaiting_confirmation`, `applied`, `rolled_back`, `failed`. Prepared/trial fields describe the candidate; rollback fields describe the restored address. Explicit confirmation opens the new URL; a different hostname may require login and trusting its public certificate. SNI retains the primary certificate for prior names/IP. Interrupted unconfirmed transitions recover only UI configuration before launcher children start. See [configuration](CONFIGURATION.md) and [launcher maintenance](RELEASE.md).
 
 ## Update channels
 

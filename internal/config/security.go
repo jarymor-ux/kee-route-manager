@@ -62,6 +62,7 @@ func durationError(name string, d Duration, max time.Duration) error {
 }
 func (c Config) validateCommon() []error {
 	var es []error
+	es = append(es, c.panelTLSErrors()...)
 	// Core authorizes both network and local requests. Embedded UI enablement
 	// must never determine whether controller authentication is validated.
 	if c.Instance.Role == "controller" {

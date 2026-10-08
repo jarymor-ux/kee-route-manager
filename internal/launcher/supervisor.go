@@ -42,20 +42,25 @@ type Status struct {
 }
 
 type supervisor struct {
-	c               config.Config
-	configFile      string
-	ctx             context.Context
-	mu              sync.Mutex // record and public status
-	rec             record
-	status          Status
-	closing         bool
-	channel         string
-	channelRevision uint64
-	transition      sync.Mutex // processes and every version transition
-	checkMu         sync.Mutex
-	daemon, ui      *child
-	wg              sync.WaitGroup
-	output          io.Writer
+	c                  config.Config
+	configFile         string
+	ctx                context.Context
+	mu                 sync.Mutex // record and public status
+	rec                record
+	status             Status
+	closing            bool
+	channel            string
+	channelRevision    uint64
+	transition         sync.Mutex // processes and every version transition
+	checkMu            sync.Mutex
+	daemon, ui         *child
+	panelTrial         *child
+	panel              *panelOperation
+	uiConfigHash       string
+	panelWindow        time.Duration
+	panelNeedsRecovery bool
+	wg                 sync.WaitGroup
+	output             io.Writer
 }
 
 // Serve is the only process supervisor. Mutable controller state remains owned
@@ -104,6 +109,9 @@ func Serve(ctx context.Context, configFile string) error {
 		}
 	}
 	if err = setCurrent(c.Update.InstallDir, rec.Active); err != nil {
+		return err
+	}
+	if err = s.recoverPanel(); err != nil {
 		return err
 	}
 	if err = s.start(rec.Active, rec.ActiveDigest, ""); err != nil {
@@ -163,7 +171,11 @@ func Serve(ctx context.Context, configFile string) error {
 			if !s.transition.TryLock() {
 				continue
 			}
-			if !s.daemon.alive() || s.record().UIConfig != "" && !s.ui.alive() {
+			if s.daemon.alive() && (s.record().UIConfig != "" && !s.ui.alive() || s.panelRecoveryPending()) {
+				if err = s.restartUIOnly(); err != nil {
+					s.setPhase("failed", err)
+				}
+			} else if !s.daemon.alive() {
 				if err = s.stop(); err == nil {
 					r := s.record()
 					err = s.start(r.Active, r.ActiveDigest, "")
@@ -228,11 +240,19 @@ func (s *supervisor) start(version, digest, nonce string) error {
 		return err
 	}
 	if uiConfig := s.record().UIConfig; uiConfig != "" {
+		data, err := readPanelConfig(uiConfig, false)
+		if err != nil {
+			_ = s.daemon.stop(context.Background())
+			return err
+		}
 		s.ui, err = startChild(filepath.Join(rel.Directory, "kee-route-manager-ui"), uiConfig, "", s.output)
 		if err != nil {
 			_ = s.daemon.stop(context.Background())
 			return err
 		}
+		s.mu.Lock()
+		s.uiConfigHash = panelDigest(data)
+		s.mu.Unlock()
 	}
 	return nil
 }
@@ -240,8 +260,9 @@ func (s *supervisor) stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	u := s.ui.stop(ctx)
+	p := s.panelTrial.stop(ctx)
 	d := s.daemon.stop(ctx)
-	return errors.Join(u, d)
+	return errors.Join(u, p, d)
 }
 func (s *supervisor) check(ctx context.Context) (update.CheckResult, error) {
 	s.checkMu.Lock()
@@ -291,6 +312,7 @@ func reply(w http.ResponseWriter, status int, value any) {
 }
 func (s *supervisor) handler() http.Handler {
 	mux := http.NewServeMux()
+	s.panelRoutes(mux)
 	mux.HandleFunc("/channel", s.changeChannel)
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {

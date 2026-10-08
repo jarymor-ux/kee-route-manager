@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
@@ -313,7 +314,7 @@ func TestInitConfigCommandRunsOfflineWithInjectedIO(t *testing.T) {
 		"https://sub.example.test/main", "Main", "", "n", "n",
 		"https://score.example.test/ping",
 		"https://health.example.test/ping", "n", "",
-		"n", "n", "y",
+		"", "n", "n", "n", "y",
 	}, "\n") + "\n"
 	var out strings.Builder
 	if err := runWithIO(context.Background(), []string{"init-config", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
@@ -334,7 +335,7 @@ func TestInitConfigCommandPinsPlatformWithoutPrompt(t *testing.T) {
 		"https://sub.example.test/main", "Main", "", "n", "n",
 		"https://score.example.test/ping",
 		"https://health.example.test/ping", "n", "",
-		"n", "n", "y",
+		"", "n", "n", "n", "y",
 	}, "\n") + "\n"
 	var out strings.Builder
 	if err := runWithIO(context.Background(), []string{"init-config", "--platform", "openwrt", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
@@ -354,7 +355,7 @@ func TestInitConfigLocalUIPair(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			dir := t.TempDir()
 			corePath, uiPath := filepath.Join(dir, "core.yaml"), filepath.Join(dir, "ui.yaml")
-			input := strings.Join([]string{"2", "", "", "", "", "proxy-main", "https://sub.example.test/main", "Main", "n", "n", "n", "https://score.example.test/ping", "https://health.example.test/ping", "n", "", "n", "n", "y"}, "\n") + "\n"
+			input := strings.Join([]string{"2", "", "", "", "", "proxy-main", "https://sub.example.test/main", "Main", "n", "n", "n", "https://score.example.test/ping", "https://health.example.test/ping", "n", "", "", "n", "n", "n", "", "", "", "y"}, "\n") + "\n"
 			var out strings.Builder
 			err := runWithIO(context.Background(), []string{"init-config", "--platform", platform, "--output", corePath, "--ui-output", uiPath, "--tls-dir", filepath.Join(dir, "tls")}, "test", "commit", "build", strings.NewReader(input), &out)
 			if err != nil {
@@ -368,7 +369,7 @@ func TestInitConfigLocalUIPair(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !core.API.TLS.Enabled || core.API.Listen != "127.0.0.1:9443" || core.Update.AutoApply || core.Benchmark.Speed.Enabled {
+			if !core.API.TLS.Enabled || core.API.Listen != "127.0.0.1:9443" || core.Update.AutoApply || core.Benchmark.Speed.Enabled || core.Subscriptions.CacheEnabled || core.Benchmark.FullInterval.Duration != 6*time.Hour || ui.Web.Listen != "127.0.0.1:9444" {
 				t.Fatal("unsafe controller defaults")
 			}
 			prefix := ""
@@ -435,5 +436,36 @@ func TestInitConfigLocalUIRefusesInvalidOrExistingOutputs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPreparedConfigValidationPreservesCadenceCacheAndAvoidsWizard(t *testing.T) {
+	path := configFile(t, filepath.Join(t.TempDir(), "control.sock"))
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = append(before, []byte("benchmark:\n  full_interval: 17m\n")...)
+	before = []byte(strings.Replace(string(before), "subscriptions:\n", "subscriptions:\n  cache_enabled: true\n", 1))
+	if err = os.WriteFile(path, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err = runWithIO(context.Background(), []string{"validate", "--config", path}, "test", "commit", "build", strings.NewReader("this input must remain unused"), &out); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("prepared config rewritten")
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Benchmark.FullInterval.Duration != 17*time.Minute || !cfg.Subscriptions.CacheEnabled {
+		t.Fatal("prepared overrides replaced by wizard defaults")
+	}
+	if strings.Contains(out.String(), "Choose language") || strings.Contains(out.String(), "Create configuration?") {
+		t.Fatal("prepared config started wizard")
 	}
 }

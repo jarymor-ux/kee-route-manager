@@ -2,9 +2,11 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.1.1` and Release Candidate `v1.1.1-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.2.0` and Release Candidate `v1.2.0-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
+
+Router → Settings edits supported runtime configuration with validation, revision protection and rollback on failed startup. It also prepares supervised local panel hostname/HTTPS-port changes with certificate download and five-minute confirmation. Panel address editing requires the separately maintained v1.2.0+ launcher; ordinary application updates do not replace it. Sources stay in the subscription editor; router IP, WAN listeners and pool size are outside this form. New interactive installations ask for benchmark/cache choices and an explicit local UI address; prepared configs remain unchanged.
 
 Runtime components:
 

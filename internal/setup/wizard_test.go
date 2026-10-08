@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -30,6 +32,8 @@ func wizardScript(lang string, speed, updates bool, final string) string {
 		"https://health.example.test/ping",
 		"n",
 		"",
+		"", // benchmark interval defaults to 6h
+		"", // subscription caching defaults to disabled for interactive installs
 	}
 	if speed {
 		lines = append(lines, "y", "https://speed.example.test/download?bytes={bytes}")
@@ -92,7 +96,9 @@ func TestRussianAndEnglishAnswersProduceEquivalentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(ru, en) {
+	ruJSON, _ := json.Marshal(ru)
+	enJSON, _ := json.Marshal(en)
+	if !bytes.Equal(ruJSON, enJSON) {
 		t.Fatalf("RU and EN configs differ\nRU=%#v\nEN=%#v", ru, en)
 	}
 }
