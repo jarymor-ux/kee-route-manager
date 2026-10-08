@@ -40,7 +40,9 @@ func nativeConfigReadFixture(t *testing.T, status int, output []byte, scriptSuff
 	cfg := config.Default()
 	cfg.Platform.Keenetic.RCIBaseURL = server.URL + "/rci"
 	cfg.Platform.Keenetic.NDMCBinary = binary
-	return newKeenetic(cfg, Runner{Timeout: 2 * time.Second}).(*keenetic), logPath, requests
+	// Success fixtures may contend with cross-builds/race instrumentation for
+	// process startup. Deadline behavior is tested separately with a 50ms budget.
+	return newKeenetic(cfg, Runner{Timeout: 10 * time.Second}).(*keenetic), logPath, requests
 }
 func validNativeConfigRead() []byte {
 	return []byte(regressionStartupConfig(regressionChecksum(1)) + "hostname router\nusername admin password PRIVATE-NATIVE-CONFIG-SECRET\nip host alice.jopa 192.168.1.1\n!\n")

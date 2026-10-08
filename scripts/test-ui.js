@@ -6,7 +6,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'internal/web/ui/static/app.js'), 'utf8');
+const staticRoot = path.join(root, 'internal/web/ui/static');
+const htmlSource = fs.readFileSync(path.join(staticRoot, 'index.html'), 'utf8');
+const declaredScripts = [...htmlSource.matchAll(/<script\b[^>]*\bsrc=["']\/assets\/([a-z-]+\.js)["'][^>]*>/g)].map((match) => match[1]);
+const editingOrder = ['app.js', 'workspace.js', 'charts.js', 'dialogs.js', 'settings.js', 'panel.js', 'boot.js'];
+const scriptFiles = declaredScripts.includes('boot.js') ? declaredScripts : editingOrder.filter((name) => fs.existsSync(path.join(staticRoot, name)));
+const source = scriptFiles.map((name) => fs.readFileSync(path.join(staticRoot, name), 'utf8')).join('\n');
 const start = source.indexOf('async function loadEvents()');
 const end = source.indexOf('\nfunction showTool', start);
 assert(start >= 0 && end > start, 'loadEvents must be present');
@@ -98,6 +103,8 @@ function appHarness() {
     static revokeObjectURL(value) { blobURLs.delete(value); revokedBlobs.push(value); }
   }
   const handlers = {};
+  const storage = new Map();
+  const document = { querySelector: (selector) => select(selector), querySelectorAll: (selector) => selectAll(selector), hidden: false, activeElement: null, addEventListener: (name, handler) => { handlers[`document:${name}`] = handler; } };
   const allPermissions = ['vpn.view', 'vpn.control', 'subscriptions.view', 'subscriptions.manage', 'router.view', 'router.clients', 'router.policy', 'router.wake', 'router.system', 'router.reboot', 'updates.manage', 'users.manage', 'config.manage', 'events.view'];
   const select = (selector) => {
     if (!elements.has(selector)) {
@@ -109,7 +116,13 @@ function appHarness() {
           toggle: (name, force) => { if (force) classes.add(name); else classes.delete(name); },
         },
         setAttribute(name, value) { this[name] = value; }, removeAttribute(name) { delete this[name]; },
-        addEventListener(name, fn) { this[name] = fn; }, focus() {},
+        addEventListener(name, fn) { this[name] = fn; },
+        getAttribute(name) { return this[name] ?? null; },
+        querySelectorAll(selector) { return many.get(`${this.id} ${selector}`) || selectAll(selector); },
+        contains(element) { for (let item = element; item; item = item.parentElement) if (item === this) return true; return false; },
+        closest(selector) { return selector === '.modal' ? this.modal || null : null; },
+        getClientRects() { return [{}]; }, isConnected: true,
+        focus() { document.activeElement = this; },
       });
     }
     return elements.get(selector);
@@ -119,8 +132,10 @@ function appHarness() {
   let response = { status: 401, ok: false, data: { error: 'unauthorized' } };
   let confirmResult = true;
   const context = vm.createContext({
-    document: { querySelector: select, querySelectorAll: selectAll }, navigator: {}, Date, URL: TestURL, Blob,
-    window: { location: { hash: '', origin: 'https://alice.jopa', assign: (url) => assignments.push(url), reload: () => { reloads++; } }, addEventListener: (name, handler) => { handlers[name] = handler; } },
+    document, navigator: {}, Date, URL: TestURL, Blob,
+    localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) },
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    window: { matchMedia: () => ({ matches: false, addEventListener() {} }), location: { hash: '', origin: 'https://alice.jopa', assign: (url) => assignments.push(url), reload: () => { reloads++; } }, addEventListener: (name, handler) => { handlers[name] = handler; } },
     setTimeout() {}, clearTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
     setInterval: (fn) => { intervals.add(fn); return fn; }, confirm: () => confirmResult,
     fetch: async (url, options) => {
@@ -129,10 +144,11 @@ function appHarness() {
       return { ...current, headers: { get: () => 'application/json' }, json: async () => current.data };
     },
   });
+  document.body = select('body'); document.documentElement = select('html');
   context.allPermissions = allPermissions;
-  vm.runInContext(source, context);
+  for (const name of scriptFiles) vm.runInContext(fs.readFileSync(path.join(staticRoot, name), 'utf8'), context, { filename: name });
   vm.runInContext('permissions = new Set(allPermissions)', context);
-  return { allPermissions, handlers, many, assignments, blobURLs, revokedBlobs, context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+  return { document, allPermissions, handlers, many, assignments, blobURLs, revokedBlobs, context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
 }
 
 async function versionReloadChecks() {
@@ -412,14 +428,15 @@ async function serviceWorkerChecks() {
   let installation;
   handlers.install({ waitUntil: (promise) => { installation = promise; } });
   await installation;
-  assert.deepEqual(cached, ['/', '/assets/app.css', '/assets/app.js', '/manifest.webmanifest']);
-  assert.deepEqual(openedCaches, ['krm-ui-static-v1']);
+  assert.deepEqual(cached, ['/', '/assets/app.css', ...scriptFiles.map((name) => `/assets/${name}`), '/manifest.webmanifest']);
+  const activeCache = vm.runInContext('CACHE', context);
+  assert.deepEqual(openedCaches, [activeCache]);
 
   let activation;
   handlers.activate({ waitUntil: (promise) => { activation = promise; } });
   await activation;
-  assert.deepEqual(deletedCaches.sort(), ['krm-ui-old', 'krm-ui-rc2']);
-  assert(!deletedCaches.includes('krm-ui-static-v1'), 'active service-worker cache must be preserved');
+  assert.deepEqual(deletedCaches.sort(), ['krm-ui-old', 'krm-ui-rc2', 'krm-ui-static-v1'].filter((name) => name !== activeCache).sort());
+  assert(!deletedCaches.includes(activeCache), 'active service-worker cache must be preserved');
 
   for (const [method, url] of [['GET', 'https://ui.test/api/v1/status'], ['POST', 'https://ui.test/'], ['GET', 'https://other.test/'], ['GET', 'https://ui.test/?secret=value']]) {
     let intercepted = false;
@@ -856,7 +873,7 @@ async function panelEditorChecks() {
   h.respond({status:200,ok:true,data:idle});await h.run('loadPanelStatus(true)');
   assert.equal(h.select('#panel-hostname').value,'alice.jopa');
   assert.equal(h.select('#panel-port').value,'443');
-  assert(h.select('#panel-current').textContent.includes('https://alice.jopa'));
+  assert(h.select('#panel-old-address').textContent.includes('https://alice.jopa'));
   assert(h.select('#panel-dns').textContent.includes('автоматически'));
   assert.equal(h.select('#panel-prepare').disabled,false);
   h.select('#panel-hostname').value='alice.home.arpa';h.select('#panel-port').value='9444';h.select('#panel-hostname').input();
@@ -998,7 +1015,98 @@ async function panelEditorChecks() {
   assert.equal(h.blobURLs.size,0);
 }
 
+async function workspaceRegressionChecks() {
+  const h = appHarness(); await new Promise(setImmediate);
+  h.run("closeDialog('login'); authenticated=true; permissions=new Set(allPermissions); activePage='devices'; statusData={capabilities:{client_policy:true,wake_on_lan:true}}; renderClients([{name:'Desk',mac:'02:00:00:00:00:01',ip:'192.168.1.5'}])");
+  const original = h.select('#clients-body').innerHTML;
+  const policy = h.select('.policy'); policy.parentElement = h.select('#clients-body'); policy.focus();
+  h.run("renderClients([{name:'Desk updated',mac:'02:00:00:00:00:01',ip:'192.168.1.6'}])");
+  assert.equal(h.select('#clients-body').innerHTML, original, '3s polling must preserve a focused native policy select');
+  h.run("acceptSession({permissions:['router.clients']})");
+  assert(!h.select('#clients-body').innerHTML.includes('class="policy"'), 'permission revocation bypasses focused-control preservation immediately');
+
+  h.run("permissions=new Set(allPermissions); nodesData=[{id:'null',label:'Missing',sources:['b'],measurement:{latency_ms:null,speed_mbps:null,score:null}},{id:'zero',label:'Zero',sources:['a'],active:true,in_pool:true,measurement:{latency_ms:0,speed_mbps:0,score:0,healthy:true,checked_at:'2026-10-09T00:00:00Z'}},{id:'known',label:'Known',sources:['b'],measurement:{latency_ms:20,speed_mbps:50,score:10,healthy:false,checked_at:'2026-10-09T00:00:00Z'}}]");
+  h.select('#node-sort').value='latency';
+  assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['zero','known','null'], 'zero latency is valid and null sorts last');
+  h.select('#node-sort').value='speed';
+  assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['known','zero','null'], 'zero speed is valid and missing values sort last');
+  h.select('#node-source-filter').value='a';
+  assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['zero']);
+  h.select('#node-source-filter').value=''; h.select('#node-status-filter').value='error';
+  assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['known']);
+  h.select('#node-status-filter').value='unchecked'; assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['null']);
+  h.select('#node-status-filter').value='active'; assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')), ['zero']);
+  h.select('#node-status-filter').value=''; h.run('renderNodes()');
+  assert(h.select('#nodes-body').innerHTML.includes('node-details'), 'mobile retains source/type/score disclosure');
+  assert(h.select('#nodes-body').innerHTML.includes('0 мс'), 'measured zero latency must not become unavailable');
+
+  h.run('initializeWorkspace(); activePage="devices"'); h.document.hidden=true;
+  const before=h.requests.length; await h.run('poll()'); assert.equal(h.requests.length,before,'hidden pages pause ordinary polling');
+  h.respond((url)=>({status:200,ok:true,data:url.endsWith('/session')?{csrf:'refreshed',permissions:['router.clients']} : url.endsWith('/clients')?{value:[],updated_at:new Date().toISOString()}:{}}));
+  h.document.hidden=false; h.handlers['document:visibilitychange'](); await new Promise(setImmediate);
+  assert(h.requests.slice(before).some((item)=>item.url.endsWith('/session')),'visibility resume refreshes session before workspace');
+}
+
+async function dialogRegressionChecks() {
+  const h=appHarness(); await new Promise(setImmediate);
+  h.run("closeDialog('login'); authenticated=true; initializeDialogs()");
+  const opener=h.select('#add-subscription'), first=h.select('#subscription-name'), last=h.select('#subscription-cancel');
+  first.parentElement=h.select('#subscription-modal'); last.parentElement=h.select('#subscription-modal');
+  h.many.set('subscription-modal button, input, select, textarea, a[href], [tabindex]',[first,last]);
+  opener.focus(); h.run("openDialog('subscription-modal','#subscription-name')");
+  assert.equal(h.document.activeElement,first); assert.equal(h.select('main').inert,true);
+  let prevented=false; last.focus(); h.handlers['document:keydown']({key:'Tab',shiftKey:false,preventDefault(){prevented=true;}});
+  assert(prevented); assert.equal(h.document.activeElement,first,'last Tab wraps to first modal field');
+  h.handlers['document:keydown']({key:'Tab',shiftKey:true,preventDefault(){}}); assert.equal(h.document.activeElement,last,'Shift+Tab wraps to last field');
+  h.handlers['document:keydown']({key:'Escape',preventDefault(){}});
+  assert(h.select('#subscription-modal').classList.contains('hidden')); assert.equal(h.select('main').inert,false); assert.equal(h.document.activeElement,opener,'closing returns keyboard focus');
+  h.run("openDialog('login','#username',false)"); h.handlers['document:keydown']({key:'Escape',preventDefault(){}});
+  assert(!h.select('#login').classList.contains('hidden'),'required login cannot be dismissed with Escape');
+}
+
+async function settingsAndPanelProgressChecks() {
+  const h=appHarness(); await new Promise(setImmediate); h.run("authenticated=true; permissions=new Set(allPermissions)");
+  const fields=h.run('settingsSections.flatMap(([,prefix,items])=>items.map(([key])=>prefix+"."+key))');
+  assert.equal(fields.length,36,'basic/advanced must retain the complete editable allowlist');
+  assert.equal(new Set(fields).size,36,'basic/advanced fields appear once in the submitted DTO');
+  assert(source.includes('settings-advanced'),'advanced fields stay in a disclosure, not omitted from the form');
+  assert(source.includes('data-settings-dependency="'),'disabled speed/cache dependencies remain persisted');
+  h.context.trialStatus={supported:true,hostname:'alice.jopa',port:443,listen_ip:'192.168.1.1',url:'https://alice.jopa',status:'awaiting_confirmation',revision:'trial-only',confirmation_deadline:new Date(Date.now()+180000).toISOString(),certificate_changed:false};
+  h.run('renderPanelStatus(trialStatus)');
+  assert.equal(h.select('#panel-step-confirm')['aria-current'],'step');
+  assert.match(h.select('#panel-countdown').textContent,/2:|3:/);
+  h.context.trialStatus.confirmation_deadline=new Date(Date.now()-1000).toISOString(); h.run('renderPanelStatus(trialStatus)');
+  assert(h.select('#panel-countdown').textContent.includes('истёк'));
+  assert(!h.requests.some((item)=>item.url.endsWith('/confirm')),'countdown expiration never confirms automatically');
+}
+
+function chartRegressionChecks() {
+  const h=appHarness(); const end=Date.parse('2026-10-09T12:00:00Z');
+  const sample=(seconds,value)=>({updated_at:new Date(end-seconds*1000).toISOString(),cpu_percent:value});
+  h.context.chartEnd=end; h.context.chartSamples=[sample(1200,55),sample(100,10),sample(95,20),sample(90,null),sample(85,0),sample(40,30),sample(-10,99),{updated_at:'invalid',cpu_percent:42}];
+  const html=h.run("chartHTML(chartSamples,[['cpu_percent','CPU','blue']],true,15,chartEnd)");
+  assert.equal((html.match(/<polyline/g)||[]).length,1,'null readings break connecting lines');
+  assert.equal((html.match(/<circle/g)||[]).length,2,'missing intervals remain gaps with isolated observations');
+  assert(html.includes('за 15 минут')&&html.includes('tabindex="0"'),'chart exposes range and keyboard access');
+  assert.equal(h.run('chartRows(chartSamples,15,chartEnd).length'),5,'15m excludes old/future/invalid samples');
+  assert.equal(h.run('chartRows(chartSamples,60,chartEnd).length'),6,'60m retains older observations');
+  assert(h.run("chartHTML([{updated_at:new Date(chartEnd).toISOString(),cpu_percent:null}],[['cpu_percent','CPU','blue']],true,15,chartEnd)").includes('недоступны'));
+  const element=h.select('#usage-chart'), svg=h.select('#chart-svg'), tooltip=h.select('#chart-tooltip'), cursor=h.select('#chart-cursor');
+  element.querySelector=(selector)=>({'svg':svg,'.chart-tooltip':tooltip,'.chart-cursor':cursor}[selector]);
+  svg.getBoundingClientRect=()=>({left:0,width:600});
+  h.context.fixtureChart=element;h.run("chartRange=15;bindChartInspector(fixtureChart,chartSamples,[['cpu_percent','CPU','blue']],true,chartEnd)");
+  svg.onfocus();assert(tooltip.textContent.includes('30.0 %'));
+  svg.onkeydown({key:'Home',preventDefault(){}});assert(tooltip.textContent.includes('10.0 %'),'Home selects first visible observation');
+  svg.onpointermove({pointerType:'mouse',clientX:42+(900-60)/900*530});
+  assert.equal(tooltip.textContent,'Нет наблюдения в этой точке','tooltips must not interpolate missing measurements');
+  svg.onkeydown({key:'Escape'});assert(tooltip.classList.contains('hidden'));
+}
+
 async function main() {
+  chartRegressionChecks();
+  await workspaceRegressionChecks();
+  await dialogRegressionChecks();
+  await settingsAndPanelProgressChecks();
   await panelEditorChecks();
   await settingsEditorChecks();
   await updateChannelChecks();

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -118,7 +119,25 @@ func TestServiceWorkerAssets(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, path := range []string{"/", "/assets/app.css", "/assets/app.js", "/manifest.webmanifest"} {
+	index, err := staticFS.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts := regexp.MustCompile(`<script\b[^>]*src="/assets/([a-z-]+\.js)"[^>]*>`).FindAllStringSubmatch(string(index), -1)
+	var scriptNames []string
+	paths := []string{"/", "/assets/app.css", "/manifest.webmanifest"}
+	for _, script := range scripts {
+		if !strings.Contains(script[0], " defer") {
+			t.Fatal("workspace scripts must defer until DOM is ready")
+		}
+		scriptNames = append(scriptNames, script[1])
+		paths = append(paths, "/assets/"+script[1])
+	}
+	want := "app.js,workspace.js,charts.js,dialogs.js,settings.js,panel.js,boot.js"
+	if strings.Join(scriptNames, ",") != want {
+		t.Fatalf("workspace initialization order: %v", scriptNames)
+	}
+	for _, path := range paths {
 		if !strings.Contains(string(b), "'"+path+"'") {
 			t.Fatalf("service worker missing %s", path)
 		}
