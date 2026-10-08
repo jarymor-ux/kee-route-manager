@@ -1,6 +1,6 @@
 # Breaking changes
 
-## Current: v1.1.0-rc.14
+## Current: v1.1.0 / v1.1.0-rc.15
 
 1. A separately installed stable launcher supervises the daemon and, on Keenetic/OpenWrt local-ui installations, the UI. It imports a signed protocol-1 daemon/UI/CLI bundle into private release slots. The launcher, service scripts and configuration schema upgrades require separate maintenance.
 2. The shipped templates use `update.enabled: true` and `check_interval: 30m` to check for new versions automatically every 30 minutes. Applying one requires an explicit UI action or `kee-route-managerctl update-apply`; `auto_apply` must remain false. Discovery and downloads verify the pinned signing key, channel, platform, version and asset hashes.
@@ -14,7 +14,9 @@
 
 9. Panel RC/Release channel switching requires this separately maintained launcher capability. The discovery preference is private launcher metadata; old installed/rollback slots remain signature- and digest-verified independently. Application updates alone do not update an older launcher. Switching does not enable downgrades.
 
-This release remains experimental. Prior builds passed signed launcher migration and a manual GitHub update through the panel API on one Keenetic while preserving the Xray process and device policy. The concurrent-control, multiuser and dashboard additions do not yet have hardware acceptance. Router reboot, power-loss, deliberately broken candidate rollback and independent-bypass acceptance remain unverified.
+10. Release versions now come from immutable Git tags instead of a version file. Stable tags must belong to `main`, RC tags to `release-candidate`; source archives and untagged/dirty builds cannot publish. Raw development builds report `dev`.
+
+These channels share the tested baseline; platform support remains experimental. Prior builds passed signed launcher migration and a manual GitHub update through the panel API on one Keenetic while preserving the Xray process and device policy. The concurrent-control, multiuser and dashboard additions do not yet have hardware acceptance. Router reboot, power-loss, deliberately broken candidate rollback and independent-bypass acceptance remain unverified.
 
 ## Historical: v1.0.0-rc.2
 

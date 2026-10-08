@@ -1,8 +1,8 @@
 # Signed release publication
 
-The current release line is `1.1.0-rc.N`. The builder and publication workflow support two version shapes: `MAJOR.MINOR.PATCH-rc.N` publishes to the `rc` channel with GitHub prerelease enabled; `MAJOR.MINOR.PATCH` publishes to `stable` with prerelease disabled. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Both channels use `latest=false`; discovery selects the channel explicitly. Adding stable publication support does not certify device hardware acceptance or publish a stable version. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
+The release lines are stable `1.1.0` from `main` and candidate `1.1.0-rc.15` from `release-candidate`. The builder and publication workflow support two version shapes: `MAJOR.MINOR.PATCH-rc.N` publishes to the `rc` channel with GitHub prerelease enabled; `MAJOR.MINOR.PATCH` publishes to `stable` with prerelease disabled. Existing `v1.0.0-rc.1` and `v1.0.0-rc.2` tags and assets stay unchanged. Both channels use `latest=false`; discovery selects the channel explicitly. Stable-channel publication does not certify device hardware acceptance; all documented unrun platform checks remain visible. Software gates do not establish router hardware acceptance; maintain the platform limits in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
-The CI workflow checks branch pushes and pull requests. Only a new `vMAJOR.MINOR.PATCH-rc.N` or `vMAJOR.MINOR.PATCH` tag, or a manual workflow run on that existing tag, can publish. Leading-zero version fields, other prerelease labels and build metadata are refused. The publication job depends on successful checks for the same commit, requires the tag to equal `v` plus `VERSION`, and refuses commits outside `main`, moved tags and existing releases. A normal push to `main` does not publish.
+The CI workflow checks `main` (stable line), `release-candidate` (candidate line) and pull requests. Only a new `vMAJOR.MINOR.PATCH-rc.N` or `vMAJOR.MINOR.PATCH` tag, or a manual workflow run on that existing tag, can publish. Leading-zero version fields, other prerelease labels and build metadata are refused. The publication job depends on successful checks for the same commit, derives the version from the exact tag on the checked-out commit, and refuses moved tags and existing releases. RC tags must belong to `origin/release-candidate`; stable tags must belong to `origin/main`. A normal branch push does not publish.
 
 ## One-time repository setup
 
@@ -18,9 +18,9 @@ Enable [GitHub release immutability](https://docs.github.com/en/code-security/ho
 
 ## Publish a version
 
-1. Update `VERSION` and maintained configuration/docs in a reviewed commit. Merge the workflow and source into `main` before tagging.
+1. Develop and test candidates on `release-candidate`. Push that branch before creating a new `vX.Y.Z-rc.N` tag for its tested commit. After software acceptance and review of the declared platform limits, merge the accepted candidate into `main` and create `vX.Y.Z` there. Hardware qualification is a separate explicit gate before claiming verified device support. Release numbers live in immutable tags; there is no version file to edit. The initial Release and RC artifacts use the same tested source baseline with separate immutable tags; platform support stays experimental until its documented hardware acceptance is complete.
 2. Run the software gates: source/tests/vet, race, Staticcheck, Govulncheck, ShellCheck, JS, fuzz smoke, Linux runtime integration, container installer/firewall tests, all component cross-builds and signed release fixture verification. CI repeats these gates for the tag.
-3. Create and push a new tag for the merged commit. Never move an existing release tag. The workflow validates the tag, then builds and verifies signed artifacts.
+3. Create and push a new tag for the tested commit in the appropriate branch. Never move an existing release tag. The workflow validates the tag, then builds and verifies signed artifacts.
 4. The workflow creates a draft with the version-derived prerelease flag, uploads the complete artifact set, downloads it again and verifies signatures, channel binding, sizes and digests before publishing with that same flag and `latest=false`, using the [GitHub CLI release options](https://cli.github.com/manual/gh_release_create). With immutability enabled, publication locks the assets and tag. A failed upload or verification leaves an unpublished draft for inspection; the workflow never replaces assets on retry.
 
 A manual run uses the same gates and requires an existing tag:
@@ -36,14 +36,16 @@ Artifact signing and immutable tags are separate controls. The workflow signs re
 For a local signed build from the intended source commit:
 
 ```sh
-KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
+KRM_RELEASE_TAG=v1.1.0-rc.15 KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
 python3 scripts/verify-release.py release/dist
 
 # KRM_RELEASE_PUBLIC_KEY is reserved for isolated build/test fixtures.
 # Production builds use internal/releasetrust/public.key by default.
 ```
 
-The builder reads `VERSION` directly and derives the publication channel from it. An optional `KRM_RELEASE_CHANNEL` must agree with the version; a mismatched override is refused before signing. `KRM_SOURCE_COMMIT` can identify an isolated source copy; official publication uses the exact tested commit SHA. Existing output is refused to prevent accidental replacement.
+The builder resolves the exact Git release tag at `HEAD` and derives its version/channel. A clean original Git checkout is required; source archives and untagged commits cannot produce a production release. `KRM_RELEASE_TAG` selects the exact tag when multiple release tags identify one commit; the tag must resolve to `HEAD`. An optional `KRM_RELEASE_CHANNEL` must agree with it. `KRM_SOURCE_COMMIT`, when supplied, must equal the actual tagged commit; binaries and SPDX use that Git identity. Existing output is refused to prevent accidental replacement.
+
+`make build` uses an exact tag when unambiguous; dirty builds include a visible `+dirty` suffix, untagged commits report `0.0.0-dev.g<commit>`, and an exported source archive reports `0.0.0-dev.unknown`. Raw `go build` without injected metadata reports `dev`. These are development builds. Signed release publication rejects dirty/unidentified sources. Branches and GitHub `latest` are never download or execution authority; installed updates still use immutable signed release assets.
 
 Five components are built for Linux amd64, arm64, armv7 and mipsle: daemon, UI, CLI, stable launcher and release tool. The native build-host tool signs the manifest and `SHA256SUMS`; cross-compiled binaries are not executed on the build host. The distribution also contains three version-pinned bootstraps, the signed install payload and SPDX inventory. `manifest-rc.json` or `manifest-stable.json` includes the matching channel, `schema_version: 1` and `update_protocol: 1`. Exactly one channel manifest belongs in a release directory. The SPDX inventory lists distributable checksums and production Go modules (currently `go.yaml.in/yaml/v3`, with its MIT and Apache-2.0 portions); it does not claim a complete standard-library source SBOM.
 
@@ -63,4 +65,4 @@ Automatic checks and explicit application are separate operations. Updates requi
 
 Uninstall restores Xray through the live controller before stopping services. A failed restore retains the installation. Configuration, state and release slots are kept unless `--purge` is requested. Purge covers only standard directories, including `/var/lib/kee-route-manager-updates` (under `/opt` on Keenetic); nonstandard `update.install_dir` paths remain for explicit operator handling.
 
-`./scripts/test-release.sh` generates a disposable external signing key and builds/verifies both RC and stable artifact sets plus tamper rejection, using isolated fixture versions. It does not publish tags or releases. `./scripts/test-install.sh` runs only inside a disposable Docker container and exercises core, local-ui and standalone UI installations across the platform wrappers. Its service-manager adapters do not establish systemd/procd or device hardware acceptance. Follow [installation acceptance checks](AGENT_INSTALL.md#8-проверить-и-принять) on authorized hardware separately.
+`./scripts/test-release.sh` generates a disposable external signing key and builds/verifies both RC and stable artifact sets plus tamper rejection, using isolated Git repositories, commits and tags. It checks embedded binary version/commit, bootstraps and SPDX against those disposable identities without a version file. It does not publish tags or releases. `./scripts/test-install.sh` runs only inside a disposable Docker container and exercises core, local-ui and standalone UI installations across the platform wrappers. Its service-manager adapters do not establish systemd/procd or device hardware acceptance. Follow [installation acceptance checks](AGENT_INSTALL.md#8-проверить-и-принять) on authorized hardware separately.
