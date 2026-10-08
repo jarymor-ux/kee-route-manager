@@ -127,6 +127,14 @@ func (m *Manager) checkHealth(ctx context.Context) {
 	}
 	if classification == "healthy" {
 		_ = m.store.UpdateVolatile(update)
+		m.mu.RLock()
+		benchmarking := m.benchmark != nil
+		m.mu.RUnlock()
+		// An admitted test already refreshes reserve evidence. Without caching,
+		// scheduled benchmarks own healthy refreshes, including provider retries.
+		if benchmarking || !m.cfg.Subscriptions.CacheEnabled {
+			return
+		}
 		for _, slot := range m.store.State().Pool {
 			if slot.NodeID != "" && (slot.LastVerifiedAt.IsZero() || time.Since(slot.LastVerifiedAt) >= m.cfg.Health.HotPoolFreshness.Duration) {
 				m.queueBenchmark("hot-pool-refresh")

@@ -6,6 +6,11 @@
 
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
+## 1.1.1 / 1.1.1-rc.1 — 2026-10-08
+
+- Add optional `subscriptions.cache_enabled: false`: download subscriptions fresh for every benchmark, skip cache reads/writes and emergency cache fallback, and let benchmark cadence own downloads instead of independent source polling. Preserve working routing when fresh downloads fail. Existing installations retain the default cache policy.
+- Avoid queuing a redundant healthy hot-pool refresh while a benchmark is already running. In no-cache mode, scheduled testing owns healthy reserve refreshes and provider retries. Preserve explicit source changes and emergency failover/recovery. Configuration defaults and scheduled benchmark intervals remain unchanged.
+
 ## 1.1.0 / 1.1.0-rc.15 — 2026-10-08
 
 Release and RC channels share the tested source baseline; platform support remains experimental until documented hardware acceptance is complete.
