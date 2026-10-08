@@ -1,6 +1,6 @@
 # Breaking changes
 
-## Current: v1.3.0 / v1.3.0-rc.1
+## Current: v1.3.1 / v1.3.1-rc.1
 
 1. A separately installed stable launcher supervises the daemon and, on Keenetic/OpenWrt local-ui installations, the UI. It imports a signed protocol-1 daemon/UI/CLI bundle into private release slots. The launcher, service scripts and configuration schema upgrades require separate maintenance.
 2. The shipped templates use `update.enabled: true` and `check_interval: 30m` to check for new versions automatically every 30 minutes. Applying one requires an explicit UI action or `kee-route-managerctl update-apply`; `auto_apply` must remain false. Discovery and downloads verify the pinned signing key, channel, platform, version and asset hashes.
@@ -42,6 +42,6 @@ Runtime configuration editing is an allowlist rather than unrestricted YAML. It 
 
 Panel hostname/port trials need the separately maintained new launcher. Additional UI SNI certificates are an optional new schema field and cannot be loaded by old UI/launcher binaries; upgrade that parent first and retain a compatible UI config for maintenance rollback. New interactive installs default to fresh subscription downloads and loopback UI, and ask for an explicit LAN bind when remote access is desired. Prepared config and global defaults remain unchanged.
 
-## Workspace UI (v1.3.0)
+## Workspace UI (v1.3.1)
 
 Navigation moves to a desktop sidebar and mobile drawer, retaining the Router/VPN groups and permission-based pages. Settings are organized into basic controls and collapsible advanced groups; hiding dependent fields does not remove their values from revision-checked saves. Panel address changes retain explicit confirmation and the server-owned rollback deadline. This is a static UI update, with no controller configuration/schema or launcher protocol migration. Existing benchmark cadence, subscription cache policy and panel addressing are retained.

@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-## 1.3.0 / 1.3.0-rc.1 — 2026-10-09
+## 1.3.1 / 1.3.1-rc.1 — 2026-10-09
 
 - Rework the workspace around a desktop sidebar and mobile drawer with Router/VPN submenus, a visible page title and connection status. Use compact router KPIs, prominent graphs and calmer dark/light surfaces with readable semantic colors and reduced-motion support.
 - Split basic and advanced settings, retain every hidden configuration value, and show dependent speed/cache controls only when relevant. Keep revision-checked save/reconnect behavior and an accessible sticky save bar.
 - Guide local panel address changes through preparation, verification and explicit confirmation, showing the open and candidate addresses, contextual certificate trust and the server-owned rollback countdown.
 - Add node source/status filters, latency/speed sorting, mobile details and graph windows for 15 minutes or one hour, with keyboard/touch/pointer sample inspection. Retain gaps and unavailable samples.
-- Preserve focused controls during ordinary polling, pause background-page refreshes and recheck access when returning. Add modal keyboard focus containment, Escape dismissal for editors and focus restoration. Keep immediate permission-revocation fences.
+- Apply explicit save/delete/toggle/selection results immediately while restoring keyboard focus. Preserve focused controls during ordinary polling, pause background-page refreshes and recheck access when returning. Add modal keyboard focus containment, Escape dismissal for editors and focus restoration. Keep immediate permission-revocation fences.
 - Separate static JavaScript by workspace, charts, dialogs, settings and address lifecycle, extend UI regressions and include all scripts in the offline static cache. No runtime dependencies or configuration-default changes.
 
 ## 1.2.1 / 1.2.1-rc.1 — 2026-10-08

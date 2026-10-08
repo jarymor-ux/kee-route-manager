@@ -9,6 +9,23 @@ function updateWorkspaceHTML(element, html, force = false) {
   return true;
 }
 
+// Changed action rows return keyboard focus to the same
+// keyed control. Selectors are fixed by callers; router/user IDs are compared
+// as data values, never interpolated into a CSS selector.
+function captureWorkspaceFocus(element, controls, key) {
+  const focused = document.activeElement;
+  if (!focused || !element.contains?.(focused)) return null;
+  return { selector: controls.find((selector) => focused.classList.contains(selector.slice(1))), value: focused.dataset[key] };
+}
+function restoreWorkspaceFocus(element, focused, key, fallback) {
+  if (!focused) return;
+  const target = focused.selector
+    ? [...(element.querySelectorAll?.(focused.selector) || [])].find((control) => control.dataset[key] === focused.value)
+    : null;
+  const next = target || $(fallback);
+  if (next && !next.disabled && !next.closest?.('.hidden')) next.focus();
+}
+
 function nodeState(node) {
   return node.measurement?.healthy ? 'healthy' : node.measurement?.checked_at ? 'error' : 'unchecked';
 }
@@ -98,20 +115,42 @@ function renderMetrics(metrics) {
     : '<div class="sub">Данные о портах недоступны</div>';
 }
 
+function renderClientCells(client) {
+  return [
+    `<strong>${esc(client.name || client.hostname || 'Без имени')}</strong>`,
+    `${esc(client.ip || '—')}<br><span class="muted">${esc(client.mac)}</span>`,
+    `${client.active ? badge('В сети', 'ok') : badge('Не в сети')} ${esc(client.link || client.ssid || '')}`,
+    esc(client.connection_policy || '—'),
+  ];
+}
+function patchClientMetadata(body, clients) {
+  const byMAC = new Map(clients.map((client) => [String(client.mac || ''), client]));
+  [...(body.querySelectorAll?.('tr[data-client-mac]') || [])].forEach((row) => {
+    const client = row.dataset.clientMac ? byMAC.get(row.dataset.clientMac) : null;
+    if (!client) return; // Membership changes wait until the native control closes.
+    renderClientCells(client).forEach((html, index) => {
+      const cell = row.cells[index];
+      if (cell && cell.innerHTML !== html) cell.innerHTML = html;
+    });
+    row.querySelector?.('.policy')?.setAttribute('aria-label', `Политика устройства ${client.name || client.hostname || client.mac}`);
+  });
+}
+
 function renderClients(clients, force = false) {
   clientsData = clients;
   const capabilities = statusData?.capabilities || {};
-  const html = clients.map((client) => `<tr>
-    <td><strong>${esc(client.name || client.hostname || 'Без имени')}</strong></td>
-    <td>${esc(client.ip || '—')}<br><span class="muted">${esc(client.mac)}</span></td>
-    <td>${client.active ? badge('В сети', 'ok') : badge('Не в сети')} ${esc(client.link || client.ssid || '')}</td>
-    <td>${esc(client.connection_policy || '—')}</td>
+  const html = clients.map((client) => `<tr data-client-mac="${esc(client.mac || '')}">
+    ${renderClientCells(client).map((cell) => `<td>${cell}</td>`).join('')}
     <td>
       ${capabilities.wake_on_lan && can('router.wake') ? `<button class="ghost compact wake" data-mac="${esc(client.mac)}">WOL</button>` : ''}
       ${capabilities.client_policy && can('router.policy') ? `<select class="policy" aria-label="Политика устройства ${esc(client.name || client.hostname || client.mac)}" data-mac="${esc(client.mac)}"><option value="">Политика…</option><option value="xkeen">XKeen</option><option value="default">По умолчанию</option></select>` : ''}
     </td>
   </tr>`).join('') || '<tr><td colspan="5" class="muted">Клиенты недоступны</td></tr>';
-  if (!updateWorkspaceHTML($('#clients-body'), html, force)) return;
+  const body = $('#clients-body');
+  if (!updateWorkspaceHTML(body, html, force)) {
+    if (!force && body.contains?.(document.activeElement)) patchClientMetadata(body, clients);
+    return;
+  }
   document.querySelectorAll('.wake').forEach((button) => {
     button.onclick = () => action('/api/v1/actions/wake', { mac: button.dataset.mac }, 'Wake-on-LAN отправлен');
   });
