@@ -39,6 +39,8 @@ let pendingUpdate = null;
 let updateState = null;
 let updateStatusLoading = false;
 let updateChecking = false;
+let updateSwitching = false;
+let updateRequestGeneration = 0;
 let updateSubmitting = false;
 let authenticated = false;
 let documentVersion = '';
@@ -82,6 +84,9 @@ function errorMessage(data, status) {
 function showLogin() {
   authenticated = false;
   authGeneration++;
+  updateRequestGeneration++;
+  updateChecking = false;
+  updateSwitching = false;
   csrf = '';
   permissions = new Set();
   currentUser = null;
@@ -526,38 +531,80 @@ async function runDiagnostics() {
   }
 }
 
+function checkMatchesChannel(check, state = updateState) {
+  if (!check) return false;
+  // Older launchers have no channel metadata and do not offer switching.
+  if (!state?.channel_switch_supported && !state?.channel) return true;
+  return (check.channel || check.manifest?.channel) === state?.channel;
+}
+
 async function checkUpdate() {
-  if (updateChecking || updateSubmitting || updateState?.applying) return;
+  if (!authenticated || !can('updates.manage') || updateChecking || updateSwitching || updateSubmitting || updateState?.applying) return;
+  const generation = updateRequestGeneration;
   updateChecking = true;
   renderUpdate();
   try {
     showTool('Проверка подписанного манифеста…');
-    pendingUpdate = await api('/api/v1/update/check');
+    const check = await api('/api/v1/update/check');
+    if (generation !== updateRequestGeneration) return;
+    pendingUpdate = checkMatchesChannel(check) ? check : null;
+    if (!pendingUpdate) { showTool('Канал обновлений изменился. Повторите проверку.'); return; }
     if (pendingUpdate.stage_supported) updateState = { ...updateState, launcher: true, enabled: true, last_error: '' };
     showTool(pendingUpdate.available
       ? `Доступна версия ${pendingUpdate.latest_version}. Текущая: ${pendingUpdate.current_version}.`
-      : `Установлена актуальная версия ${pendingUpdate.current_version}.`);
+      : noNewerUpdateMessage(pendingUpdate));
     if (pendingUpdate.available && !pendingUpdate.stage_supported) {
       showTool(`Доступна версия ${pendingUpdate.latest_version}. Для установки нужен совместимый launcher и подписанный пакет обновления.`);
     }
   } catch (error) {
+    if (generation !== updateRequestGeneration) return;
     pendingUpdate = null;
     showTool(`Ошибка проверки обновления: ${error.message}`);
   } finally {
-    updateChecking = false;
-    renderUpdate();
+    if (generation === updateRequestGeneration) { updateChecking = false; renderUpdate(); }
   }
 }
 
+async function switchUpdateChannel(channel) {
+  if (!authenticated || !can('updates.manage') || !updateState?.channel_switch_supported || updateSwitching || updateSubmitting || updateState?.applying || !['rc', 'stable'].includes(channel) || channel === updateState.channel) { renderUpdate(); return; }
+  const generation = ++updateRequestGeneration;
+  updateSwitching = true;
+  updateChecking = false;
+  pendingUpdate = null;
+  showTool('Сохранение канала обновлений…');
+  renderUpdate();
+  try {
+    const state = await api('/api/v1/update/channel', { method: 'POST', body: JSON.stringify({ channel }) });
+    if (generation !== updateRequestGeneration) return;
+    updateState = state;
+    pendingUpdate = checkMatchesChannel(state.check, state) ? state.check : null;
+    showTool(`Выбран канал ${state.channel === 'stable' ? 'Release' : 'Release Candidate (RC)'}. Установленная версия не изменена.`);
+    toast('Канал обновлений сохранён');
+  } catch (error) {
+    if (generation === updateRequestGeneration) { showTool(`Ошибка смены канала: ${error.message}`); toast(error.message, true); }
+  } finally {
+    if (generation === updateRequestGeneration) { updateSwitching = false; renderUpdate(); }
+  }
+}
+
+function noNewerUpdateMessage(check) {
+  return `Более новой версии в выбранном канале нет. Установлена ${check.current_version || 'неизвестная версия'}.${check.latest_version ? ` Последняя опубликованная: ${check.latest_version}.` : ''}`;
+}
+
 function renderUpdate() {
-  const busy = updateSubmitting || Boolean(updateState?.applying);
-  const installable = authenticated && can('updates.manage') && pendingUpdate?.available && pendingUpdate?.stage_supported;
+  const busy = updateSubmitting || updateSwitching || Boolean(updateState?.applying);
+  const channelSupported = Boolean(updateState?.channel_switch_supported);
+  $('#update-channel').value = ['rc', 'stable'].includes(updateState?.channel) ? updateState.channel : '';
+  $('#update-channel').disabled = !authenticated || !can('updates.manage') || !channelSupported || busy;
+  const unavailableReasons = { disabled: 'Обновления отключены', manual_urls: 'Канал задан URL манифеста; переключение доступно при поиске релизов GitHub' };
+  $('#update-channel-hint').textContent = updateSwitching ? 'Сохранение канала…' : !channelSupported ? unavailableReasons[updateState?.channel_switch_reason] || 'Для смены канала требуется обновить стабильный launcher' : `Выбран канал ${updateState.channel === 'stable' ? 'Release' : 'Release Candidate (RC)'}`;
+  const installable = authenticated && can('updates.manage') && checkMatchesChannel(pendingUpdate) && pendingUpdate?.available && pendingUpdate?.stage_supported;
   $('#update-apply').classList.toggle('hidden', !installable);
   $('#update-apply').disabled = !installable || busy || updateChecking || updateState?.launcher === false || updateState?.enabled === false;
   $('#update-check').disabled = busy || updateChecking;
   const phases = { downloading: 'Загрузка обновления', preparing: 'Подготовка обновления', trial: 'Проверка новой версии', activating: 'Запуск новой версии' };
   const results = { updated: 'Обновление установлено', installed: 'Установка завершена', rolled_back: 'Восстановлена предыдущая версия' };
-  let text = updateChecking
+  let text = updateSwitching ? 'Сохранение канала обновлений…' : updateChecking
     ? 'Проверка обновлений…'
     : updateState?.reconnecting && updateState?.applying
       ? 'Проверка новой версии… Панель временно переподключается.'
@@ -566,22 +613,25 @@ function renderUpdate() {
   if (!text && updateState?.enabled === false) text = 'Обновления отключены';
   if (!text && pendingUpdate) text = pendingUpdate.available
     ? `Доступна версия ${pendingUpdate.latest_version}${pendingUpdate.stage_supported ? ' · установка вручную' : ' · установка через launcher недоступна'}`
-    : `Установлена актуальная версия ${pendingUpdate.current_version}`;
+    : noNewerUpdateMessage(pendingUpdate);
   if (!text && updateState?.last_result) text = results[updateState.last_result] || updateState.last_result;
   if (!text && updateState?.current_version) text = `Установлена версия ${updateState.current_version}`;
   $('#update-status').textContent = text || 'Статус обновлений пока неизвестен';
 }
 
 async function loadUpdateStatus() {
-  if (!authenticated || !can('updates.manage') || updateStatusLoading) return;
+  if (!authenticated || !can('updates.manage') || updateStatusLoading || updateSwitching) return;
   updateStatusLoading = true;
+  const generation = updateRequestGeneration;
   try {
     const state = await api('/api/v1/update/status');
-    if (!authenticated) return;
+    if (!authenticated || generation !== updateRequestGeneration) return;
+    if (updateState?.channel && state.channel && state.channel !== updateState.channel) { updateRequestGeneration++; updateChecking = false; }
     updateState = state;
-    if (!updateChecking) pendingUpdate = state.check || null;
+    if (!updateChecking) pendingUpdate = checkMatchesChannel(state.check, state) ? state.check : null;
     renderUpdate();
   } catch (error) {
+    if (generation !== updateRequestGeneration) return;
     if (updateState?.applying) {
       updateState = { ...updateState, reconnecting: true, last_error: '' };
     } else {
@@ -594,13 +644,14 @@ async function loadUpdateStatus() {
 }
 
 async function applyUpdate() {
-  if (!authenticated || !can('updates.manage') || !pendingUpdate?.available || !pendingUpdate?.stage_supported || updateChecking || updateSubmitting || updateState?.applying || updateState?.launcher === false || updateState?.enabled === false) return;
+  if (!authenticated || !can('updates.manage') || !checkMatchesChannel(pendingUpdate) || !pendingUpdate?.available || !pendingUpdate?.stage_supported || updateChecking || updateSwitching || updateSubmitting || updateState?.applying || updateState?.launcher === false || updateState?.enabled === false) return;
   const version = pendingUpdate.latest_version;
+  const channel = updateState?.channel_switch_supported ? updateState.channel : undefined;
   if (!confirm(`Установить Kee Route Manager ${version}? Панель управления кратковременно переподключится.`)) return;
   updateSubmitting = true;
   renderUpdate();
   try {
-    await api('/api/v1/update/apply', { method: 'POST', body: JSON.stringify({ version }) });
+    await api('/api/v1/update/apply', { method: 'POST', body: JSON.stringify({ version, channel }) });
     updateState = { ...updateState, launcher: true, enabled: true, applying: true, reconnecting: false, phase: 'downloading', last_error: '' };
     toast('Установка обновления запущена');
   } catch (error) {
@@ -679,6 +730,7 @@ $('#system-logs').onclick = loadSystemLogs;
 $('#diagnostics').onclick = runDiagnostics;
 $('#update-check').onclick = checkUpdate;
 $('#update-apply').onclick = applyUpdate;
+$('#update-channel').onchange = () => switchUpdateChannel($('#update-channel').value);
 
 $('#add-user').onclick = () => openUserEditor();
 $('#user-cancel').onclick = clearUserEditor;
@@ -711,7 +763,7 @@ function acceptSession(data) {
     if (can('router.clients')) renderClients(clientsData);
     if (!can('vpn.control')) { renderPool(statusData?.state || {}); }
     if (!can('router.system')) { $('#tool-output').textContent = ''; $('#tool-output').classList.add('hidden'); }
-    if (!can('updates.manage')) { pendingUpdate = null; updateState = null; renderUpdate(); }
+    if (!can('updates.manage')) { updateRequestGeneration++; updateChecking = false; updateSwitching = false; pendingUpdate = null; updateState = null; renderUpdate(); }
     applyPermissions();
     if (statusData) renderStatus(statusData);
     if (!can(pagePermissions[activePage] || '')) navigate(activePage, false);

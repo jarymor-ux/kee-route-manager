@@ -585,7 +585,109 @@ async function errorTranslationChecks() {
   await assert.rejects(() => h.run("api('/api/v1/users/save',{method:'POST'})"), /откройте редактор заново/);
 }
 
+async function updateChannelChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run("authenticated=true;permissions=new Set(allPermissions);csrf='channel-csrf'");
+  const oldCheck = {channel:'rc',available:true,stage_supported:true,current_version:'2.0.0-rc.2',latest_version:'2.0.0-rc.3'};
+  const rc = {channel:'rc',channel_switch_supported:true,launcher:true,enabled:true,applying:false,phase:'idle',current_version:'2.0.0-rc.2',check:oldCheck};
+  const stable = {...rc,channel:'stable',check:undefined};
+  h.respond({status:200,ok:true,data:rc});
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.select('#update-channel').value,'rc');
+  assert.equal(h.select('#update-channel').disabled,false);
+  assert.equal(h.select('#update-apply').disabled,false);
+
+  let finishCheck, finishStatus, finishSwitch;
+  h.respond((url) => new Promise((resolve) => {
+    if (url.endsWith('/check')) finishCheck=resolve;
+    else if (url.endsWith('/status')) finishStatus=resolve;
+    else if (url.endsWith('/channel')) finishSwitch=resolve;
+    else throw new Error(`unexpected request ${url}`);
+  }));
+  const check = h.run('checkUpdate()');
+  const status = h.run('loadUpdateStatus()');
+  h.select('#update-channel').value='stable';
+  const switching = h.select('#update-channel').onchange();
+  await new Promise(setImmediate);
+  const request=h.requests.filter((item)=>item.url.endsWith('/channel')).at(-1);
+  assert.equal(request.options.method,'POST');
+  assert.equal(request.options.headers['X-KRM-CSRF'],'channel-csrf');
+  assert.deepEqual(JSON.parse(request.options.body),{channel:'stable'});
+  assert.equal(h.select('#update-channel').disabled,true,'channel mutation cannot overlap');
+  assert.equal(h.select('#update-check').disabled,true);
+  assert.equal(h.run('pendingUpdate'),null,'switch immediately removes the previously discovered release');
+  const count=h.requests.length;
+  await h.run("switchUpdateChannel('rc');checkUpdate();applyUpdate()");
+  assert.equal(h.requests.length,count,'check/apply/second switch are blocked while switching');
+  finishSwitch({status:200,ok:true,data:stable});
+  await switching;
+  finishCheck({status:200,ok:true,data:oldCheck});
+  finishStatus({status:200,ok:true,data:rc});
+  await Promise.all([check,status]);
+  assert.equal(h.run('updateState.channel'),'stable','stale poll cannot undo saved channel');
+  assert.equal(h.run('pendingUpdate'),null,'old-channel check response is discarded');
+  assert.equal(h.select('#update-channel').value,'stable');
+  assert.equal(h.run('updateState.current_version'),'2.0.0-rc.2','channel change does not change installed version');
+  assert(h.select('#tool-output').textContent.includes('Установленная версия не изменена'));
+  assert(!h.requests.some((item)=>item.url.endsWith('/apply')),'channel switching never installs');
+
+  h.respond({status:200,ok:true,data:{...stable,check:oldCheck}});
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.run('pendingUpdate'),null,'status with old-channel cached check does not offer it');
+  assert.equal(h.select('#update-apply').classList.contains('hidden'),true);
+  const releaseCheck={...oldCheck,channel:'stable',latest_version:'2.0.0'};
+  h.respond({status:200,ok:true,data:releaseCheck});
+  await h.run('checkUpdate()');
+  assert.equal(h.run('pendingUpdate.latest_version'),'2.0.0');
+  assert.equal(h.select('#update-apply').disabled,false,'new channel supports a separately requested install');
+  h.respond({status:202,ok:true,data:{accepted:true}});
+  await h.run('applyUpdate()');
+  const applyRequest=h.requests.filter((item)=>item.url.endsWith('/apply')).at(-1);
+  assert.deepEqual(JSON.parse(applyRequest.options.body),{version:'2.0.0',channel:'stable'},'channel-aware install binds confirmation to discovered channel');
+  assert.equal(h.select('#update-channel').disabled,true);
+
+  h.respond({status:200,ok:true,data:{...stable,applying:true,phase:'trial'}});
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.select('#update-channel').disabled,true,'installation prevents channel switching');
+  const applyingCount=h.requests.length;
+  await h.run("switchUpdateChannel('rc')");
+  assert.equal(h.requests.length,applyingCount);
+  for (const unsupported of [{launcher:true,current_version:'old'}, {...stable,channel_switch_supported:false}]) {
+    h.respond({status:200,ok:true,data:unsupported});
+    await h.run('loadUpdateStatus()');
+    assert.equal(h.select('#update-channel').disabled,true);
+    assert.equal(h.select('#update-channel-hint').textContent,'Для смены канала требуется обновить стабильный launcher');
+    const before=h.requests.length;
+    await h.run("switchUpdateChannel('rc')");
+    assert.equal(h.requests.length,before,'legacy/custom discovery cannot mutate channel');
+  }
+  for (const [reason, hint] of [['disabled','Обновления отключены'],['manual_urls','Канал задан URL манифеста; переключение доступно при поиске релизов GitHub']]) {
+    h.respond({status:200,ok:true,data:{...stable,channel_switch_supported:false,channel_switch_reason:reason}});
+    await h.run('loadUpdateStatus()');
+    assert.equal(h.select('#update-channel-hint').textContent,hint);
+    assert.equal(h.select('#update-channel').disabled,true);
+  }
+  const olderCheck={available:false,stage_supported:true,current_version:'2.0.0-rc.2',latest_version:'1.0.0',manifest:{channel:'stable'}};
+  h.respond({status:200,ok:true,data:{...stable,check:olderCheck}});
+  await h.run('loadUpdateStatus()');
+  assert.equal(h.run('pendingUpdate.latest_version'),'1.0.0','manifest channel supports mixed-format checks');
+  assert(h.select('#update-status').textContent.includes('Более новой версии в выбранном канале нет'));
+  assert(h.select('#update-status').textContent.includes('Установлена 2.0.0-rc.2'));
+  assert(h.select('#update-status').textContent.includes('Последняя опубликованная: 1.0.0'));
+  assert.equal(h.select('#update-apply').classList.contains('hidden'),true,'older latest release is never installable');
+  h.respond({status:200,ok:true,data:olderCheck});
+  await h.run('checkUpdate()');
+  assert(h.select('#tool-output').textContent.includes('Более новой версии в выбранном канале нет'));
+  h.run("updateState={channel:'stable',channel_switch_supported:true};acceptSession({permissions:['router.view']})");
+  assert.equal(h.select('#update-channel').disabled,true,'revoked update permissions disable channel selector');
+  const deniedCount=h.requests.length;
+  await h.run("switchUpdateChannel('rc')");
+  assert.equal(h.requests.length,deniedCount);
+}
+
 async function main() {
+  await updateChannelChecks();
   await errorTranslationChecks();
   await navigationPermissionChecks();
   await dashboardAndOperationChecks();

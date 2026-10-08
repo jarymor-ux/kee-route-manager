@@ -156,6 +156,7 @@ func TestEveryNetworkRouteChecksGranularPermissions(t *testing.T) {
 		{"GET", "/api/v1/update/check", "updates.manage", ""},
 		{"GET", "/api/v1/update/status", "updates.manage", ""},
 		{"POST", "/api/v1/update/apply", "updates.manage", ""},
+		{"POST", "/api/v1/update/channel", "updates.manage", ""},
 		{"GET", "/api/v1/users", "users.manage", ""},
 		{"POST", "/api/v1/users/save", "users.manage", ""},
 		{"POST", "/api/v1/users/delete", "users.manage", ""},

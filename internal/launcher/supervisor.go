@@ -26,31 +26,36 @@ import (
 )
 
 type Status struct {
-	Enabled         bool                `json:"enabled"`
-	Launcher        bool                `json:"launcher"`
-	CurrentVersion  string              `json:"current_version"`
-	PreviousVersion string              `json:"previous_version,omitempty"`
-	Phase           string              `json:"phase"`
-	Applying        bool                `json:"applying"`
-	CheckedAt       time.Time           `json:"checked_at,omitempty"`
-	LastError       string              `json:"last_error,omitempty"`
-	LastResult      string              `json:"last_result,omitempty"`
-	Check           *update.CheckResult `json:"check,omitempty"`
+	Channel                string              `json:"channel"`
+	ChannelSwitchSupported bool                `json:"channel_switch_supported"`
+	ChannelSwitchReason    string              `json:"channel_switch_reason,omitempty"`
+	Enabled                bool                `json:"enabled"`
+	Launcher               bool                `json:"launcher"`
+	CurrentVersion         string              `json:"current_version"`
+	PreviousVersion        string              `json:"previous_version,omitempty"`
+	Phase                  string              `json:"phase"`
+	Applying               bool                `json:"applying"`
+	CheckedAt              time.Time           `json:"checked_at,omitempty"`
+	LastError              string              `json:"last_error,omitempty"`
+	LastResult             string              `json:"last_result,omitempty"`
+	Check                  *update.CheckResult `json:"check,omitempty"`
 }
 
 type supervisor struct {
-	c          config.Config
-	configFile string
-	ctx        context.Context
-	mu         sync.Mutex // record and public status
-	rec        record
-	status     Status
-	closing    bool
-	transition sync.Mutex // processes and every version transition
-	checkMu    sync.Mutex
-	daemon, ui *child
-	wg         sync.WaitGroup
-	output     io.Writer
+	c               config.Config
+	configFile      string
+	ctx             context.Context
+	mu              sync.Mutex // record and public status
+	rec             record
+	status          Status
+	closing         bool
+	channel         string
+	channelRevision uint64
+	transition      sync.Mutex // processes and every version transition
+	checkMu         sync.Mutex
+	daemon, ui      *child
+	wg              sync.WaitGroup
+	output          io.Writer
 }
 
 // Serve is the only process supervisor. Mutable controller state remains owned
@@ -83,6 +88,13 @@ func Serve(ctx context.Context, configFile string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s := &supervisor{c: c, configFile: configFile, ctx: ctx, rec: rec, output: log.Writer()}
+	s.channel = c.Update.Channel
+	if c.Update.GitHubRepository != "" {
+		s.channel, err = loadChannel(c.Update.InstallDir, c.Update.Channel)
+		if err != nil {
+			return err
+		}
+	}
 	s.status = Status{Enabled: c.Update.Enabled, Launcher: true, Phase: "idle"}
 	if rec.Phase == "trial" {
 		rec.Candidate, rec.CandidateDigest, rec.Nonce, rec.Phase = "", "", "", "committed"
@@ -179,6 +191,13 @@ func (s *supervisor) snapshot() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.status
+	st.Channel = s.channelLocked()
+	st.ChannelSwitchSupported = s.c.Update.Enabled && s.c.Update.GitHubRepository != ""
+	if !s.c.Update.Enabled {
+		st.ChannelSwitchReason = "disabled"
+	} else if s.c.Update.GitHubRepository == "" {
+		st.ChannelSwitchReason = "manual_urls"
+	}
 	st.CurrentVersion, st.PreviousVersion = s.rec.Active, s.rec.Previous
 	if st.LastError == "" {
 		st.LastError = s.rec.LastError
@@ -197,7 +216,7 @@ func (s *supervisor) setPhase(phase string, err error) {
 	}
 }
 func (s *supervisor) start(version, digest, nonce string) error {
-	rel, err := update.VerifyRelease(s.c.Update.InstallDir, version, s.c.Update.PublicKey, s.c.Update.Channel)
+	rel, err := update.VerifyInstalledRelease(s.c.Update.InstallDir, version, s.c.Update.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -227,12 +246,15 @@ func (s *supervisor) stop() error {
 func (s *supervisor) check(ctx context.Context) (update.CheckResult, error) {
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
-	current := s.record().Active
-	r, err := update.NewForConfig(s.c, current).Check(ctx)
+	s.mu.Lock()
+	current, revision := s.rec.Active, s.channelRevision
+	c := s.channelConfigLocked()
+	s.mu.Unlock()
+	r, err := update.NewForConfig(c, current).Check(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.rec.Active != current {
-		return update.CheckResult{}, errors.New("active version changed during discovery; check again")
+	if s.rec.Active != current || revision != s.channelRevision {
+		return update.CheckResult{}, errors.New("version or channel changed during discovery; check again")
 	}
 	s.status.CheckedAt = time.Now().UTC()
 	if err != nil {
@@ -269,6 +291,7 @@ func reply(w http.ResponseWriter, status int, value any) {
 }
 func (s *supervisor) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/channel", s.changeChannel)
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			w.WriteHeader(405)
@@ -303,6 +326,7 @@ func (s *supervisor) handler() http.Handler {
 		}
 		var input *struct {
 			Version string `json:"version"`
+			Channel string `json:"channel,omitempty"`
 		}
 		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 		d.DisallowUnknownFields()
@@ -311,6 +335,11 @@ func (s *supervisor) handler() http.Handler {
 			return
 		}
 		s.mu.Lock()
+		if input.Channel != "" && input.Channel != s.channelLocked() {
+			s.mu.Unlock()
+			reply(w, 409, map[string]string{"error": "update channel changed; check again"})
+			return
+		}
 		if s.closing || s.ctx.Err() != nil {
 			s.mu.Unlock()
 			reply(w, 503, map[string]string{"error": "launcher is stopping"})
@@ -325,16 +354,24 @@ func (s *supervisor) handler() http.Handler {
 		s.status.Phase = "downloading"
 		s.status.LastError = ""
 		s.wg.Add(1)
+		c := s.channelConfigLocked()
 		s.mu.Unlock()
 		// Queue only. Waiting for preparation here deadlocks the daemon's mutation
 		// admission lock while it proxies this request.
-		go func() { defer s.wg.Done(); s.apply(input.Version) }()
+		go func() { defer s.wg.Done(); s.applyConfig(input.Version, c) }()
 		reply(w, 202, map[string]bool{"accepted": true})
 	})
 	return mux
 }
 
 func (s *supervisor) apply(expected string) {
+	s.mu.Lock()
+	c := s.channelConfigLocked()
+	s.mu.Unlock()
+	s.applyConfig(expected, c)
+}
+
+func (s *supervisor) applyConfig(expected string, c config.Config) {
 	defer func() { s.mu.Lock(); s.status.Applying = false; s.mu.Unlock() }()
 	s.transition.Lock()
 	defer s.transition.Unlock()
@@ -343,7 +380,7 @@ func (s *supervisor) apply(expected string) {
 		return
 	}
 	old := s.record()
-	release, err := update.NewForConfig(s.c, old.Active).Stage(s.ctx)
+	release, err := update.NewForConfig(c, old.Active).Stage(s.ctx)
 	if err != nil {
 		s.setPhase("failed", err)
 		return

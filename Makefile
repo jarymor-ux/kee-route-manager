@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+BUILD_VERSION := $(shell cat VERSION)
 .PHONY: fmt test vet check build release cross-build clean
 fmt:
 	gofmt -w $$(find cmd internal -name '*.go' -type f)
@@ -10,7 +11,7 @@ check:
 	./scripts/check.sh
 build:
 	mkdir -p dist
-	@for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl kee-route-manager-launcher krm-release-tool; do CGO_ENABLED=0 go build -trimpath -o dist/$$component ./cmd/$$component || exit; done
+	@for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl kee-route-manager-launcher krm-release-tool; do CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=$(BUILD_VERSION)" -o dist/$$component ./cmd/$$component || exit; done
 release:
 	./scripts/build-release.sh
 cross-build:

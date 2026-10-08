@@ -13,9 +13,19 @@ cd "$WORK/source"
 go build -o "$WORK/tool" ./cmd/krm-release-tool
 "$WORK/tool" keygen --public "$WORK/public" --private "$WORK/private"
 export KRM_RELEASE_PUBLIC_KEY="$WORK/public"
-KRM_RELEASE_PRIVATE_KEY="$WORK/private" OUTPUT_DIR="$WORK/output" ./scripts/build-release.sh
-python3 scripts/verify-release.py "$WORK/output/dist"
-# Change a published file: verifier must reject it even though signatures remain valid.
-printf tampered >> "$WORK/output/dist/kee-route-manager-ui-linux-amd64"
-if python3 scripts/verify-release.py "$WORK/output/dist"; then echo 'tampering was accepted' >&2; exit 1; fi
-printf 'Signed release fixture and tamper rejection passed.\n'
+# Build both channel shapes with real cross-compiled components. Isolated fixture
+# versions never create tags, upload releases, or alter repository VERSION.
+source_version=$(tr -d '[:space:]' < VERSION)
+source_channel=$(python3 scripts/release_channel.py "$source_version")
+if [[ "$source_channel" == rc ]]; then opposite_version=9.9.9; else opposite_version=9.9.9-rc.1; fi
+for fixture_version in "$source_version" "$opposite_version"; do
+ printf '%s\n' "$fixture_version" > VERSION
+ channel=$(python3 scripts/release_channel.py "$fixture_version")
+ output="$WORK/output-$channel"
+ KRM_RELEASE_CHANNEL="$channel" KRM_RELEASE_PRIVATE_KEY="$WORK/private" OUTPUT_DIR="$output" ./scripts/build-release.sh
+ python3 scripts/verify-release.py "$output/dist"
+ # Change a file: verifier must reject it even though signatures remain valid.
+ printf tampered >> "$output/dist/kee-route-manager-ui-linux-amd64"
+ if python3 scripts/verify-release.py "$output/dist"; then echo 'tampering was accepted' >&2; exit 1; fi
+done
+printf 'Both signed release channels and tamper rejection passed.\n'

@@ -132,6 +132,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/update/check", s.protect(s.updateCheck, false))
 	mux.HandleFunc("/api/v1/update/status", s.protect(s.updateStatus, false))
 	mux.HandleFunc("/api/v1/update/apply", s.protect(s.updateApply, true))
+	mux.HandleFunc("/api/v1/update/channel", s.protect(s.updateChannel, true))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	return s.security(mux)
 }
@@ -169,7 +170,7 @@ func (s *Server) security(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), auditContextKey{}, audit))
 		next.ServeHTTP(aw, r)
 		if r.Method == http.MethodPost && aw.status >= 200 && aw.status < 300 && audit.actor != "" &&
-			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || r.URL.Path == "/api/v1/update/apply") {
+			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || r.URL.Path == "/api/v1/update/apply" || r.URL.Path == "/api/v1/update/channel") {
 			if manager, ok := s.mgr.(interface{ RecordAudit(event.Event) }); ok {
 				manager.RecordAudit(event.Event{Level: "info", Type: "api.action", Message: "Control action accepted", OperationID: audit.operation, Fields: map[string]any{"actor_id": audit.actor, "request_id": id, "path": r.URL.Path, "status": aw.status, "operation_id": audit.operation}})
 			}
@@ -582,6 +583,7 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request, _ auth.Sess
 	}
 	var q *struct {
 		Version string `json:"version,omitempty"`
+		Channel string `json:"channel,omitempty"`
 	}
 	if e := decodeBody(w, r, &q); e != nil {
 		return
@@ -601,6 +603,29 @@ func (s *Server) updateStatus(w http.ResponseWriter, r *http.Request, _ auth.Ses
 	status, data, err := s.launcherRequest(r.Context(), http.MethodGet, "/status", nil)
 	if err != nil {
 		jsonError(w, 502, "update launcher unavailable")
+		return
+	}
+	writeJSON(w, status, data)
+}
+
+func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	if !s.cfg.Update.Enabled {
+		jsonError(w, 409, "updates disabled")
+		return
+	}
+	var q *struct {
+		Channel string `json:"channel"`
+	}
+	if err := decodeBody(w, r, &q); err != nil {
+		return
+	}
+	if q == nil || q.Channel != "rc" && q.Channel != "stable" {
+		jsonError(w, 400, "invalid update channel")
+		return
+	}
+	status, data, err := s.launcherRequest(r.Context(), http.MethodPost, "/channel", q)
+	if err != nil {
+		jsonError(w, 502, "channel switching requires an available compatible launcher")
 		return
 	}
 	writeJSON(w, status, data)
@@ -694,6 +719,7 @@ func (s *Server) LocalHandler() http.Handler {
 	register("/api/v1/update/check", http.MethodGet, s.updateCheck)
 	register("/api/v1/update/status", http.MethodGet, s.updateStatus)
 	register("/api/v1/update/apply", http.MethodPost, s.updateApply)
+	register("/api/v1/update/channel", http.MethodPost, s.updateChannel)
 	register("/api/v1/actions/restore-xray", http.MethodPost, func(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 		if e := s.mgr.RestoreOriginalXray(r.Context()); e != nil {
 			jsonError(w, 409, "restore rejected")

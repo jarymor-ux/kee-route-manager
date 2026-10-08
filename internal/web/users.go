@@ -40,6 +40,7 @@ var routePermissions = map[string][]string{
 	"/api/v1/update/check":             {"updates.manage"},
 	"/api/v1/update/status":            {"updates.manage"},
 	"/api/v1/update/apply":             {"updates.manage"},
+	"/api/v1/update/channel":           {"updates.manage"},
 	"/api/v1/users":                    {"users.manage"},
 	"/api/v1/users/save":               {"users.manage"},
 	"/api/v1/users/delete":             {"users.manage"},

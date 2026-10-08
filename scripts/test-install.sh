@@ -16,6 +16,7 @@ tar -C "$ROOT" --exclude=.git --exclude=.omx --exclude=release --exclude=dist -c
 cd "$WORK/source"
 case "$(uname -m)" in aarch64) ARCH=arm64;; x86_64) ARCH=amd64;; *) exit 1;; esac
 VERSION=$(tr -d '[:space:]' < VERSION)
+CHANNEL=$(python3 scripts/release_channel.py "$VERSION")
 mkdir dist
 for name in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do
  go build -ldflags "-X main.version=$VERSION" -o "dist/$name-linux-$ARCH" "./cmd/$name"
@@ -29,7 +30,7 @@ cp "$WORK/public" internal/releasetrust/public.key
 cp "$WORK/public" release-public.key
 go build -ldflags "-X main.version=$VERSION" -o "dist/kee-route-managerctl-linux-$ARCH" ./cmd/kee-route-managerctl
 tar -czf dist/release-files.tar.gz configs install release-public.key LICENSE NOTICE
-"$WORK/tool" manifest --version "$VERSION" --base-url "https://github.com/jarymor-ux/kee-route-manager/releases/download/v$VERSION" --dist dist --out dist/manifest-rc.json --private "$WORK/private-key"
+"$WORK/tool" manifest --version "$VERSION" --channel "$CHANNEL" --base-url "https://github.com/jarymor-ux/kee-route-manager/releases/download/v$VERSION" --dist dist --out "dist/manifest-$CHANNEL.json" --private "$WORK/private-key"
 python3 - dist <<'PYSUMS'
 import hashlib,pathlib,sys
 p=pathlib.Path(sys.argv[1])
@@ -64,7 +65,7 @@ der=bytes.fromhex('302a300506032b6570032100')+raw
 pem='-----BEGIN PUBLIC KEY-----\n'+base64.b64encode(der).decode()+'\n-----END PUBLIC KEY-----'
 template=pathlib.Path('install/bootstrap.sh').read_text()
 for platform in ('linux-systemd','openwrt','keenetic'):
- (work/('bootstrap-'+platform+'.sh')).write_text(template.replace('@VERSION@',version).replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@',pem))
+ (work/('bootstrap-'+platform+'.sh')).write_text(template.replace('@VERSION@',version).replace('@CHANNEL@','rc' if '-rc.' in version else 'stable').replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@',pem))
 PYBOOTSTRAP
 # Disposable service-manager adapters execute the installed service commands.
 # Keenetic uses the actual checked-in supervisor; no real host service is used.

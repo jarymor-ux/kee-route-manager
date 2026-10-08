@@ -75,7 +75,7 @@ func Install(configFile, uiConfig, releaseDir, binDir string) error {
 		}
 		defer listener.Close()
 	}
-	release, err := update.ImportRelease(c.Update.InstallDir, releaseDir, c.Update.PublicKey, c.Update.Channel)
+	release, err := update.ImportSeedRelease(c.Update.InstallDir, releaseDir, c.Update.PublicKey)
 	if err != nil {
 		return err
 	}

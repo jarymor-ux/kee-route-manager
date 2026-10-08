@@ -98,6 +98,75 @@ func assertNoPublishedStage(t *testing.T, root string) {
 	}
 }
 
+func TestInstalledSlotVerificationIsIndependentOfDiscoveryChannel(t *testing.T) {
+	for _, channel := range []string{"rc", "stable"} {
+		t.Run(channel, func(t *testing.T) {
+			f := newStagingFixture(t)
+			if channel == "stable" {
+				f.manifest.Channel, f.manifest.Version, f.u.cfg.Channel = "stable", "1.2.0", "stable"
+				f.sign(t)
+			}
+			rel, err := f.u.Stage(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verified, err := VerifyInstalledRelease(f.u.cfg.InstallDir, rel.Version, f.public); err != nil || verified.ManifestSHA256 != rel.ManifestSHA256 {
+				t.Fatalf("installed identity: %+v %v", verified, err)
+			}
+			other := "stable"
+			if channel == "stable" {
+				other = "rc"
+			}
+			if _, err := VerifyRelease(f.u.cfg.InstallDir, rel.Version, f.public, other); err == nil {
+				t.Fatal("discovery accepted other channel")
+			}
+			if err := os.WriteFile(filepath.Join(rel.Directory, "manifest.json"), []byte(`{"channel":"`+other+`"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyInstalledRelease(f.u.cfg.InstallDir, rel.Version, f.public); err == nil {
+				t.Fatal("tampered channel accepted without signature")
+			}
+		})
+	}
+}
+
+func TestSeedImportsItsSignedChannelAndRefusesAmbiguousManifests(t *testing.T) {
+	for _, channel := range []string{"rc", "stable"} {
+		t.Run(channel, func(t *testing.T) {
+			f := newStagingFixture(t)
+			if channel == "stable" {
+				f.manifest.Channel, f.manifest.Version = channel, "1.2.0"
+				f.sign(t)
+			}
+			source := t.TempDir()
+			for _, asset := range f.manifest.Assets {
+				if err := os.WriteFile(filepath.Join(source, asset.Name), f.payloads[asset.Component], 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			metadata := "manifest-" + channel + ".json"
+			for name, data := range map[string][]byte{metadata: f.data, metadata + ".sig": f.signature} {
+				if err := os.WriteFile(filepath.Join(source, name), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if rel, err := ImportSeedRelease(f.u.cfg.InstallDir, source, f.public); err != nil || rel.Version != f.manifest.Version {
+				t.Fatalf("seed: %+v %v", rel, err)
+			}
+			other := "rc"
+			if channel == "rc" {
+				other = "stable"
+			}
+			if err := os.WriteFile(filepath.Join(source, "manifest-"+other+".json"), f.data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ImportSeedRelease(f.u.cfg.InstallDir, source, f.public); err == nil {
+				t.Fatal("ambiguous source accepted")
+			}
+		})
+	}
+}
+
 func TestStagePublishesCompleteVerifiedBundleWithoutActivating(t *testing.T) {
 	f := newStagingFixture(t)
 	if err := os.MkdirAll(f.u.cfg.InstallDir, 0700); err != nil {

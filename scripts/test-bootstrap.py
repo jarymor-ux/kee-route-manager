@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Adversarial bootstrap tests: use real Ed25519 verification, fake downloads, harmless installer."""
 import base64,hashlib,io,json,os,pathlib,pty,subprocess,sys,tarfile,tempfile,unittest
+sys.dont_write_bytecode = True
+from release_channel import channel_for_version
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 PLATFORMS=('keenetic','openwrt','linux-systemd')
 class BootstrapTests(unittest.TestCase):
@@ -27,6 +29,24 @@ class BootstrapTests(unittest.TestCase):
     # independently exercised by the disposable Docker installer matrix.
     result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
     self.assertNotEqual(result.returncode,0);self.assertIn('standalone UI requires HTTPS with trusted upstream CA',result.stderr)
+ def test_controller_installer_accepts_one_channel_seed_before_config_validation(self):
+  for channels,want in [(('rc',),42),(('stable',),42),(('rc','stable'),1),((),1)]:
+   with self.subTest(channels=channels):
+    d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
+    (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
+    for name,body in (('id','echo 0'),('uname','echo x86_64'),('systemctl','exit 0')):
+     f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
+    for component in ('kee-route-managerd','kee-route-managerctl','kee-route-manager-launcher'):
+     f=d/('dist/'+component+'-linux-amd64');f.write_text('#!/bin/sh\n[ "$1" != validate ] || exit 42\nexit 0\n');f.chmod(0o755)
+    (d/'dist/kee-route-manager-ui-linux-amd64').write_bytes(b'fixture UI')
+    for channel in channels:
+     (d/('dist/manifest-'+channel+'.json')).write_text('{}')
+     (d/('dist/manifest-'+channel+'.json.sig')).write_text('fixture signature')
+    config=d/'core.yaml';config.write_text('private configuration fixture')
+    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='linux-systemd',KRM_MODE='core',KRM_CONFIG_FILE=str(config));env.pop('KRM_GENERATED_TLS_DIR',None)
+    # Fake validation exits before configuration, credentials, service or routing effects.
+    result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
+    self.assertEqual(result.returncode,want,result.stderr)
  def test_keenetic_status_helper_ignores_nonproduction_processes(self):
   for kind in ('production','probe','wrong-executable','wrong-config','zombie','missing'):
    with self.subTest(kind=kind):
@@ -43,19 +63,81 @@ class BootstrapTests(unittest.TestCase):
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));out=d/'dist';out.mkdir();(d/'install').mkdir()
   (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
   (out/'fixture-binary').write_bytes(b'release payload')
-  env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit';env['KRM_RELEASE_PUBLIC_KEY']=str(self.root/'public')
+  env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit';env['KRM_RELEASE_PUBLIC_KEY']=str(self.root/'public');env.pop('KRM_RELEASE_CHANNEL',None)
   subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.0.0-rc.2'],cwd=d,env=env,check=True)
   for name,platform in (('keenetic','keenetic'),('openwrt','openwrt'),('linux','linux-systemd')):
    body=(out/f'bootstrap-{name}.sh').read_text()
    self.assertIn('TAG=v1.0.0-rc.2',body);self.assertIn('PLATFORM='+platform,body)
-   self.assertIn('-----BEGIN PUBLIC KEY-----',body);self.assertNotIn('@VERSION@',body);self.assertNotIn('@PUBLIC_PEM@',body)
+   self.assertIn('-----BEGIN PUBLIC KEY-----',body);self.assertNotIn('@VERSION@',body);self.assertNotIn('@PUBLIC_PEM@',body);self.assertIn('CHANNEL=rc',body);self.assertNotIn('@CHANNEL@',body)
   inventory=json.loads((out/'SBOM.spdx.json').read_text())
   self.assertTrue(inventory['documentNamespace'].endswith('/1.0.0-rc.2/fixture-commit'))
   self.assertEqual(inventory['packages'][0]['licenseDeclared'],'Apache-2.0')
   self.assertEqual({f['fileName'] for f in inventory['files']},{'./fixture-binary','./bootstrap-keenetic.sh','./bootstrap-openwrt.sh','./bootstrap-linux.sh'})
   for entry in inventory['files']:
    self.assertEqual(entry['checksums'][0]['checksumValue'],hashlib.sha256((out/entry['fileName']).read_bytes()).hexdigest())
- def fixture(self,version="1.0.0-rc.2",platform='keenetic',unsafe=None):
+  modules=[pkg for pkg in inventory['packages'] if pkg['name']=='go.yaml.in/yaml/v3']
+  self.assertEqual(len(modules),1);self.assertEqual(modules[0]['versionInfo'],'v3.0.5')
+  self.assertEqual(modules[0]['licenseDeclared'],'MIT AND Apache-2.0')
+  self.assertTrue(any(r['relationshipType']=='DEPENDS_ON' and r['relatedSpdxElement']==modules[0]['SPDXID'] for r in inventory['relationships']))
+ def test_release_channel_binding(self):
+  for version,channel in [('0.0.0','stable'),('1.2.3','stable'),('1.2.3-rc.1','rc'),('1.2.3-rc.12','rc')]:
+   self.assertEqual(channel_for_version(version),channel)
+   self.assertEqual(channel_for_version(version,channel),channel)
+   with self.assertRaises(ValueError):channel_for_version(version,'stable' if channel=='rc' else 'rc')
+  for version in ['v1.2.3','1.2','1.2.3-beta.1','1.2.3-rc','1.2.3-rc.01','01.2.3','1.2.3+build','1.2.3\n','../1.2.3']:
+   with self.assertRaises(ValueError):channel_for_version(version)
+ def test_prepare_stable_release_pins_channel(self):
+  d=pathlib.Path(tempfile.mkdtemp(dir=self.root));out=d/'dist';out.mkdir();(d/'install').mkdir()
+  (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
+  env=os.environ.copy();env.update(KRM_SOURCE_COMMIT='fixture-commit',KRM_RELEASE_PUBLIC_KEY=str(self.root/'public'));env.pop('KRM_RELEASE_CHANNEL',None)
+  subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.2.3'],cwd=d,env=env,check=True)
+  for platform in ('keenetic','openwrt','linux'):
+   body=(out/('bootstrap-'+platform+'.sh')).read_text()
+   self.assertIn('TAG=v1.2.3',body);self.assertIn('CHANNEL=stable',body);self.assertNotIn('@CHANNEL@',body)
+  env['KRM_RELEASE_CHANNEL']='rc'
+  result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.2.3'],cwd=d,env=env,capture_output=True,text=True)
+  self.assertNotEqual(result.returncode,0);self.assertIn('channel does not match version',result.stderr)
+ def test_stable_bootstrap_authenticates_channel_before_execution(self):
+  for platform in PLATFORMS:
+   with self.subTest(platform=platform):
+    d,a,m,e=self.fixture(version='1.2.3',platform=platform,pinned_version='1.2.3',pinned_channel='stable')
+    r=self.run_bootstrap(d,e);self.assertEqual(r.returncode,0,r.stderr);self.assertTrue(m.exists())
+    order=(d/'order.log').read_text();self.assertIn('fetch:manifest-stable.json',order);self.assertNotIn('fetch:manifest-rc.json',order)
+  d,a,m,e=self.fixture(version='1.2.3',pinned_version='1.2.3',pinned_channel='stable')
+  p=a/'manifest-stable.json';manifest=json.loads(p.read_text());manifest['channel']='rc';p.write_text(json.dumps(manifest,indent=2)+'\n')
+  subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(p),'--out',str(p)+'.sig'],check=True)
+  self.sign_checksums(a);r=self.run_bootstrap(d,e)
+  self.assertNotEqual(r.returncode,0);self.assertIn('pinned bootstrap',r.stderr);self.assertFalse(m.exists())
+
+ def test_verify_release_supports_both_channels_and_rejects_signed_mismatch(self):
+  for version,channel in [('1.2.3-rc.2','rc'),('1.2.3','stable')]:
+   with self.subTest(channel=channel):
+    d=pathlib.Path(tempfile.mkdtemp(dir=self.root))
+    for component in ('kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','kee-route-manager-launcher','krm-release-tool'):
+     for arch in ('amd64','arm64','armv7','mipsle'):(d/(component+'-linux-'+arch)).write_bytes(b'harmless signed release fixture')
+    (d/'release-files.tar.gz').write_bytes(b'harmless archive inventory fixture')
+    env=os.environ.copy();env.update(KRM_SOURCE_COMMIT='fixture-commit',KRM_RELEASE_PUBLIC_KEY=str(self.root/'public'));env.pop('KRM_RELEASE_CHANNEL',None)
+    subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(d),version],cwd=ROOT,env=env,check=True)
+    manifest=d/('manifest-'+channel+'.json')
+    subprocess.run([str(self.tool),'manifest','--version',version,'--channel',channel,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v'+version,'--dist',str(d),'--out',str(manifest),'--private',str(self.root/'private')],check=True)
+    self.sign_checksums(d)
+    verify=lambda:subprocess.run([sys.executable,str(ROOT/'scripts/verify-release.py'),str(d)],cwd=ROOT,env=env,capture_output=True,text=True)
+    result=verify();self.assertEqual(result.returncode,0,result.stderr);self.assertIn('Verified '+channel,result.stdout)
+    original=manifest.read_bytes();value=json.loads(original);value['channel']='stable' if channel=='rc' else 'rc';manifest.write_text(json.dumps(value,indent=2)+'\n')
+    subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(manifest),'--out',str(manifest)+'.sig'],check=True)
+    self.sign_checksums(d);result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('channel',result.stderr)
+    manifest.write_bytes(original)
+    subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(manifest),'--out',str(manifest)+'.sig'],check=True)
+    self.sign_checksums(d)
+    sums=d/'SHA256SUMS';sums.write_text('\n'.join(line for line in sums.read_text().splitlines() if not line.endswith('  bootstrap-linux.sh'))+'\n')
+    subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(sums),'--out',str(sums)+'.sig'],check=True)
+    result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('checksum inventory',result.stderr)
+    self.sign_checksums(d)
+    other=d/('manifest-'+('stable' if channel=='rc' else 'rc')+'.json');other.write_bytes(original)
+    result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('exactly one',result.stderr)
+ def fixture(self,version="1.0.0-rc.2",platform='keenetic',unsafe=None,channel=None,pinned_version='1.0.0-rc.2',pinned_channel='rc'):
+  channel=channel or channel_for_version(version)
+  manifest_name='manifest-'+channel+'.json'
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));assets=d/'assets';assets.mkdir();fake=d/'fake';fake.mkdir()
   marker=d/'executed';order=d/'order.log';config_used=d/'config-used';config_path=d/'config-path';ui_config_used=d/'ui-config-used';ui_config_path=d/'ui-config-path'
   with tarfile.open(assets/'release-files.tar.gz','w:gz') as tf:
@@ -80,6 +162,7 @@ printf '%s\n' "$KRM_CONFIG_FILE" > "$KRM_TEST_CONFIG_PATH"
 cp "$KRM_CONFIG_FILE" "$KRM_TEST_CONFIG_USED"
 printf verified > "$KRM_TEST_MARKER"
 '''
+   content=content.replace(b'manifest-rc.json',manifest_name.encode())
    info=tarfile.TarInfo('install/'+platform+'/install.sh');info.size=len(content);info.mode=0o755;tf.addfile(info,io.BytesIO(content))
    for path,body in (('configs/ui-keenetic.yaml',b'fixture-ui: keenetic\n'),('configs/ui-linux-openwrt.yaml',b'fixture-ui: linux-openwrt\n')):
     info=tarfile.TarInfo(path);info.size=len(body);info.mode=0o600;tf.addfile(info,io.BytesIO(body))
@@ -129,13 +212,13 @@ exit 0
   for component in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']:
    body=ctl if component=='kee-route-managerctl' else '#!/bin/sh\nexit 0\n'
    (assets/(component+'-linux-amd64')).write_text(body)
-  subprocess.run([str(self.tool),'manifest','--version',version,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.0.0-rc.2','--dist',str(assets),'--out',str(assets/'manifest-rc.json'),'--private',str(self.root/'private')],check=True)
-  manifest=json.loads((assets/'manifest-rc.json').read_text())
+  subprocess.run([str(self.tool),'manifest','--version',version,'--channel',channel,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v'+version,'--dist',str(assets),'--out',str(assets/manifest_name),'--private',str(self.root/'private')],check=True)
+  manifest=json.loads((assets/manifest_name).read_text())
   self.assertEqual(manifest['update_protocol'],1)
   self.assertEqual({a['name'] for a in manifest['assets']},{'release-files.tar.gz'}|{c+'-linux-amd64' for c in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']})
   self.sign_checksums(assets)
   pub=base64.b64decode((self.root/'public').read_text().strip()+'===');pem=base64.b64encode(bytes.fromhex('302a300506032b6570032100')+pub).decode()
-  bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@','1.0.0-rc.2').replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
+  bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@',pinned_version).replace('@CHANNEL@',pinned_channel).replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
   (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture');(d/'ui.yaml').write_text('private ui fixture')
   scripts={'id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
 while [ "$#" -gt 0 ]; do

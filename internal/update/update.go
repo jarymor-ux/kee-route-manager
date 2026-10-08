@@ -35,6 +35,7 @@ type Manifest struct {
 	Assets          []Asset   `json:"assets"`
 }
 type CheckResult struct {
+	Channel        string           `json:"channel"`
 	CurrentVersion string           `json:"current_version"`
 	LatestVersion  string           `json:"latest_version"`
 	Available      bool             `json:"available"`
@@ -133,7 +134,7 @@ func (u *Updater) checkSigned(ctx context.Context) (checkedRelease, error) {
 	}
 	cmp := compareVersions(m.Version, u.current)
 	available := cmp > 0 || u.cfg.AllowDowngrade && cmp != 0
-	result := CheckResult{CurrentVersion: u.current, LatestVersion: m.Version, Available: available, Manifest: m, Asset: a, Assets: assets, StageSupported: m.UpdateProtocol == 1 && u.applySupportErr == nil}
+	result := CheckResult{Channel: u.cfg.Channel, CurrentVersion: u.current, LatestVersion: m.Version, Available: available, Manifest: m, Asset: a, Assets: assets, StageSupported: m.UpdateProtocol == 1 && u.applySupportErr == nil}
 	return checkedRelease{result: result, manifest: manifestBytes, signature: sig}, nil
 }
 

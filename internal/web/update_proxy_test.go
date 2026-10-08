@@ -44,7 +44,7 @@ func launcherSocket(t *testing.T, handler http.Handler) string {
 
 func TestUpdateProxyPreservesLauncherStatusAndAsyncAcceptance(t *testing.T) {
 	for _, local := range []bool{false, true} {
-		for _, path := range []string{"status", "check", "apply"} {
+		for _, path := range []string{"status", "check", "apply", "channel"} {
 			t.Run(path+map[bool]string{true: "/local", false: "/network"}[local], func(t *testing.T) {
 				var calls atomic.Int32
 				status, response := 200, `{"enabled":true,"launcher":true,"phase":"trial","applying":true,"current_version":"1.0.0"}`
@@ -66,6 +66,11 @@ func TestUpdateProxyPreservesLauncherStatusAndAsyncAcceptance(t *testing.T) {
 						if r.Method != "POST" || string(body) != `{"version":"1.1.0"}` {
 							t.Errorf("apply request=%s %s", r.Method, body)
 						}
+					} else if path == "channel" {
+						body, _ := io.ReadAll(r.Body)
+						if r.Method != "POST" || string(body) != `{"channel":"stable"}` {
+							t.Errorf("channel request=%s %s", r.Method, body)
+						}
 					} else if r.Method != "GET" {
 						t.Errorf("method=%s", r.Method)
 					}
@@ -73,7 +78,10 @@ func TestUpdateProxyPreservesLauncherStatusAndAsyncAcceptance(t *testing.T) {
 					_, _ = io.WriteString(w, response)
 				}))
 				r := actionRequest("/api/v1/update/"+path, `{"version":"1.1.0"}`, session)
-				if path != "apply" {
+				if path == "channel" {
+					r = actionRequest("/api/v1/update/channel", `{"channel":"stable"}`, session)
+				}
+				if path != "apply" && path != "channel" {
 					r.Method = "GET"
 				}
 				h := s.Handler()

@@ -3,6 +3,8 @@
 set -eu
 umask 077
 TAG=v@VERSION@
+CHANNEL=@CHANNEL@
+MANIFEST=manifest-$CHANNEL.json
 PLATFORM=@PLATFORM@
 BASE=https://github.com/jarymor-ux/kee-route-manager/releases/download/$TAG
 WORK=
@@ -36,9 +38,9 @@ verify_signature(){
  openssl base64 -d -A -in "$2" -out signature.bin
  openssl pkeyutl -verify -pubin -inkey trusted-public.pem -rawin -in "$1" -sigfile signature.bin >/dev/null 2>&1 || fail "invalid signature for $1 (or unsupported OpenSSL)"
 }
-fetch manifest-rc.json manifest-rc.json
-fetch manifest-rc.json.sig manifest-rc.json.sig
-verify_signature manifest-rc.json manifest-rc.json.sig
+fetch "$MANIFEST" "$MANIFEST"
+fetch "$MANIFEST.sig" "$MANIFEST.sig"
+verify_signature "$MANIFEST" "$MANIFEST.sig"
 fetch SHA256SUMS SHA256SUMS
 fetch SHA256SUMS.sig SHA256SUMS.sig
 verify_signature SHA256SUMS SHA256SUMS.sig
@@ -48,19 +50,19 @@ verify_file(){
  [ "${#expected}" = 64 ] || fail "missing/duplicate checksum for $name"
  actual=$(openssl dgst -sha256 "$name" | sed 's/^.*= //')
  [ "$actual" = "$expected" ] || fail "checksum mismatch: $name"
- case "$name" in manifest-rc.json|manifest-rc.json.sig) return;; esac
- expected_size=$(awk -v n="$name" -F '"' '$2 == "name" {selected=($4==n)} $2 == "size" && selected {v=$3;gsub(/[^0-9]/,"",v);print v}' manifest-rc.json)
+ case "$name" in "$MANIFEST"|"$MANIFEST.sig") return;; esac
+ expected_size=$(awk -v n="$name" -F '"' '$2 == "name" {selected=($4==n)} $2 == "size" && selected {v=$3;gsub(/[^0-9]/,"",v);print v}' "$MANIFEST")
  case "$expected_size" in ''|*[!0-9]*) fail "invalid/missing manifest size: $name";; esac
  [ "$(wc -c < "$name" | tr -d '[:space:]')" = "$expected_size" ] || fail "size mismatch: $name"
 }
-verify_file manifest-rc.json
-verify_file manifest-rc.json.sig
+verify_file "$MANIFEST"
+verify_file "$MANIFEST.sig"
 # Parse only the exact top-level fields emitted by the signed release builder.
-version=$(awk -F '"' '/^  "version": / {print $4}' manifest-rc.json)
-channel=$(awk -F '"' '/^  "channel": / {print $4}' manifest-rc.json)
-schema=$(awk '/^  "schema_version": / {gsub(/,/,"",$2);print $2}' manifest-rc.json)
-protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' manifest-rc.json)
-[ "$version" = "@VERSION@" ] && [ "$channel" = rc ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
+version=$(awk -F '"' '/^  "version": / {print $4}' "$MANIFEST")
+channel=$(awk -F '"' '/^  "channel": / {print $4}' "$MANIFEST")
+schema=$(awk '/^  "schema_version": / {gsub(/,/,"",$2);print $2}' "$MANIFEST")
+protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' "$MANIFEST")
+[ "$version" = "@VERSION@" ] && [ "$channel" = "$CHANNEL" ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
 if [ "$NEED_CONFIG" = 1 ] && [ "$MODE" = ui ]; then
@@ -75,7 +77,7 @@ if tar -tzf release-files.tar.gz | awk 'BEGIN {bad=0} /^\// || /(^|\/)\.\.(\/|$)
 if tar -tvzf release-files.tar.gz | awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive entry types'; fi
 tar -xzf release-files.tar.gz -C payload
 mkdir -p payload/dist
-cp manifest-rc.json manifest-rc.json.sig SHA256SUMS SHA256SUMS.sig payload/dist/
+cp "$MANIFEST" "$MANIFEST.sig" SHA256SUMS SHA256SUMS.sig payload/dist/
 # The launcher verifies and installs a complete daemon/UI/ctl slot, including
 # the dormant UI binary in core-only mode. The launcher itself remains stable.
 for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do

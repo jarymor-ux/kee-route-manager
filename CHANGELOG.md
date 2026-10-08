@@ -6,6 +6,13 @@
 
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
+## 1.1.0-rc.14 — 2026-10-08
+
+Experimental prerelease. Stable-channel publication support does not establish hardware acceptance.
+
+- Support Release Candidate (`rc`) and Release (`stable`) publication, signed bootstraps and complete artifact verification. Add persistent channel selection in Router → System with `updates.manage`, preserve installed/rollback slot identity across switches, invalidate stale discovery and keep installation explicit without enabling downgrades. Older launchers require separate manual maintenance before switching is available.
+- Include runtime Go modules in the signed SPDX inventory and inject `VERSION` into local `make build` binaries.
+
 ## 1.1.0-rc.13 — 2026-10-08
 
 Experimental prerelease. These additions have automated coverage; router hardware and browser visual acceptance remain separate.

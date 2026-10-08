@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.13 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.14 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -13,11 +13,13 @@ Runtime components:
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 - `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/OpenWrt local installations, UI; verifies signed release slots and applies updates on explicit request.
 
-Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists (Reality TCP and WebSocket TLS). No third-party runtime Go modules.
+Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists (Reality TCP and WebSocket TLS). Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
 
 Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. Linux/OpenWrt managed nftables can bypass interception independently of Xray. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every platform remains experimental pending hardware checks.
 
 The launcher checks for updates at the configured interval; installation requires an explicit UI/CLI action. A signed protocol-1 bundle updates daemon, CLI and managed local UI together, verifies process/API/reconciliation readiness, and rolls back a failed trial before commit. After commit, recovery restarts the new version without restoring old controller state. The stable launcher is updated manually. Linux UI retains its separate unprivileged service. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
+
+Router → System offers Release Candidate (`rc`) and Release (`stable`) update channels with a compatible separately maintained launcher. Switching persists the discovery preference without installing a version or enabling downgrades. See [release channels and migration](docs/RELEASE.md).
 
 For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 

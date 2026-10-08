@@ -51,7 +51,17 @@ if [ "$MODE" != ui ]; then
   [ -x "$src" ] || fail "missing signed release executable: $src"
   "$src" version >/dev/null
  done
- for name in manifest-rc.json manifest-rc.json.sig kee-route-manager-ui-linux-$ARCH; do
+ # The signed seed may differ from the configured future update channel.
+ # Refuse ambiguity; the launcher authenticates the selected seed independently.
+ manifest=
+ for channel in rc stable; do
+  if [ -f "$ROOT/dist/manifest-$channel.json" ]; then
+   [ -z "$manifest" ] || fail 'ambiguous signed release manifests'
+   manifest=manifest-$channel.json
+  fi
+ done
+ [ -n "$manifest" ] || fail 'missing signed release manifest'
+ for name in "$manifest" "$manifest.sig" kee-route-manager-ui-linux-$ARCH; do
   [ -f "$ROOT/dist/$name" ] || fail "missing signed release input: $name"
  done
  "$ROOT/dist/kee-route-managerd-linux-$ARCH" validate --config "$INPUT"

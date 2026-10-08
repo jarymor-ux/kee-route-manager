@@ -72,11 +72,15 @@ jobs:
         with:
           node-version: '22'
       - name: Bind the release to the tested merged commit
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
+          [[ "$GITHUB_REF_NAME" == v* ]]
+          channel=$(python3 scripts/release_channel.py "${GITHUB_REF_NAME#v}")
+          printf 'channel=%s\n' "$channel" >> "$GITHUB_OUTPUT"
+          if [[ "$channel" == rc ]]; then printf 'prerelease=true\n' >> "$GITHUB_OUTPUT"; else printf 'prerelease=false\n' >> "$GITHUB_OUTPUT"; fi
           [[ "$GITHUB_REF_NAME" == "v$(tr -d '[:space:]' < VERSION)" ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           [[ "$(git rev-parse "$GITHUB_REF^{commit}")" == "$GITHUB_SHA" ]]
@@ -91,6 +95,7 @@ jobs:
         env:
           KRM_RELEASE_SIGNING_KEY: ${{ secrets.KRM_RELEASE_SIGNING_KEY }}
           KRM_SOURCE_COMMIT: ${{ github.sha }}
+          KRM_RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
         run: |
           set -euo pipefail
           umask 077
@@ -101,21 +106,25 @@ jobs:
           unset KRM_RELEASE_SIGNING_KEY
           KRM_RELEASE_PRIVATE_KEY="$key_file" ./scripts/build-release.sh
           python3 scripts/verify-release.py release/dist
-      - name: Verify uploaded draft and publish immutable prerelease
+      - name: Verify uploaded draft and publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+          RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           set -euo pipefail
           [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
+          [[ "$RELEASE_CHANNEL" == "$(python3 scripts/release_channel.py "${GITHUB_REF_NAME#v}")" ]]
+          if [[ "$RELEASE_CHANNEL" == rc ]]; then release_label='experimental prerelease'; else release_label='stable channel release'; fi
           notes_file="$RUNNER_TEMP/release-notes.md"
           printf '%s\n\n%s\n\n%s\n' \
-            "Kee Route Manager $GITHUB_REF_NAME — experimental prerelease." \
+            "Kee Route Manager $GITHUB_REF_NAME — $release_label." \
             "Signed daemon, UI, CLI and stable launcher artifacts. Update protocol 1 supports explicit updates through the separately installed launcher; platform limits remain documented in docs/KNOWN_LIMITATIONS.md and docs/RELEASE.md." \
             "Built from tested commit $GITHUB_SHA. Hardware acceptance remains separate from CI. Existing release tags and assets are unchanged." > "$notes_file"
-          gh release create "$GITHUB_REF_NAME" release/dist/* --verify-tag --draft --prerelease --latest=false --notes-file "$notes_file"
+          gh release create "$GITHUB_REF_NAME" release/dist/* --verify-tag --draft --prerelease="$RELEASE_PRERELEASE" --latest=false --notes-file "$notes_file"
           uploaded=$(mktemp -d "$RUNNER_TEMP/krm-uploaded.XXXXXX")
           trap 'rm -rf "$uploaded"' EXIT
           gh release download "$GITHUB_REF_NAME" --dir "$uploaded"
           python3 scripts/verify-release.py "$uploaded"
           [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
-          gh release edit "$GITHUB_REF_NAME" --verify-tag --draft=false --prerelease --latest=false
+          gh release edit "$GITHUB_REF_NAME" --verify-tag --draft=false --prerelease="$RELEASE_PRERELEASE" --latest=false

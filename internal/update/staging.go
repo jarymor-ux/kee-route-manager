@@ -90,6 +90,42 @@ func ImportRelease(root, sourceDir, publicKey, channel string) (StagedRelease, e
 	})
 }
 
+// ImportSeedRelease authenticates the bootstrap's channel independently of the
+// configured discovery preference. A seed must contain exactly one manifest.
+func ImportSeedRelease(root, sourceDir, publicKey string) (StagedRelease, error) {
+	channel := ""
+	for _, candidate := range []string{"rc", "stable"} {
+		_, err := os.Lstat(filepath.Join(sourceDir, "manifest-"+candidate+".json"))
+		if err == nil {
+			if channel != "" {
+				return StagedRelease{}, errors.New("ambiguous bootstrap channels")
+			}
+			channel = candidate
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return StagedRelease{}, err
+		}
+	}
+	if channel == "" {
+		return StagedRelease{}, errors.New("signed bootstrap manifest missing")
+	}
+	return ImportRelease(root, sourceDir, publicKey, channel)
+}
+
+// VerifyInstalledRelease verifies an immutable slot's own signed channel. The
+// discovery preference cannot invalidate an installed release or rollback slot.
+// The launcher additionally binds this manifest to its committed digest.
+func VerifyInstalledRelease(root, version, publicKey string) (StagedRelease, error) {
+	var failures []error
+	for _, channel := range []string{"rc", "stable"} {
+		rel, err := VerifyRelease(root, version, publicKey, channel)
+		if err == nil {
+			return rel, nil
+		}
+		failures = append(failures, err)
+	}
+	return StagedRelease{}, errors.Join(failures...)
+}
+
 // VerifyRelease must be called by the stable launcher immediately before use.
 // Paths come from the install root and version, never from a pending JSON file.
 // Version ordering/rollback authorization belongs to the launcher's transaction.

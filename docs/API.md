@@ -57,7 +57,7 @@ Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `per
 | `router.wake` | Wake-on-LAN |
 | `router.system` | System logs and diagnostics |
 | `router.reboot` | Reboot |
-| `updates.manage` | Update discovery/status/application |
+| `updates.manage` | Update discovery/status/application and channel selection |
 | `users.manage` | List, create, edit, block and delete users |
 | `events.view` | Event journal |
 
@@ -70,3 +70,9 @@ Session, logout and the minimal status response require authentication but no ad
 At first startup, the schema-1 `web.credentials_file` becomes the full-permission account `legacy-admin` in memory. An explicit user change persists the private sidecar `<credentials_file>.users.json`; loading and update-trial validation never write it. Panel changes affect only the sidecar: the original credential file remains usable by older versions. Consequently, rolling back restores the original single account/password and ignores new users and revoked rights. Preserve both private files in backups; do not treat a downgrade as preserving panel authorization policy.
 
 For owner recovery, stop the controller, run the existing offline `passwd --username UNIQUE_NAME --password-stdin` command, and restart. A changed legacy credential fingerprint restores the stable `legacy-admin` account enabled with all permissions, preserving other accounts. Choose a name not held by another account. Merely restarting does not undo panel edits. The controller does not reload offline credentials while running. Invalid/corrupted user sidecars fail startup rather than silently restoring old credentials; restore a private backup, or move the corrupted sidecar aside while stopped to explicitly recreate the original administrator. Keep the moved file private.
+
+## Update channels
+
+`GET /api/v1/update/status` from a compatible launcher includes `channel` (`rc` or `stable`) and `channel_switch_supported`. `GET /api/v1/update/check` includes the selected `channel`; the signed manifest must match it. `POST /api/v1/update/channel` accepts `{ "channel": "stable" }` or `{ "channel": "rc" }`, requires `updates.manage`, CSRF and same origin, and returns the updated launcher status after durable persistence. It clears cached discovery without stopping processes or installing a version. Switching during application returns409. Invalid channels return400; disabled updates or manual-URL discovery return409. An unavailable/incompatible launcher does not authorize a setting change.
+
+`POST /api/v1/update/apply` may also supply `channel` with `version`. A changed channel rejects the confirmation before queuing or downloading. The queued transaction captures its channel; old clients may continue omitting that field. Channel generations prevent stale in-flight checks from republishing availability after a switch, including switching away and back. Older launchers omit the capability fields, so their UI keeps switching disabled and sends the original apply request. Channel selection never enables downgrades: `1.0.0` is older than `1.1.0-rc.13`; `1.1.0` is newer.

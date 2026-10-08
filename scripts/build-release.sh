@@ -7,11 +7,11 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/release}"
 PRIVATE_KEY="${KRM_RELEASE_PRIVATE_KEY:-}"
 PUBLIC_KEY="${KRM_RELEASE_PUBLIC_KEY:-$ROOT/internal/releasetrust/public.key}"
 BASE_URL="${KRM_RELEASE_BASE_URL:-https://github.com/jarymor-ux/kee-route-manager/releases/download/v$KRM_VERSION}"
-CHANNEL="${KRM_RELEASE_CHANNEL:-rc}"
+CHANNEL="$(python3 scripts/release_channel.py "$KRM_VERSION" "${KRM_RELEASE_CHANNEL:-}")"
+export KRM_RELEASE_CHANNEL="$CHANNEL"
 [[ -n "$PRIVATE_KEY" && -f "$PRIVATE_KEY" ]] || { echo 'KRM_RELEASE_PRIVATE_KEY must point to an external Ed25519 private key' >&2; exit 1; }
 [[ -f "$PUBLIC_KEY" ]] || { echo 'KRM_RELEASE_PUBLIC_KEY must point to an Ed25519 public key' >&2; exit 1; }
 export KRM_RELEASE_PUBLIC_KEY="$PUBLIC_KEY"
-[[ "$CHANNEL" == rc ]] || { echo 'Release builder supports rc only' >&2; exit 1; }
 # Refuse recursive deletion of arbitrary caller paths.
 [[ "$OUTPUT_DIR" == "$ROOT/release" || "$OUTPUT_DIR" == /tmp/krm-release.* || "$OUTPUT_DIR" == /tmp/krm-release.*/output ]] || { echo 'OUTPUT_DIR must be repo/release or /tmp/krm-release.*' >&2; exit 1; }
 ./scripts/check.sh
@@ -37,7 +37,7 @@ mkdir -p "$TRUST_DIR"
 cp "$PUBLIC_KEY" "$TRUST_DIR/release-public.key"
 tar -czf "$DIST/release-files.tar.gz" configs install LICENSE NOTICE -C "$TRUST_DIR" release-public.key
 python3 scripts/prepare-release.py "$DIST" "$KRM_VERSION"
-"$TOOL_DIR/krm-release-tool" manifest --version "$KRM_VERSION" --channel "$CHANNEL" --base-url "$BASE_URL" --dist "$DIST" --out "$DIST/manifest-rc.json" --private "$PRIVATE_KEY" --signature "$DIST/manifest-rc.json.sig"
+"$TOOL_DIR/krm-release-tool" manifest --version "$KRM_VERSION" --channel "$CHANNEL" --base-url "$BASE_URL" --dist "$DIST" --out "$DIST/manifest-$CHANNEL.json" --private "$PRIVATE_KEY" --signature "$DIST/manifest-$CHANNEL.json.sig"
 python3 - "$DIST" <<'PY'
 import hashlib,pathlib,sys
 p=pathlib.Path(sys.argv[1]);entries=[]
@@ -48,4 +48,4 @@ for f in sorted(p.iterdir()):
 PY
 "$TOOL_DIR/krm-release-tool" sign --private "$PRIVATE_KEY" --input "$DIST/SHA256SUMS" --out "$DIST/SHA256SUMS.sig"
 python3 scripts/verify-release.py "$DIST"
-printf 'Signed RC artifacts: %s\n' "$DIST"
+printf 'Signed %s artifacts: %s\n' "$CHANNEL" "$DIST"
