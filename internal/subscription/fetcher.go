@@ -89,7 +89,9 @@ func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceStat
 	f.mu.RUnlock()
 	// Downloads use an immutable snapshot; replacing sources never waits for I/O.
 	f = snapshot
-	_ = os.MkdirAll(f.dir, 0700)
+	if f.cfg.CacheEnabled {
+		_ = os.MkdirAll(f.dir, 0700)
+	}
 	r := Result{States: map[string]model.SourceState{}}
 	type item struct {
 		id    string
@@ -151,7 +153,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	st.Name = s.Name
 	st.UsingCache = false
 	st.CacheExpiresAt = time.Time{}
-	if !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
+	if f.cfg.CacheEnabled && !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
 		if xs, c, e := f.loadSource(s); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
 			st.UsingCache = true
 			st.NodeCount = len(xs)
@@ -159,7 +161,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 			return xs, st, nil
 		}
 	}
-	if !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
+	if f.cfg.CacheEnabled && !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
 		if xs, c, e := f.loadSource(s); e == nil {
 			st.UsingCache = true
 			st.NodeCount = len(xs)
@@ -185,8 +187,11 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 			if f.cfg.MaxNodesPerSource > 0 {
 				xs = Merge(xs, f.cfg.MaxNodesPerSource)
 			}
-			c := cache{Schema: 1, SourceID: s.ID, FetchedAt: now, Nodes: xs, Identity: sourceIdentity(s)}
-			if err = f.save(c); err == nil {
+			if f.cfg.CacheEnabled {
+				c := cache{Schema: 1, SourceID: s.ID, FetchedAt: now, Nodes: xs, Identity: sourceIdentity(s)}
+				err = f.save(c)
+			}
+			if err == nil {
 				st.Status = "healthy"
 				if old.Status == "unavailable" {
 					st.Status = "recovering"
@@ -198,7 +203,9 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 				st.RetryLevel = 0
 				st.NextRetryAt = time.Time{}
 				st.UsingCache = false
-				st.CacheExpiresAt = now.Add(f.cfg.CacheTTL.Duration)
+				if f.cfg.CacheEnabled {
+					st.CacheExpiresAt = now.Add(f.cfg.CacheTTL.Duration)
+				}
 				return xs, st, nil
 			}
 		}
@@ -220,16 +227,18 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	if err != nil {
 		st.LastError = redact.Text(err.Error())
 	}
-	if xs, c, e := f.loadSource(s); e == nil {
-		st.UsingCache = true
-		st.NodeCount = len(xs)
-		st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
-		if now.Before(st.CacheExpiresAt) {
-			st.Status = "degraded"
-		} else {
-			st.Status = "unavailable"
+	if f.cfg.CacheEnabled {
+		if xs, c, e := f.loadSource(s); e == nil {
+			st.UsingCache = true
+			st.NodeCount = len(xs)
+			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
+			if now.Before(st.CacheExpiresAt) {
+				st.Status = "degraded"
+			} else {
+				st.Status = "unavailable"
+			}
+			return xs, st, err
 		}
-		return xs, st, err
 	}
 	st.Status = "unavailable"
 	st.NodeCount = 0

@@ -134,6 +134,7 @@ type XrayRoute struct {
 	ReplaceOutboundTags []string `json:"replace_outbound_tags"`
 }
 type Subscriptions struct {
+	CacheEnabled      bool     `json:"cache_enabled"`
 	MaxNodesPerSource int      `json:"max_nodes_per_source"`
 	MaxSources        int      `json:"max_sources"`
 	MaxNodes          int      `json:"max_nodes"`
@@ -235,7 +236,7 @@ func Default() Config {
 		Web:           Web{Enabled: true, Listen: "0.0.0.0:9444", CredentialsFile: "/etc/kee-route-manager/credentials.json", SessionTTL: Dur(24 * time.Hour), TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
 		Platform:      Platform{Kind: "auto", CommandTimeout: Dur(30 * time.Second), Keenetic: Keenetic{RCIBaseURL: "http://127.0.0.1:79/rci/", NDMCBinary: "ndmc", XKeenBinary: "/opt/sbin/xkeen", XKeenPolicyName: "XKeen", AllowReboot: true, AllowPolicyChange: true}, OpenWrt: OpenWrt{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br-lan"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}, Linux: Linux{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br0"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}},
 		Xray:          Xray{Binary: "/usr/bin/xray", ConfigDir: "/etc/xray/configs", ManagedDir: "/etc/xray/configs", APIAddress: "127.0.0.1:10085", APITag: "krm-api", BalancerTag: "krm-main", SlotTagPrefix: "krm-slot-", ManagedDirectTag: "krm-direct", ProbePortStart: 19000, HealthProxyPort: 18999, DynamicAPI: true, Route: XrayRoute{InboundTags: []string{"redirect", "tproxy"}, ReplaceOutboundTags: []string{"vless-reality"}}},
-		Subscriptions: Subscriptions{MaxNodesPerSource: 500, MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
+		Subscriptions: Subscriptions{CacheEnabled: true, MaxNodesPerSource: 500, MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
 		Health:        Health{Interval: Dur(15 * time.Second), FailureThreshold: 2, RecoveryThreshold: 2, RequestTimeout: Dur(8 * time.Second), MaxResponseBytes: 64 << 10, HotPoolFreshness: Dur(5 * time.Minute), ProviderRetryBackoff: []Duration{Dur(15 * time.Second), Dur(30 * time.Second), Dur(time.Minute), Dur(2 * time.Minute), Dur(5 * time.Minute), Dur(10 * time.Minute)}},
 		Pool:          Pool{Size: 5},
 		Benchmark:     Benchmark{FullInterval: Dur(6 * time.Hour), BatchSize: 20, LatencyWorkers: 8, RequestsPerWeight: 2, Finalists: 6, MinImprovementPercent: 15, SwitchCooldown: Dur(10 * time.Minute), StabilityBeforeUpgrade: Dur(10 * time.Minute), TemporaryProxyPortStart: 20000, TemporaryStartupTimeout: Dur(10 * time.Second), Speed: Speed{Enabled: false, Workers: 2, WarmupBytes: 8 << 20, MinSampleBytes: 64 << 20, MaxSampleBytes: 512 << 20, TargetDuration: Dur(6 * time.Second), Repetitions: 3}},

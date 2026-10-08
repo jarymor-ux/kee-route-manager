@@ -6,12 +6,129 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/subscription"
 )
+
+type heldHotPoolBenchmark struct {
+	started, release chan struct{}
+	runs             atomic.Int64
+}
+
+func (b *heldHotPoolBenchmark) Run(ctx context.Context, _ []model.Node, _ bench.Progress) ([]model.Measurement, error) {
+	if b.runs.Add(1) == 1 {
+		close(b.started)
+		select {
+		case <-b.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	now := time.Now().UTC()
+	return []model.Measurement{
+		{NodeID: "active", Healthy: true, Score: 100, CheckedAt: now},
+		{NodeID: "fallback", Healthy: true, Score: 200, CheckedAt: now},
+	}, nil
+}
+
+func TestHealthyProbeDoesNotQueueRefreshDuringActiveBenchmark(t *testing.T) {
+	m, tun, _ := fixture(t)
+	m.benchmarkQueued = false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer server.Close()
+	tun.health, _ = url.Parse(server.URL)
+	m.cfg.Targets = []config.Target{
+		{ID: "one", Role: "health", URL: server.URL, Policy: "exact:204"},
+		{ID: "two", Role: "health", URL: strings.Replace(server.URL, "127.0.0.1", "localhost", 1), Policy: "exact:204"},
+	}
+	if err := m.store.Update(func(s *model.State) error {
+		s.Pool[1].LastVerifiedAt = time.Now().Add(-time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &heldHotPoolBenchmark{started: make(chan struct{}), release: make(chan struct{})}
+	m.bench = runner
+	var release sync.Once
+	defer func() {
+		release.Do(func() { close(runner.release) })
+		m.wg.Wait()
+	}()
+	finished := make(chan error, 1)
+	go func() { finished <- m.RunBenchmark(context.Background(), "scheduled", "scheduler") }()
+	<-runner.started
+	for i := 0; i < 3; i++ {
+		m.checkHealth(context.Background())
+	}
+	m.mu.RLock()
+	queued := m.benchmarkQueueVersion
+	m.mu.RUnlock()
+	if queued != 0 {
+		t.Fatal("stale reserves queued a follow-up despite an active benchmark")
+	}
+	release.Do(func() { close(runner.release) })
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	m.wg.Wait()
+	m.checkHealth(context.Background())
+	m.wg.Wait()
+	if runner.runs.Load() != 1 {
+		t.Fatal("healthy ticks triggered an immediate duplicate benchmark")
+	}
+}
+
+func TestHealthyNoCacheCadenceDoesNotQueueUnavailableProvider(t *testing.T) {
+	m, tun, _ := fixture(t)
+	m.benchmarkQueued = false
+	var downloads atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/subscription" {
+			downloads.Add(1)
+			http.Error(w, "provider unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	tun.health, _ = url.Parse(server.URL)
+	m.cfg.Targets = []config.Target{
+		{ID: "one", Role: "health", URL: server.URL, Policy: "exact:204"},
+		{ID: "two", Role: "health", URL: strings.Replace(server.URL, "127.0.0.1", "localhost", 1), Policy: "exact:204"},
+	}
+	m.cfg.Subscriptions.CacheEnabled = false
+	m.cfg.Subscriptions.Sources = []config.Source{{ID: "provider", URL: server.URL + "/subscription", Enabled: true}}
+	m.fetcher = subscription.New(m.cfg.Subscriptions, nil, t.TempDir())
+	m.bench = freshSubscriptionBenchmark{}
+	if err := m.store.Update(func(s *model.State) error {
+		s.Pool[1].LastVerifiedAt = time.Now().Add(-time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// First let a scheduled download fail, then run healthy-route ticks with a
+	// stale reserve. Those ticks must not turn a provider outage into rapid tests.
+	if err := m.RunBenchmark(context.Background(), "scheduled", "scheduler"); err == nil {
+		t.Fatal("fixture provider did not fail")
+	}
+	for i := 0; i < 3; i++ {
+		m.checkHealth(context.Background())
+		m.wg.Wait()
+	}
+	if m.State().LastHealthClass != "healthy" || downloads.Load() != 1 {
+		t.Fatal("healthy-route freshness probes bypassed the no-cache benchmark cadence")
+	}
+	if m.State().ActiveNodeID != "active" || m.State().DirectMode {
+		t.Fatal("provider outage changed the healthy active route")
+	}
+}
 
 func TestHotPoolRefreshPreservesWithdrawnActiveHealth(t *testing.T) {
 	m, tun, _ := fixture(t)
