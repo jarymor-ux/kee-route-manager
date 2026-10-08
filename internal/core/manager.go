@@ -26,39 +26,47 @@ type sourceFetcher interface {
 }
 
 type Manager struct {
-	cfg                  config.Config
-	version              string
-	store                *store.Store
-	ops                  *operation.Coordinator
-	platform             platform.Adapter
-	xray                 tunnel.TunnelCore
-	fetcher              sourceFetcher
-	bench                benchmarkRunner
-	ctx                  context.Context
-	cancel               context.CancelFunc
-	wg                   sync.WaitGroup
-	mu                   sync.RWMutex
-	subscriptionMu       sync.Mutex
-	routeMu              sync.Mutex
-	lifeMu               sync.Mutex
-	stopping             bool
-	metrics              platform.Metrics
-	clients              []platform.Client
-	clientsUpdated       time.Time
-	clientsError         string
-	recoveryNode         string
-	recoveryCount        int
-	benchmarkQueued      bool
-	benchmarkSourceNodes []model.Node
-	xrayRunning          bool
-	reconciled           bool
-	readinessErr         error
+	cfg                   config.Config
+	version               string
+	store                 *store.Store
+	ops                   *operation.Coordinator
+	platform              platform.Adapter
+	xray                  tunnel.TunnelCore
+	fetcher               sourceFetcher
+	bench                 benchmarkRunner
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	wg                    sync.WaitGroup
+	mu                    sync.RWMutex
+	subscriptionMu        sync.Mutex
+	routeMu               sync.Mutex
+	lifeMu                sync.Mutex
+	admissionMu           sync.Mutex
+	benchmark             *benchmarkReservation
+	sourcesVersion        uint64
+	manualRouteVersion    uint64
+	metricHistory         *metricsHistory
+	stopping              bool
+	metrics               platform.Metrics
+	clients               []platform.Client
+	clientsUpdated        time.Time
+	clientsError          string
+	recoveryNode          string
+	recoveryCount         int
+	benchmarkQueued       bool
+	benchmarkQueueVersion uint64
+	benchmarkQueueMode    string
+	benchmarkSourceNodes  []model.Node
+	xrayRunning           bool
+	reconciled            bool
+	readinessErr          error
 }
 
 type Status struct {
 	Version      string                `json:"version"`
 	State        model.State           `json:"state"`
 	Operation    *operation.Operation  `json:"operation,omitempty"`
+	Operations   []operation.Operation `json:"operations"`
 	Capabilities platform.Capabilities `json:"capabilities"`
 	Platform     string                `json:"platform"`
 	XrayRunning  bool                  `json:"xray_running"`
@@ -124,7 +132,7 @@ func (m *Manager) Status(ctx context.Context) Status {
 	m.mu.RLock()
 	running := m.xrayRunning
 	m.mu.RUnlock()
-	return Status{m.version, m.store.State(), m.ops.Current(), m.platform.Capabilities(), m.platform.Kind(), running, time.Now().UTC()}
+	return Status{Version: m.version, State: m.store.State(), Operation: m.ops.Current(), Operations: m.ops.List(), Capabilities: m.platform.Capabilities(), Platform: m.platform.Kind(), XrayRunning: running, ServerTime: time.Now().UTC()}
 }
 func (m *Manager) State() model.State                           { return m.store.State() }
 func (m *Manager) Events(after uint64, limit int) []event.Event { return m.store.Events(after, limit) }
@@ -158,7 +166,7 @@ func (m *Manager) Nodes() []model.NodeView {
 func (m *Manager) Metrics() platform.Metrics {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	v := m.metrics
+	v := cloneMetrics(m.metrics)
 	if v.UpdatedAt.IsZero() || time.Since(v.UpdatedAt) > 15*time.Second {
 		v.Stale = true
 	}

@@ -348,7 +348,11 @@ func TestCrashRecoveryAtEveryJournalStep(t *testing.T) {
 				if err = syscall.Kill(os.Getpid(), syscall.SIGKILL); err != nil {
 					panic(err)
 				}
-				select {}
+				// Signal delivery can lag the syscall return. A bare select{}
+				// lets the runtime diagnose a deadlock before SIGKILL arrives.
+				for {
+					time.Sleep(time.Hour)
+				}
 			}
 		}
 		panic("unknown crash stage")
@@ -362,6 +366,10 @@ func TestCrashRecoveryAtEveryJournalStep(t *testing.T) {
 			output, err := cmd.CombinedOutput()
 			if err == nil {
 				t.Fatal("helper was not killed")
+			}
+			status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus)
+			if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
+				t.Fatalf("helper did not terminate from injected SIGKILL: %v", err)
 			}
 			if len(output) != 0 {
 				t.Fatalf("helper failed before injected kill: %s", output)

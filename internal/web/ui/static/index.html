@@ -26,57 +26,80 @@
   <div class="header-status"><span id="status-dot" class="dot muted"></span><span id="status-text">Подключение…</span></div>
   <button id="logout" class="ghost compact" title="Выйти">Выйти</button>
 </header>
-<nav id="tabs">
-  <button data-tab="overview" class="active">Обзор</button>
-  <button data-tab="subscriptions">Подписки</button>
-  <button data-tab="nodes">Узлы</button>
-  <button data-tab="router">Роутер</button>
-  <button data-tab="events">События</button>
+<nav id="tabs" aria-label="Основная навигация">
+  <div class="nav-group" data-group="router"><button class="group-toggle" data-group="router" aria-expanded="false" aria-controls="menu-router">Роутер <span aria-hidden="true">⌄</span></button>
+    <div id="menu-router" class="submenu hidden">
+      <button data-tab="router" data-permission="router.view">Дашборд</button>
+      <button data-tab="devices" data-permission="router.clients">Устройства и политики</button>
+      <button data-tab="interfaces" data-permission="router.view">Интерфейсы и порты</button>
+      <button data-tab="system" data-permission="router.system|router.reboot|updates.manage">Система и обновления</button>
+      <button data-tab="users" data-permission="users.manage">Пользователи и права</button>
+    </div>
+  </div>
+  <div class="nav-group" data-group="vpn"><button class="group-toggle" data-group="vpn" aria-expanded="false" aria-controls="menu-vpn">VPN <span aria-hidden="true">⌄</span></button>
+    <div id="menu-vpn" class="submenu hidden">
+      <button data-tab="overview" data-permission="vpn.view">Обзор</button>
+      <button data-tab="subscriptions" data-permission="subscriptions.view|subscriptions.manage">Подписки</button>
+      <button data-tab="nodes" data-permission="vpn.view">Узлы и горячий пул</button>
+      <button data-tab="testing" data-permission="vpn.view">Тестирование и результаты</button>
+      <button data-tab="events" data-permission="events.view">События</button>
+    </div>
+  </div>
 </nav>
 <main>
 <section id="tab-overview" class="tab active">
   <div class="grid hero-grid">
-    <article class="card hero"><div class="eyebrow">Текущий маршрут</div><div id="route-mode" class="hero-value">—</div><div id="active-node" class="sub">—</div><div class="row"><button id="benchmark" class="primary">Запустить тест</button><button id="direct" class="danger-outline">Прямой маршрут</button></div></article>
+    <article class="card hero"><div class="eyebrow">Текущий маршрут</div><div id="route-mode" class="hero-value">—</div><div id="active-node" class="sub">—</div><div class="row"><button id="benchmark" class="primary" data-permission="vpn.control">Запустить тест</button><button data-permission="vpn.control" id="direct" class="danger-outline">Прямой маршрут</button></div></article>
     <article class="card"><div class="eyebrow">Состояние VPN</div><div id="health" class="metric">—</div><div id="health-detail" class="sub">—</div></article>
     <article class="card"><div class="eyebrow">Операция</div><div id="operation" class="metric small-metric">Нет</div><div id="operation-detail" class="sub">—</div><div class="progress"><i id="operation-progress"></i></div></article>
   </div>
-  <h2>Горячий пул</h2><div id="pool" class="pool-grid"></div>
+  <div class="grid vpn-metrics-grid"><article class="card"><div class="eyebrow">Готовые резервные узлы</div><div id="pool-count" class="metric">—</div></article><article class="card"><div class="eyebrow">Последний тест</div><div id="last-test" class="metric small-metric">—</div><div id="last-test-detail" class="sub">—</div></article></div>
   <h2>Источники</h2><div id="sources" class="grid sources-grid"></div>
 </section>
 <section id="tab-subscriptions" class="tab">
   <div class="section-head">
     <div><h2>Подписки</h2><p>Источники узлов. Изменения применяются сразу и сохраняются приватно.</p></div>
-    <button id="add-subscription" class="primary">Добавить подписку</button>
+    <button data-permission="subscriptions.manage" id="add-subscription" class="primary">Добавить подписку</button>
   </div>
   <div class="table-wrap"><table class="subscriptions-table"><thead><tr><th>Название</th><th>ID</th><th>Источник</th><th>Headers</th><th>Состояние</th><th>Действия</th></tr></thead><tbody id="subscriptions-body"></tbody></table></div>
   <p class="sub subscriptions-note">После первого изменения через UI управляемый список подписок хранится отдельно в state-dir и имеет приоритет над <code>subscriptions.sources</code> из YAML.</p>
 </section>
 <section id="tab-nodes" class="tab">
+  <h2>Горячий пул</h2><div id="pool" class="pool-grid"></div><p class="sub">Скорость и задержка узлов — результаты последнего тестирования.</p>
   <div class="section-head"><div><h2>Все узлы</h2><p>Общий дедуплицированный пул подписок</p></div><input id="node-search" placeholder="Поиск по имени или источнику"></div>
   <div class="table-wrap"><table><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость</th><th>Score</th><th>Состояние</th></tr></thead><tbody id="nodes-body"></tbody></table></div>
 </section>
-<section id="tab-router" class="tab">
+<section id="tab-router" class="tab"><h2>Дашборд роутера</h2><p id="metrics-freshness" class="sub" role="status">Нет данных</p>
   <div class="grid metrics-grid">
     <article class="card"><div class="eyebrow">CPU</div><div id="cpu" class="metric">—</div></article>
     <article class="card"><div class="eyebrow">RAM</div><div id="ram" class="metric">—</div></article>
     <article class="card"><div class="eyebrow">WAN</div><div id="wan" class="metric small-metric">—</div><div id="wan-detail" class="sub">—</div></article>
-    <article class="card"><div class="eyebrow">Трафик</div><div id="traffic" class="metric small-metric">—</div></article>
+    <article class="card"><div class="eyebrow">Общий трафик WAN</div><div id="traffic" class="metric small-metric">—</div></article>
     <article class="card"><div class="eyebrow">Температура</div><div id="temperature" class="metric">—</div></article>
     <article class="card"><div class="eyebrow">Аптайм</div><div id="uptime" class="metric small-metric">—</div></article>
   </div>
-  <div class="section-head"><div><h2>Клиенты</h2><p id="clients-freshness">—</p></div><div class="row"><button id="restart-xray" class="ghost">Перезапустить Xray</button><button id="reboot" class="danger-outline">Перезагрузить устройство</button></div></div>
+  <h2>Последний час</h2><p class="sub">После перезапуска история начинается заново. WAN показывает общий трафик интерфейса.</p>
+  <div class="grid chart-grid"><article class="card"><h3>CPU и RAM, %</h3><div id="usage-chart"></div></article><article class="card"><h3>WAN, Мбит/с</h3><div id="traffic-chart"></div></article></div>
+</section>
+<section id="tab-devices" class="tab">  <div class="section-head"><div><h2>Клиенты</h2><p id="clients-freshness">—</p></div></div>
   <div class="table-wrap"><table><thead><tr><th>Устройство</th><th>IP / MAC</th><th>Связь</th><th>Политика</th><th>Действия</th></tr></thead><tbody id="clients-body"></tbody></table></div>
-  <div class="section-head tools-head"><div><h2>Инструменты</h2><p>Диагностика, системный журнал и обновление</p></div><div class="row tool-buttons"><button id="system-logs" class="ghost">Системный журнал</button><button id="diagnostics" class="ghost">Диагностика</button><button id="update-check" class="ghost">Проверить обновление</button><button id="update-apply" class="primary hidden" disabled>Установить обновление</button></div></div>
+</section>
+<section id="tab-system" class="tab"><div class="row"><button id="reboot" class="danger-outline" data-permission="router.reboot">Перезагрузить устройство</button></div>
+  <div class="section-head tools-head"><div><h2>Инструменты</h2><p>Диагностика, системный журнал и обновление</p></div><div class="row tool-buttons"><button data-permission="router.system" id="system-logs" class="ghost">Системный журнал</button><button data-permission="router.system" id="diagnostics" class="ghost">Диагностика</button><button data-permission="updates.manage" id="update-check" class="ghost">Проверить обновление</button><button data-permission="updates.manage" id="update-apply" class="primary hidden" disabled>Установить обновление</button></div></div>
   <p id="update-status" class="sub" role="status" aria-live="polite">Статус обновлений пока неизвестен</p>
   <pre id="tool-output" class="tool-output hidden"></pre>
+</section><section id="tab-interfaces" class="tab"><h2>Интерфейсы WAN и порты</h2><div id="interface-summary" class="sub">Нет данных</div>
   <h2>Порты</h2><div id="ports" class="grid ports-grid"></div>
 </section>
+<section id="tab-testing" class="tab"><div class="section-head"><div><h2>Тестирование VPN</h2><p>Измерения могут нагружать канал. Ручные изменения маршрута имеют приоритет.</p></div><div class="row"><button id="restart-xray" class="ghost" data-permission="vpn.control">Перезапустить Xray</button><button id="test-start" class="primary" data-permission="vpn.control">Запустить тест</button><button id="benchmark-cancel" class="danger-outline hidden" data-permission="vpn.control">Отменить тест</button></div></div><div id="operations-list" class="grid"></div><h2>Последние результаты</h2><p class="sub">Скорость теста не является текущим трафиком пользователей.</p><div id="test-results" class="table-wrap"></div></section>
+<section id="tab-users" class="tab"><div class="section-head"><div><h2>Пользователи и права</h2><p>Отзыв прав применяется к открытым сессиям. Последнего администратора нельзя удалить или заблокировать.</p></div><button id="add-user" class="primary" data-permission="users.manage">Добавить пользователя</button></div><div class="table-wrap"><table><thead><tr><th>Логин</th><th>Доступ</th><th>Права</th><th>Действия</th></tr></thead><tbody id="users-body"></tbody></table></div></section>
+<div id="no-access" class="card hidden">Нет доступных разделов. Обратитесь к администратору.</div>
 <section id="tab-events" class="tab">
   <div class="section-head"><div><h2>События</h2><p>Локальный журнал операций и переключений</p></div><button id="refresh-events" class="ghost">Обновить</button></div>
   <div id="events-list" class="events"></div>
 </section>
 </main>
-<div id="subscription-modal" class="modal hidden">
+<div id="subscription-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
   <form id="subscription-form" class="dialog subscription-dialog" autocomplete="off">
     <h2 id="subscription-title">Подписка</h2>
     <p>URL и headers могут содержать секреты. Они сохраняются только в приватном хранилище controller.</p>
@@ -92,6 +115,7 @@
     </div>
   </form>
 </div>
+<div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-title"><form id="user-form" class="dialog user-dialog" autocomplete="off"><h2 id="user-title">Пользователь</h2><input id="user-id" type="hidden"><label>Логин<input id="user-name" autocomplete="off" required minlength="3" maxlength="64"></label><label>Пароль<input id="user-password" type="password" autocomplete="new-password" minlength="10"><span id="user-password-hint" class="sub"></span></label><label class="checkbox-label"><input id="user-enabled" type="checkbox" checked> Доступ включён</label><label>Шаблон роли<select id="user-role"><option value="">Выбрать шаблон…</option><option value="admin">Администратор</option><option value="viewer">Наблюдатель</option><option value="vpn-operator">Оператор VPN</option><option value="router-operator">Оператор роутера</option></select></label><fieldset><legend>Разрешения</legend><div id="user-permissions" class="permissions-grid"></div></fieldset><div id="user-error" class="error"></div><div class="dialog-actions"><button id="user-cancel" type="button" class="ghost">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form></div>
 <div id="toast" class="toast hidden"></div>
 <script src="/assets/app.js" defer></script>
 </body></html>

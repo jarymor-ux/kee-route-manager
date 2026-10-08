@@ -2,7 +2,9 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.7 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.13 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
+
+The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
 Runtime components:
 
@@ -26,7 +28,7 @@ curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
 sh /tmp/krm-bootstrap.sh
 ```
 
-Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` asset URL. These instructions describe the next release; published v1.1.0-rc.7 assets do not acquire this behavior.
+Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` asset URL. Use a signed release that includes the interactive installer; previously published assets remain unchanged.
 
 After verification of all release assets, the RU/EN wizard configures Xray paths, explicit routing tags, subscriptions and headers, score/health targets, pool size, optional speed testing and update discovery. With no `KRM_MODE`, installation defaults to `local-ui`; use `KRM_MODE=core sh /tmp/krm-bootstrap.sh` for controller only. The wizard generates a validated private controller config; `local-ui` also creates the UI config automatically, using `https://127.0.0.1:9443` and the controller's public certificate installed as `controller-ca.crt`. TLS verification remains enabled. An interactive terminal is required.
 

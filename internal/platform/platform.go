@@ -33,25 +33,26 @@ type Port struct {
 	Speed any    `json:"speed,omitempty"`
 }
 type Metrics struct {
-	CPUPercent     *float64  `json:"cpu_percent,omitempty"`
-	RAMPercent     *float64  `json:"ram_percent,omitempty"`
-	RAMUsedMB      int64     `json:"ram_used_mb,omitempty"`
-	RAMTotalMB     int64     `json:"ram_total_mb,omitempty"`
-	TemperatureC   *float64  `json:"temperature_c,omitempty"`
-	UptimeSeconds  int64     `json:"uptime_seconds,omitempty"`
-	WANConnected   *bool     `json:"wan_connected,omitempty"`
-	WANName        string    `json:"wan_name,omitempty"`
-	WANDescription string    `json:"wan_description,omitempty"`
-	WANIP          string    `json:"wan_ip,omitempty"`
-	RXBytes        uint64    `json:"rx_bytes,omitempty"`
-	TXBytes        uint64    `json:"tx_bytes,omitempty"`
-	RXMbps         float64   `json:"rx_mbps,omitempty"`
-	TXMbps         float64   `json:"tx_mbps,omitempty"`
-	Connections    int64     `json:"connections,omitempty"`
-	Ports          []Port    `json:"ports,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Stale          bool      `json:"stale"`
-	Error          string    `json:"error,omitempty"`
+	CPUPercent       *float64  `json:"cpu_percent,omitempty"`
+	RAMPercent       *float64  `json:"ram_percent,omitempty"`
+	RAMUsedMB        int64     `json:"ram_used_mb,omitempty"`
+	RAMTotalMB       int64     `json:"ram_total_mb,omitempty"`
+	TemperatureC     *float64  `json:"temperature_c,omitempty"`
+	UptimeSeconds    int64     `json:"uptime_seconds,omitempty"`
+	WANConnected     *bool     `json:"wan_connected,omitempty"`
+	WANName          string    `json:"wan_name,omitempty"`
+	WANDescription   string    `json:"wan_description,omitempty"`
+	WANIP            string    `json:"wan_ip,omitempty"`
+	RXBytes          uint64    `json:"rx_bytes,omitempty"`
+	TXBytes          uint64    `json:"tx_bytes,omitempty"`
+	RXMbps           float64   `json:"rx_mbps"`
+	TXMbps           float64   `json:"tx_mbps"`
+	TrafficAvailable bool      `json:"traffic_available"`
+	Connections      int64     `json:"connections,omitempty"`
+	Ports            []Port    `json:"ports,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	Stale            bool      `json:"stale"`
+	Error            string    `json:"error,omitempty"`
 }
 type Client struct {
 	MAC              string `json:"mac"`
@@ -221,11 +222,12 @@ func linuxMetrics() (Metrics, error) {
 		m.RAMPercent = &v
 	}
 	if b, err = os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {
-		v, _ := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
-		if v > 1000 {
-			v /= 1000
+		if v, valid := telemetryNumber(strings.TrimSpace(string(b))); valid {
+			if v > 1000 {
+				v /= 1000
+			}
+			m.TemperatureC = &v
 		}
-		m.TemperatureC = &v
 	}
 	return m, nil
 }

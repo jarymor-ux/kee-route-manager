@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,59 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/subscription"
 )
 
+type benchmarkReservation struct {
+	handle                        *operation.Handle
+	ctx                           context.Context
+	cleanup                       func()
+	cancel                        context.CancelFunc
+	done                          chan struct{}
+	explicitCancel                bool // protected by Manager.mu
+	manualVersion, sourcesVersion uint64
+}
+
+// reserveBenchmark owns the cancellation handle before returning an accepted ID.
+func (m *Manager) reserveBenchmark(ctx context.Context, source string) (*benchmarkReservation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !m.admissionMu.TryLock() {
+		return nil, operation.ErrBusy
+	}
+	defer m.admissionMu.Unlock()
+	m.mu.RLock()
+	joining := m.benchmark != nil
+	m.mu.RUnlock()
+	if joining {
+		return nil, operation.ErrBusy
+	}
+	// Capture intent at admission, before exposing the accepted operation ID.
+	m.routeMu.Lock()
+	manualVersion := m.manualRouteVersion
+	m.routeMu.Unlock()
+	m.subscriptionMu.Lock()
+	sourcesVersion := m.sourcesVersion
+	m.subscriptionMu.Unlock()
+	h, err := m.ops.StartCompatible("benchmark", source)
+	if err != nil {
+		return nil, err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	reservation := &benchmarkReservation{handle: h, ctx: runCtx, cancel: cancel, done: done, manualVersion: manualVersion, sourcesVersion: sourcesVersion}
+	m.mu.Lock()
+	m.benchmark = reservation
+	m.mu.Unlock()
+	reservation.cleanup = func() {
+		cancel()
+		m.mu.Lock()
+		if m.benchmark == reservation {
+			m.benchmark = nil
+		}
+		close(done)
+		m.mu.Unlock()
+	}
+	return reservation, nil
+}
 func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 	if mode != "manual" && m.store.State().AutomaticRoutingPaused {
 		return nil
@@ -18,36 +72,76 @@ func (m *Manager) RunBenchmark(ctx context.Context, mode, source string) error {
 		return context.Canceled
 	}
 	defer m.wg.Done()
-	h, err := m.ops.Start("benchmark", source)
+	reservation, err := m.reserveBenchmark(ctx, source)
 	if err != nil {
 		return err
 	}
-	return m.runBenchmark(ctx, mode, source, h)
+	defer reservation.cleanup()
+	return m.runBenchmark(reservation, mode, source)
 }
 func (m *Manager) RequestBenchmark(ctx context.Context, source string) (*operation.Operation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !m.beginWork() {
 		return nil, context.Canceled
 	}
-	h, err := m.ops.Start("benchmark", source)
+	runCtx := m.ctx
+	if runCtx == nil {
+		runCtx = ctx
+	}
+	reservation, err := m.reserveBenchmark(runCtx, source)
 	if err != nil {
 		m.wg.Done()
 		return nil, err
 	}
 	op := m.ops.Current()
-	runCtx := m.ctx
-	if runCtx == nil {
-		runCtx = ctx
-	}
-	go func() { defer m.wg.Done(); _ = m.runBenchmark(runCtx, "manual", source, h) }()
+	go func() {
+		defer m.wg.Done()
+		defer reservation.cleanup()
+		_ = m.runBenchmark(reservation, "manual", source)
+	}()
 	return op, nil
 }
-func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *operation.Handle) error {
+
+// Cancellation waits for probe workers, temporary Xray batches, and the
+// execution reservation to finish before lifecycle actions can take ownership.
+func (m *Manager) CancelBenchmark(ctx context.Context) error {
+	m.mu.Lock()
+	reservation := m.benchmark
+	if reservation != nil {
+		reservation.explicitCancel = true
+	}
+	m.mu.Unlock()
+	if reservation == nil {
+		return nil
+	}
+	reservation.cancel()
+	select {
+	case <-reservation.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source string) error {
+	ctx, h := reservation.ctx, reservation.handle
+	manualVersion, sourcesVersion := reservation.manualVersion, reservation.sourcesVersion
 	var err error
 	var fetched subscription.Result
 	started := time.Now().UTC()
 	m.log("info", "benchmark.started", "benchmark started", h.ID(), map[string]any{"mode": mode, "source": source})
 	finish := func(runErr error) error {
-		completionErr := m.finishOperation(h, runErr, "benchmark complete")
+		m.mu.RLock()
+		explicitCancel := reservation.explicitCancel
+		m.mu.RUnlock()
+		var completionErr error
+		if errors.Is(runErr, context.Canceled) && explicitCancel {
+			completionErr = errors.Join(runErr, h.Cancel("benchmark canceled"))
+			m.log("info", "benchmark.canceled", "benchmark canceled", h.ID(), nil)
+			return completionErr
+		}
+		completionErr = m.finishOperation(h, runErr, "benchmark complete")
 		if completionErr != nil {
 			m.log("error", "benchmark.failed", completionErr.Error(), h.ID(), nil)
 			return completionErr
@@ -63,10 +157,19 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	beforeFetch := m.store.State()
 	forceFetch := mode != "emergency"
 	fetched = m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
-	_ = m.store.Update(func(s *model.State) error {
-		s.Sources = fetched.States
-		return nil
-	})
+	m.subscriptionMu.Lock()
+	if m.sourcesVersion != sourcesVersion {
+		m.subscriptionMu.Unlock()
+		return finish(operation.ErrSuperseded)
+	}
+	err = m.store.Update(func(s *model.State) error { s.Sources = fetched.States; return nil })
+	m.subscriptionMu.Unlock()
+	if ctx.Err() != nil {
+		return finish(ctx.Err())
+	}
+	if err != nil {
+		return finish(err)
+	}
 	if len(fetched.Nodes) == 0 {
 		err = fmt.Errorf("no nodes available from subscriptions or cache")
 		return finish(err)
@@ -103,6 +206,19 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	_ = h.Update("apply", 0, m.cfg.Pool.Size, "applying hot pool")
 	m.routeMu.Lock()
 	defer m.routeMu.Unlock()
+	m.subscriptionMu.Lock()
+	defer m.subscriptionMu.Unlock()
+	if ctx.Err() != nil {
+		return finish(ctx.Err())
+	}
+	if m.sourcesVersion != sourcesVersion {
+		return finish(operation.ErrSuperseded)
+	}
+	manualChanged := m.manualRouteVersion != manualVersion
+	// Include nodes added or retained by a concurrent manual selection.
+	for _, node := range m.store.Nodes() {
+		allNodes[node.ID] = node
+	}
 
 	// Health failover may have changed the active slot while the long benchmark was
 	// running. Re-read state under the routing mutation lock and retain that node.
@@ -144,6 +260,8 @@ func (m *Manager) runBenchmark(ctx context.Context, mode, source string, h *oper
 	reason := ""
 	if winner >= 0 {
 		switch {
+		case manualChanged:
+			// An explicit choice made after this test started wins over its ranking.
 		case state.DirectMode:
 		// Recovery is decided by consecutive failover probes, never a benchmark.
 		case state.ActiveNodeID == "" || mode == "manual":

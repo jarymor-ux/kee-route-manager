@@ -37,21 +37,38 @@ type Credentials struct {
 }
 
 func CreateCredentials(path, username, password string) error {
+	value, err := newCredentials(username, password)
+	if err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(value, "", "  ")
+	return atomicSecret(path, append(data, '\n'))
+}
+func newCredentials(username, password string) (Credentials, error) {
 	username = strings.TrimSpace(username)
-	if len(username) < 3 || len(username) > 64 || strings.ContainsAny(username, "\r\n\t") {
-		return fmt.Errorf("username must be 3..64 characters without controls")
+	if !validUsername(username) {
+		return Credentials{}, fmt.Errorf("username must be 3..64 bytes without controls")
 	}
 	if len(password) < 10 || len(password) > 1024 {
-		return fmt.Errorf("password must be 10..1024 bytes")
+		return Credentials{}, fmt.Errorf("password must be 10..1024 bytes")
 	}
 	salt := make([]byte, 24)
 	if _, err := rand.Read(salt); err != nil {
-		return err
+		return Credentials{}, err
 	}
 	hash := pbkdf2SHA256([]byte(password), salt, defaultIterations, 32)
-	value := Credentials{1, username, "pbkdf2-sha256", defaultIterations, base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash), time.Now().UTC()}
-	data, _ := json.MarshalIndent(value, "", "  ")
-	return atomicSecret(path, append(data, '\n'))
+	return Credentials{1, username, "pbkdf2-sha256", defaultIterations, base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash), time.Now().UTC()}, nil
+}
+func validUsername(username string) bool {
+	if len(username) < 3 || len(username) > 64 || strings.TrimSpace(username) != username {
+		return false
+	}
+	for _, c := range username {
+		if c < 32 || c == 127 {
+			return false
+		}
+	}
+	return true
 }
 func LoadCredentials(path string) (Credentials, error) {
 	data, err := os.ReadFile(path)
@@ -68,7 +85,7 @@ func LoadCredentials(path string) (Credentials, error) {
 	return c, nil
 }
 func validCredentials(c Credentials) bool {
-	if c.SchemaVersion != 1 || c.Algorithm != "pbkdf2-sha256" || c.Iterations < 100000 || c.Iterations > maxIterations || len(c.Username) < 3 || len(c.Username) > 64 || strings.ContainsAny(c.Username, "\r\n\t") {
+	if c.SchemaVersion != 1 || c.Algorithm != "pbkdf2-sha256" || c.Iterations < 100000 || c.Iterations > maxIterations || !validUsername(c.Username) {
 		return false
 	}
 	if len(c.Salt) > 64 || len(c.PasswordHash) > 64 {
@@ -152,11 +169,21 @@ func atomicSecret(path string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(name, path)
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 type Session struct {
 	ID, CSRF, Username, RemoteIP string
+	UserID                       string
+	Revision                     uint64
 	CreatedAt, ExpiresAt         time.Time
 }
 type SessionStore struct {
@@ -169,6 +196,12 @@ func NewSessionStore(ttl time.Duration) *SessionStore {
 	return &SessionStore{ttl: ttl, sessions: map[string]Session{}}
 }
 func (s *SessionStore) Create(username, ip string) (Session, error) {
+	return s.create(username, ip, "", 0)
+}
+func (s *SessionStore) CreateForUser(user User, revision uint64, ip string) (Session, error) {
+	return s.create(user.Username, ip, user.ID, revision)
+}
+func (s *SessionStore) create(username, ip, userID string, revision uint64) (Session, error) {
 	id, err := token(32)
 	if err != nil {
 		return Session{}, err
@@ -178,7 +211,7 @@ func (s *SessionStore) Create(username, ip string) (Session, error) {
 		return Session{}, err
 	}
 	now := time.Now().UTC()
-	v := Session{id, csrf, username, ip, now, now.Add(s.ttl)}
+	v := Session{ID: id, CSRF: csrf, Username: username, RemoteIP: ip, CreatedAt: now, ExpiresAt: now.Add(s.ttl), UserID: userID, Revision: revision}
 	s.mu.Lock()
 	for k, x := range s.sessions {
 		if now.After(x.ExpiresAt) {

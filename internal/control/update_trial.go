@@ -48,16 +48,24 @@ func trialReady(ctx context.Context, c config.Config, version string) error {
 	// than letting trial startup modify their durable record.
 	if b, err := os.ReadFile(filepath.Join(c.Paths.StateDir, "operation.json")); err == nil {
 		var op struct {
-			Status string `json:"status"`
+			Status     string `json:"status"`
+			Operations []struct {
+				Status string `json:"status"`
+			} `json:"operations"`
 		}
 		if json.Unmarshal(b, &op) != nil || op.Status == "running" {
 			return fmt.Errorf("operation is not quiescent")
+		}
+		for _, companion := range op.Operations {
+			if companion.Status == "running" {
+				return fmt.Errorf("operation is not quiescent")
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
 	if c.API.Enabled {
-		if _, err := auth.LoadCredentials(c.Web.CredentialsFile); err != nil {
+		if _, err := auth.LoadUsers(c.Web.CredentialsFile); err != nil {
 			return fmt.Errorf("controller credentials unavailable")
 		}
 		if c.API.TLS.Enabled {

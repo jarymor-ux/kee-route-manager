@@ -1,5 +1,8 @@
 # Known limitations
 
+- Panel permissions apply to KRM API operations, not OS/root access or individual LAN-device ownership. Already accepted operations may finish after permission revocation. Downgrading uses the original single-account credentials and cannot preserve new users or revoked rights; back up both private credential files.
+- Dashboard history is limited to 720 successful in-memory samples and is lost on daemon restart. Gaps remain gaps. Keenetic WAN traffic is aggregate interface traffic, not VPN-only traffic. Linux/OpenWrt CPU, RAM, uptime and optional temperature are supported; WAN/client telemetry still depends on platform support. No new hardware acceptance is implied by the dashboard or concurrent-control implementation.
+
 - Published v1.0.0-rc.2 has a confirmed Xray multi-file routing defect: later routing sections replace its balancer and API rules. Current source fixes the merge and has a real-Xray lifecycle regression, but published assets are immutable. A separately signed corrected build is required for deployment.
 
 - All platforms remain experimental. One Keenetic router has passed signed launcher migration and a manual GitHub release update through the authenticated panel API, preserving the Xray process, active node, device policy, credentials and TLS certificates. Router VPN health checks passed; one selected LAN client was confirmed working on the preceding private build. Reboot, power-loss, deliberately broken candidate rollback and exhaustive LAN-client acceptance remain separate hardware checks.

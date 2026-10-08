@@ -5,7 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
@@ -57,7 +60,13 @@ func actionServer(t *testing.T, c Controller) (*Server, auth.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.sessions.Create("admin", "192.0.2.10")
+	s.users = regressionUsers(t)
+	revision := uint64(1)
+	user, ok := s.users.Current("legacy-admin", revision)
+	if !ok {
+		t.Fatal("fixture authentication failed")
+	}
+	session, err := s.sessions.CreateForUser(user, revision, "192.0.2.10")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,4 +197,32 @@ func TestLocalRestoreAndDisabledUpdate(t *testing.T) {
 	if w.Code != 409 || strings.Contains(w.Body.String(), "private") {
 		t.Fatalf("restore failure: %d %s", w.Code, w.Body)
 	}
+}
+
+var regressionCredentialOnce sync.Once
+var regressionCredentialBytes []byte
+var regressionCredentialError error
+
+// Reuse synthetic hash material so HTTP-only regressions do not benchmark PBKDF2.
+func regressionUsers(t *testing.T) *auth.UserStore {
+	t.Helper()
+	regressionCredentialOnce.Do(func() {
+		path := filepath.Join(t.TempDir(), "fixture-credentials.json")
+		regressionCredentialError = auth.CreateCredentials(path, "admin", "synthetic-password")
+		if regressionCredentialError == nil {
+			regressionCredentialBytes, regressionCredentialError = os.ReadFile(path)
+		}
+	})
+	if regressionCredentialError != nil {
+		t.Fatal(regressionCredentialError)
+	}
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	if err := os.WriteFile(path, regressionCredentialBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	users, err := auth.LoadUsers(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return users
 }

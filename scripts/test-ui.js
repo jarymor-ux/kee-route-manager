@@ -52,7 +52,7 @@ function statusChecks() {
     }
     return elements.get(selector);
   };
-  const context = vm.createContext({ $: select, renderPool() {}, renderSources() {}, fmtAge: () => '—' });
+  const context = vm.createContext({ $: select, renderPool() {}, renderSources() {}, renderOperations() {}, can: () => true, fmtAge: () => '—' });
   vm.runInContext(source.slice(start, end), context);
   const render = (state, running = true) => {
     context.data = { version: 'test', xray_running: running, capabilities: {}, state };
@@ -90,25 +90,30 @@ function appHarness() {
   const requests = [];
   const intervals = new Set();
   let reloads = 0;
+  const handlers = {};
+  const allPermissions = ['vpn.view', 'vpn.control', 'subscriptions.view', 'subscriptions.manage', 'router.view', 'router.clients', 'router.policy', 'router.wake', 'router.system', 'router.reboot', 'updates.manage', 'users.manage', 'events.view'];
   const select = (selector) => {
     if (!elements.has(selector)) {
       const classes = new Set(['hidden']);
       elements.set(selector, {
-        value: '', textContent: '', innerHTML: '', style: {}, dataset: {}, disabled: false,
+        id: selector.startsWith('#') ? selector.slice(1) : '', value: '', textContent: '', innerHTML: '', style: {}, dataset: {}, disabled: false,
         classList: {
           add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
           toggle: (name, force) => { if (force) classes.add(name); else classes.delete(name); },
         },
+        setAttribute(name, value) { this[name] = value; },
         addEventListener(name, fn) { this[name] = fn; }, focus() {},
       });
     }
     return elements.get(selector);
   };
+  const many = new Map();
+  const selectAll = (selector) => many.get(selector) || [];
   let response = { status: 401, ok: false, data: { error: 'unauthorized' } };
   let confirmResult = true;
   const context = vm.createContext({
-    document: { querySelector: select, querySelectorAll: () => [] }, navigator: {}, Date,
-    window: { location: { reload: () => { reloads++; } } },
+    document: { querySelector: select, querySelectorAll: selectAll }, navigator: {}, Date,
+    window: { location: { hash: '', reload: () => { reloads++; } }, addEventListener: (name, handler) => { handlers[name] = handler; } },
     setTimeout() {}, clearInterval: (timer) => intervals.delete(timer),
     setInterval: (fn) => { intervals.add(fn); return fn; }, confirm: () => confirmResult,
     fetch: async (url, options) => {
@@ -117,15 +122,17 @@ function appHarness() {
       return { ...current, headers: { get: () => 'application/json' }, json: async () => current.data };
     },
   });
+  context.allPermissions = allPermissions;
   vm.runInContext(source, context);
-  return { context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
+  vm.runInContext('permissions = new Set(allPermissions)', context);
+  return { allPermissions, handlers, many, context, select, requests, intervals, reloads: () => reloads, confirm: (next) => { confirmResult = next; }, respond: (next) => { response = next; }, run: (code) => vm.runInContext(code, context) };
 }
 
 async function versionReloadChecks() {
   for (const interruption of ['none', 'expired', 'logout']) {
     const h = appHarness();
     await new Promise(setImmediate);
-    h.run('authenticated = true');
+    h.run('authenticated = true; permissions = new Set(allPermissions)');
     const status = (version) => ({ version, state: { pool: [], sources: {} }, xray_running: true });
     const load = async (version) => {
       h.respond({ status: 200, ok: true, data: status(version) });
@@ -149,7 +156,7 @@ async function versionReloadChecks() {
       await load('9.9.9');
       assert.equal(h.reloads(), 0, 'logged-out response must not reload or replace the baseline');
       h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/session')
-        ? { csrf: 'new-session' } : url.endsWith('/update/status') ? {} : status('1.2.0-rc.1') }));
+        ? { csrf: 'new-session', permissions: h.allPermissions } : url.endsWith('/update/status') ? {} : status('1.2.0-rc.1') }));
       await h.run('session()');
       await new Promise(setImmediate);
       assert.equal(h.reloads(), 0, 'relogin to the same version must not reload');
@@ -169,7 +176,7 @@ async function appChecks() {
   await new Promise(setImmediate);
   assert.equal(h.select('#login').classList.contains('hidden'), false, 'expired session must require login');
   h.respond({ status: 200, ok: true, data: { accepted: true } });
-  h.run("csrf = 'test-csrf'");
+  h.run("csrf = 'test-csrf'; permissions = new Set(allPermissions)");
   await h.run("api('/api/v1/actions/direct', { method: 'POST', body: '{}' })");
   let request = h.requests.at(-1);
   assert.equal(request.options.headers['X-KRM-CSRF'], 'test-csrf');
@@ -186,6 +193,7 @@ async function appChecks() {
   assert.equal(h.intervals.size, 0, 'unauthorized response must stop polling');
   assert.equal(h.select('#password').value, '');
 
+  h.run('permissions = new Set(allPermissions)');
   const injection = '<img src=x onerror="alert(1)">';
   h.context.injection = injection;
   h.run(`renderPool({ pool: [{ index: 0, label: injection, node_id: 'node', score: 1 }], active_slot: 0 });
@@ -236,7 +244,7 @@ async function appChecks() {
 async function updateChecks() {
   const h = appHarness();
   await new Promise(setImmediate);
-  h.run("authenticated = true; csrf = 'update-csrf'");
+  h.run("authenticated = true; permissions = new Set(allPermissions); csrf = 'update-csrf'");
   const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
   const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
   h.respond({ status: 200, ok: true, data: state });
@@ -310,7 +318,7 @@ async function updateChecks() {
 async function updateTrialReconnectChecks() {
   const h = appHarness();
   await new Promise(setImmediate);
-  h.run("authenticated = true; csrf = 'update-csrf'");
+  h.run("authenticated = true; permissions = new Set(allPermissions); csrf = 'update-csrf'");
   const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
   const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
   const controllerStatus = (version) => ({
@@ -352,7 +360,7 @@ async function updateTrialReconnectChecks() {
 async function updateFailureAfterReconnectChecks() {
   const h = appHarness();
   await new Promise(setImmediate);
-  h.run("authenticated = true; csrf = 'update-csrf'");
+  h.run("authenticated = true; permissions = new Set(allPermissions); csrf = 'update-csrf'");
   const check = { available: true, stage_supported: true, latest_version: '1.2.0', current_version: '1.1.0' };
   const state = { enabled: true, launcher: true, applying: false, phase: 'idle', current_version: '1.1.0', check };
 
@@ -422,7 +430,166 @@ async function serviceWorkerChecks() {
   }
 }
 
+async function navigationPermissionChecks() {
+  const html = fs.readFileSync(path.join(root, 'internal/web/ui/static/index.html'), 'utf8');
+  assert.equal((html.match(/class="group-toggle"/g) || []).length, 2, 'only router and VPN top-level groups');
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length, 'page elements must have unique IDs');
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('authenticated = true; permissions = new Set(allPermissions)');
+  const pages = ['router', 'devices', 'interfaces', 'system', 'users', 'overview', 'subscriptions', 'nodes', 'testing', 'events'];
+  const buttons = pages.map((page) => { const element = h.select(`#nav-${page}`); element.dataset.tab = page; return element; });
+  const sections = pages.map((page) => h.select(`#tab-${page}`));
+  h.many.set('#tabs [data-tab]', buttons);
+  h.many.set('.tab', sections);
+  h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/users') ? { users: [], permissions: h.allPermissions, roles: {} } : url.endsWith('/nodes') ? [] : {} }));
+  h.run("navigate('users')");
+  assert.equal(h.context.window.location.hash, 'users', 'navigation updates deep link');
+  assert.equal(h.select('#tab-users').classList.contains('active'), true);
+  assert.equal(h.select('#tab-router').classList.contains('active'), false);
+  assert.equal(h.select('#tabs .group-toggle[data-group="router"]')['aria-expanded'], 'true');
+  h.context.window.location.hash = '#nodes';
+  h.handlers.hashchange();
+  assert.equal(h.run('activePage'), 'nodes', 'browser hash changes restore selected page');
+  assert.equal(h.select('#tab-nodes').classList.contains('active'), true);
+  h.run("toggleGroup('vpn', false)");
+  assert.equal(h.select('#menu-vpn').classList.contains('hidden'), true, 'submenu can collapse');
+  h.context.window.location.hash = '#interfaces';
+  h.run('startPolling()');
+  assert.equal(h.run('activePage'), 'interfaces', 'initial deep link is restored after login');
+  await new Promise(setImmediate);
+
+  h.respond({ status: 200, ok: true, data: {} });
+  h.run("acceptSession({csrf:'fresh',permissions:['vpn.view','subscriptions.view'],user:{id:'viewer'}})");
+  assert.equal(h.run('activePage'), 'overview', 'revoked page falls back to an authorized page');
+  h.run("renderPool({pool:[{index:0,node_id:'node',label:'node'}]}); renderClients([{mac:'aa'}]);");
+  assert(!h.select('#pool').innerHTML.includes('slot-switch'), 'viewer has no switch button');
+  assert(!h.select('#clients-body').innerHTML.includes('class="policy"'), 'viewer has no policy control');
+  assert(!h.select('#clients-body').innerHTML.includes('class="ghost compact wake"'), 'viewer has no WOL control');
+  const before = h.requests.length;
+  await assert.rejects(() => h.run("api('/api/v1/users')"), /Недостаточно прав/);
+  await assert.rejects(() => h.run("api('/api/v1/actions/direct', {method:'POST'})"), /Недостаточно прав/);
+  assert.equal(h.requests.length, before, 'denied endpoints are never fetched');
+  h.run("subscriptionData = [{id:'test',url:'https://private',headers:{Authorization:'secret'},enabled:true}];renderSubscriptions();openSubscriptionEditor('test')");
+  assert(!h.select('#subscriptions-body').innerHTML.includes('subscription-edit'));
+  assert.equal(h.select('#subscription-modal').classList.contains('hidden'), true, 'read-only subscription never opens secret editor');
+
+  let finish;
+  h.respond(() => new Promise((resolve) => { finish = resolve; }));
+  const inFlight = h.run("api('/api/v1/subscriptions')");
+  h.run("acceptSession({csrf:'new',permissions:['vpn.view']})");
+  finish({status:200,ok:true,data:{sources:[{url:'secret'}]}});
+  await assert.rejects(() => inFlight, /Доступ изменён/, 'response started before revoke must be discarded');
+  assert.equal(h.run('subscriptionData.length'), 0);
+
+  const requested = [];
+  h.respond((url) => {
+    requested.push(url);
+    return {status:200,ok:true,data:url.endsWith('/session') ? {csrf:'next',permissions:['vpn.view']} : {version:'test',state:{pool:[],sources:{}}}};
+  });
+  h.run("activePage='overview'");
+  await h.run('poll()');
+  assert(requested[0].endsWith('/session'), 'each polling round refreshes permissions first');
+  assert(!requested.some((url) => url.includes('/router/') || url.includes('/update/') || url.includes('/users')), 'polling never loads unauthorized domains');
+  h.run("showTool('sensitive');usersData=[{username:'secret'}];clientsData=[{name:'private'}];showLogin()");
+  assert.equal(h.select('#tool-output').textContent, '');
+  assert.equal(h.run('usersData.length + clientsData.length'), 0, 'logout clears private caches');
+  assert.equal(h.run('csrf'), '');
+}
+
+async function dashboardAndOperationChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('permissions = new Set(allPermissions)');
+  h.run('renderMetrics({})');
+  assert(h.select('#traffic').textContent.includes('↓ — · ↑ —'), 'missing counters cannot be presented as idle traffic');
+  assert(h.select('#metrics-freshness').textContent.includes('устарели'));
+  h.context.now = new Date().toISOString();
+  h.run('renderMetrics({updated_at:now,traffic_available:true,rx_mbps:0,tx_mbps:0,cpu_percent:0,ram_percent:0})');
+  assert.equal(h.select('#traffic').textContent, '↓ 0.0 · ↑ 0.0 Мбит/с', 'valid idle counters remain zero');
+  assert(!h.select('#metrics-freshness').textContent.includes('устарели'));
+  h.run('renderMetrics({updated_at:now,stale:true,traffic_available:true,rx_mbps:0,tx_mbps:0})');
+  assert(h.select('#metrics-freshness').textContent.includes('устарели'), 'a recent failed observation remains stale');
+  h.run('renderMetrics({updated_at:now,traffic_available:false,rx_mbps:0,tx_mbps:0})');
+  assert(h.select('#traffic').textContent.includes('↓ —'), 'unavailable adapter counters are not treated as zero');
+  h.run('renderCharts([])');
+  assert(h.select('#usage-chart').innerHTML.includes('недоступны'));
+  h.context.samples = [{ updated_at: new Date(Date.now()-20000).toISOString(), cpu_percent:30 }, {updated_at:new Date(Date.now()-10000).toISOString(), cpu_percent:null}, {updated_at:new Date().toISOString(), cpu_percent:40}];
+  h.run('renderCharts(samples)');
+  assert.equal((h.select('#usage-chart').innerHTML.match(/<circle/g) || []).length, 2, 'missing sample breaks the chart line');
+  assert(!h.select('#usage-chart').innerHTML.includes('NaN'));
+  h.run("renderStatus({version:'test',state:{pool:[],sources:{}},capabilities:{reboot:true,system_logs:true},operation:{type:'benchmark',status:'running'},operations:[{type:'benchmark',status:'running',message:'testing'},{type:'client-policy',status:'running',message:'policy'}]})");
+  assert(h.select('#operations-list').innerHTML.includes('Политика устройства'));
+  h.run("renderOperations([{type:'benchmark',status:'canceled'}])");
+  assert(h.select('#operations-list').innerHTML.includes('Отменена'), 'explicit cancellation has a localized status');
+  h.run("renderStatus({state:{active_slot:0,pool:[{index:0,node_id:'active',healthy:true},{index:1,node_id:'bad',healthy:false},{index:2,node_id:'good',healthy:true}]},operations:[{type:'benchmark',status:'running'}]})");
+  assert.equal(h.select('#pool-count').textContent, '1', 'unhealthy reserves cannot be labeled ready');
+  assert.equal(h.select('#benchmark').disabled, true, 'duplicate benchmark start is prevented');
+  assert.equal(h.select('#direct').disabled, false, 'benchmark does not block independent manual routing');
+  assert.equal(h.select('#benchmark-cancel').classList.contains('hidden'), false);
+  h.run("permissions = new Set(['vpn.view']); renderStatus({state:{pool:[],sources:{}},operations:[{type:'benchmark',status:'running'}]})");
+  assert.equal(h.select('#benchmark-cancel').classList.contains('hidden'), true, 'cancellation requires VPN control permission');
+}
+
+async function userManagementChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('authenticated=true;permissions=new Set(allPermissions)');
+  const account = {id:'alice',username:'alice',enabled:true,permissions:['vpn.view'],updated_at:'2026-10-08T10:11:12.123456789Z'};
+  const userResponse = {users:[account],permissions:h.allPermissions,roles:{viewer:['vpn.view','router.view'],admin:h.allPermissions}};
+  h.respond((url) => ({status:200,ok:true,data:url.endsWith('/users') ? userResponse : url.endsWith('/session') ? {csrf:'test',permissions:h.allPermissions,user:{id:'admin'}} : {ok:true}}));
+  await h.run('loadUsers()');
+  h.run("openUserEditor('alice')");
+  assert.equal(h.select('#user-name').value, 'alice');
+  assert.equal(h.select('#user-password').required, false, 'editing an account need not change password');
+  const view = h.select('#permission-view'); view.value='vpn.view';view.checked=true;
+  const control = h.select('#permission-control'); control.value='vpn.control';control.checked=false;
+  const router = h.select('#permission-router');router.value='router.view';router.checked=false;
+  h.many.set('#user-permissions input',[view,control,router]);
+  h.select('#user-role').value='viewer';
+  h.select('#user-role').onchange();
+  assert.equal(router.checked,true);
+  assert.equal(control.checked,false);
+  h.context.newerVersion='2026-10-08T10:12:00.987654321Z';
+  h.run('usersData[0] = {...usersData[0], updated_at:newerVersion}');
+  await h.run('saveUser({preventDefault(){}})');
+  let saved = h.requests.find((request)=>request.url.endsWith('/users/save'));
+  assert.deepEqual(JSON.parse(saved.options.body),{id:'alice',username:'alice',enabled:true,permissions:['vpn.view','router.view'],expected_updated_at:account.updated_at});
+  assert.equal(h.select('#user-password').value,'', 'password is cleared after a successful save');
+  h.run('openUserEditor()');
+  assert.equal(h.select('#user-password').required,true);
+  h.select('#user-name').value='bob';h.select('#user-password').value='longpassword';
+  await h.run('saveUser({preventDefault(){}})');
+  saved=h.requests.filter((request)=>request.url.endsWith('/users/save')).at(-1);
+  assert.equal(JSON.parse(saved.options.body).password,'longpassword');
+  assert.equal(JSON.parse(saved.options.body).id,undefined);
+  assert.equal(JSON.parse(saved.options.body).expected_updated_at,undefined, 'new user omits edit precondition');
+  await h.run("toggleUser('alice')");
+  assert.equal(JSON.parse(h.requests.filter((request)=>request.url.endsWith('/users/save')).at(-1).options.body).enabled,false);
+  assert.equal(JSON.parse(h.requests.filter((request)=>request.url.endsWith('/users/save')).at(-1).options.body).expected_updated_at,h.context.newerVersion);
+  await h.run("deleteUser('alice')");
+  assert.deepEqual(JSON.parse(h.requests.find((request)=>request.url.endsWith('/users/delete')).options.body),{id:'alice',expected_updated_at:h.context.newerVersion});
+}
+
+async function errorTranslationChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('permissions = new Set(allPermissions)');
+  const messages = {busy:'несовместимая',canceled:'отменена',settings_changed:'не применён',conflict:'конфликтует',unavailable:'недоступна'};
+  for (const [code, message] of Object.entries(messages)) {
+    h.respond({status:409,ok:false,data:{error:'operation rejected',code}});
+    await assert.rejects(() => h.run("api('/api/v1/actions/direct',{method:'POST'})"), (error) => error.message.includes(message));
+  }
+  h.respond({status:409,ok:false,data:{error:'user changed; reload before saving'}});
+  await assert.rejects(() => h.run("api('/api/v1/users/save',{method:'POST'})"), /откройте редактор заново/);
+}
+
 async function main() {
+  await errorTranslationChecks();
+  await navigationPermissionChecks();
+  await dashboardAndOperationChecks();
+  await userManagementChecks();
   await appChecks();
   await versionReloadChecks();
   await updateChecks();
@@ -478,7 +645,7 @@ async function main() {
   assert.equal(endless.element.innerHTML, 'previous events');
   assert.equal(endless.errors.length, 1);
 
-  console.log('UI authentication, rendering, updates, service worker, status and event pagination checks passed.');
+  console.log('UI authentication, permissions, navigation, users, dashboards, operations, updates and event pagination checks passed.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

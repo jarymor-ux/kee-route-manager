@@ -31,10 +31,42 @@ System journal contract is `{ "output": "..." }` in backend and frontend. Audit 
 
 ## Subscription management
 
-Authenticated panel sessions can manage subscription sources at runtime:
+Panel sessions with `subscriptions.manage` can manage subscription sources at runtime:
 
-- `GET /api/v1/subscriptions` returns the configured sources, including URL and headers required by the editor. The response is marked `Cache-Control: no-store`; treat it as secret material.
+- `GET /api/v1/subscriptions` requires `subscriptions.view` or `subscriptions.manage`. Managers receive configured sources including URL and headers required by the editor; readers receive only ID, redacted name and enabled state. The response is marked `Cache-Control: no-store`; treat it as secret material.
 - `POST /api/v1/subscriptions/save` accepts one source object with `id`, `name`, `url`, `enabled` and `headers`. Existing IDs are replaced; new IDs are appended.
 - `POST /api/v1/subscriptions/delete` accepts `{ "id": "source-id" }`.
 
 Mutation endpoints require the normal session, CSRF token and same-origin check. They run the same configuration validation as startup, so invalid IDs/URLs/headers, the source limit and deletion of the last configured source are rejected. Successful changes are persisted before becoming live and schedule a benchmark; errors returned to the browser never include upstream URLs, headers or persistence details.
+
+## Users and permissions
+
+Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `permissions`, `updated_at`), top-level `username`, `permissions`, `csrf` and `expires_at`. User IDs remain stable across edits. Each network API request checks the current user and permissions; hiding a panel control is not authorization. Permission edits take effect for existing sessions on their next request. Password changes, rename, blocking and deletion revoke existing sessions. Already accepted operations can finish; revocation does not reverse routing effects.
+
+`GET /api/v1/users` requires `users.manage` and returns `{ "users": [...], "permissions": [...], "roles": { "admin": [...], "viewer": [...], "vpn-operator": [...], "router-operator": [...] } }`. Roles are editable permission templates, not implicit runtime privileges. `POST /api/v1/users/save` accepts `{ "id": "optional-existing-id", "username": "name", "password": "optional-new-password", "enabled": true, "permissions": [...] }`. New users require a password; omission or an empty password keeps the existing password on edits. `POST /api/v1/users/delete` accepts `{ "id": "user-id" }`. Existing-user save/delete requests may include `expected_updated_at` with the exact timestamp returned by the user list. A stale precondition returns409 with `code: "user_changed"` and leaves the current user intact. The panel sends this token to protect simultaneous editors. User mutations require CSRF and same-origin checks; the initiating administrator is checked again under the user-store lock before applying the edit. The last enabled account with `users.manage` cannot be deleted, blocked or stripped of that permission. Successful create/edit/delete actions emit `user.created`, `user.updated`, `user.deleted` journal events with actor ID, target ID and generated request ID. Other accepted panel control mutations emit `api.action` events linking actor/request IDs, endpoint and operation ID when available; failed actions remain visible in access logs. Usernames are unique case-insensitively; login uses the saved spelling. Limits: 128 accounts including the reserved recovery account, username 3–64 bytes without controls, password 10–1024 bytes. Credential hashes never appear in API responses.
+
+| Permission | Authorized endpoints |
+| --- | --- |
+| `vpn.view` | Status, nodes |
+| `vpn.control` | Benchmark, cancellation, Xray restart, slot/direct switch |
+| `subscriptions.view` | Subscription list without URL or headers |
+| `subscriptions.manage` | Subscription editor including URL/headers, save and delete |
+| `router.view` | Current metrics and history; status platform/capabilities without VPN state |
+| `router.clients` | Devices and policies snapshot |
+| `router.policy` | Change device policy |
+| `router.wake` | Wake-on-LAN |
+| `router.system` | System logs and diagnostics |
+| `router.reboot` | Reboot |
+| `updates.manage` | Update discovery/status/application |
+| `users.manage` | List, create, edit, block and delete users |
+| `events.view` | Event journal |
+
+Session, logout and the minimal status response require authentication but no additional permission. Full VPN status requires `vpn.view`. Unknown protected routes fail closed. The owner-only local Unix socket retains OS owner authorization, independent of panel users.
+
+`POST /api/v1/actions/benchmark/cancel` requires `vpn.control`, joins canceled benchmark workers and returns202. `GET /api/v1/router/metrics/history` requires `router.view` and returns `{ "samples": [...] }`; history is bounded in memory and resets on daemon restart. Unsupported adapters/controllers return501 for these optional capabilities. Operation rejection responses contain a stable `code`: `busy`, `canceled`, `settings_changed`, `conflict` or `unavailable`, plus a public `error` without raw backend output.
+
+### Credential migration and recovery
+
+At first startup, the schema-1 `web.credentials_file` becomes the full-permission account `legacy-admin` in memory. An explicit user change persists the private sidecar `<credentials_file>.users.json`; loading and update-trial validation never write it. Panel changes affect only the sidecar: the original credential file remains usable by older versions. Consequently, rolling back restores the original single account/password and ignores new users and revoked rights. Preserve both private files in backups; do not treat a downgrade as preserving panel authorization policy.
+
+For owner recovery, stop the controller, run the existing offline `passwd --username UNIQUE_NAME --password-stdin` command, and restart. A changed legacy credential fingerprint restores the stable `legacy-admin` account enabled with all permissions, preserving other accounts. Choose a name not held by another account. Merely restarting does not undo panel edits. The controller does not reload offline credentials while running. Invalid/corrupted user sidecars fail startup rather than silently restoring old credentials; restore a private backup, or move the corrupted sidecar aside while stopped to explicitly recreate the original administrator. Keep the moved file private.

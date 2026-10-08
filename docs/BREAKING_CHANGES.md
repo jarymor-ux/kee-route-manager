@@ -1,6 +1,6 @@
 # Breaking changes
 
-## Current: v1.1.0-rc.7
+## Current: v1.1.0-rc.13
 
 1. A separately installed stable launcher supervises the daemon and, on Keenetic/OpenWrt local-ui installations, the UI. It imports a signed protocol-1 daemon/UI/CLI bundle into private release slots. The launcher, service scripts and configuration schema upgrades require separate maintenance.
 2. The shipped templates use `update.enabled: true` and `check_interval: 30m` to check for new versions automatically every 30 minutes. Applying one requires an explicit UI action or `kee-route-managerctl update-apply`; `auto_apply` must remain false. Discovery and downloads verify the pinned signing key, channel, platform, version and asset hashes.
@@ -9,7 +9,10 @@
 5. Router local-ui uses one launcher service; a second standalone UI supervisor must be removed during migration. Linux local-ui retains its separate unprivileged DynamicUser UI service, and standalone UI is updated separately.
 6. Legacy installations need a verified one-time migration or backup → restore routing → uninstall → clean signed install. Existing configurations are never silently overwritten. Pin the new release public key through a trusted channel; published legacy tags, keys and assets are unchanged. Follow the [installation runbook](AGENT_INSTALL.md) and [release procedure](RELEASE.md).
 
-This release remains experimental. Signed launcher migration and a manual GitHub update through the panel API passed on one Keenetic while preserving the Xray process and device policy. Router reboot, power-loss, deliberately broken candidate rollback and independent-bypass acceptance remain unverified.
+7. The original panel account becomes the administrator in a multiuser authorization view. Explicit user edits create a private sidecar next to the original credential file. Back up both files: downgrading uses the original single account/password and does not preserve new users or revoked rights. See [credential migration and recovery](API.md#credential-migration-and-recovery).
+8. The panel now uses Router/VPN submenus and current server-side permissions. Compatible actions can run during a benchmark; lifecycle actions cancel and join it. Metric history is bounded and resets when the daemon restarts.
+
+This release remains experimental. Prior builds passed signed launcher migration and a manual GitHub update through the panel API on one Keenetic while preserving the Xray process and device policy. The concurrent-control, multiuser and dashboard additions do not yet have hardware acceptance. Router reboot, power-loss, deliberately broken candidate rollback and independent-bypass acceptance remain unverified.
 
 ## Historical: v1.0.0-rc.2
 

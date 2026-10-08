@@ -13,6 +13,8 @@ import (
 
 func (m *Manager) queueBenchmark(mode string) {
 	m.mu.Lock()
+	m.benchmarkQueueVersion++
+	m.benchmarkQueueMode = mode
 	if m.benchmarkQueued {
 		m.mu.Unlock()
 		return
@@ -27,16 +29,28 @@ func (m *Manager) queueBenchmark(mode string) {
 	}
 	go func() {
 		defer m.wg.Done()
-		defer func() { m.mu.Lock(); m.benchmarkQueued = false; m.mu.Unlock() }()
-		for i := 0; i < 6; i++ {
-			err := m.RunBenchmark(m.ctx, mode, "health")
-			if !errors.Is(err, operation.ErrBusy) {
-				return
+		for {
+			m.mu.RLock()
+			version, currentMode := m.benchmarkQueueVersion, m.benchmarkQueueMode
+			m.mu.RUnlock()
+			err := m.RunBenchmark(m.ctx, currentMode, "health")
+			if !errors.Is(err, operation.ErrBusy) && !errors.Is(err, operation.ErrSuperseded) {
+				m.mu.Lock()
+				if version == m.benchmarkQueueVersion {
+					m.benchmarkQueued = false
+					m.mu.Unlock()
+					return
+				}
+				m.mu.Unlock()
+				continue
 			}
 			select {
 			case <-m.ctx.Done():
+				m.mu.Lock()
+				m.benchmarkQueued = false
+				m.mu.Unlock()
 				return
-			case <-time.After(10 * time.Second):
+			case <-time.After(time.Second):
 			}
 		}
 	}()
@@ -46,7 +60,23 @@ func (m *Manager) RunAction(ctx context.Context, kind, source string, fn func(co
 		return context.Canceled
 	}
 	defer m.wg.Done()
-	h, err := m.ops.Start(kind, source)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !m.admissionMu.TryLock() {
+		return operation.ErrBusy
+	}
+	// Destructive actions stop a test cleanly. Holding admission prevents a
+	// scheduled replacement test from slipping in while cancellation is joined.
+	switch kind {
+	case "xray-restore-original", "xray-restart", "router-reboot":
+		if err := m.CancelBenchmark(ctx); err != nil {
+			m.admissionMu.Unlock()
+			return err
+		}
+	}
+	h, err := m.ops.StartCompatible(kind, source)
+	m.admissionMu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -118,7 +148,11 @@ func (m *Manager) SwitchSlot(ctx context.Context, index int) error {
 		if index < 0 || index >= len(state.Pool) || state.Pool[index].NodeID == "" {
 			return fmt.Errorf("invalid slot")
 		}
-		return m.commitRoute(c, vpnState(state, state.Pool[index], "manual switch"), m.store.Nodes(), "select")
+		if err := m.commitRoute(c, vpnState(state, state.Pool[index], "manual switch"), m.store.Nodes(), "select"); err != nil {
+			return err
+		}
+		m.manualRouteVersion++
+		return nil
 	})
 }
 func (m *Manager) SwitchDirect(ctx context.Context) error {
@@ -129,7 +163,11 @@ func (m *Manager) SwitchDirect(ctx context.Context) error {
 		if !state.XrayConfigured {
 			return fmt.Errorf("tunnel has not been configured")
 		}
-		return m.commitRoute(c, directState(state, "manual direct"), m.store.Nodes(), "select")
+		if err := m.commitRoute(c, directState(state, "manual direct"), m.store.Nodes(), "select"); err != nil {
+			return err
+		}
+		m.manualRouteVersion++
+		return nil
 	})
 }
 func (m *Manager) log(level, kind, message, op string, fields map[string]any) {

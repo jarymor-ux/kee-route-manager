@@ -53,7 +53,12 @@ func inputRequest(t *testing.T, controller Controller, path string, authenticate
 	r := httptest.NewRequest(http.MethodGet, "https://127.0.0.1:9443"+path, nil)
 	r.RemoteAddr = "192.0.2.10:5000"
 	if authenticated {
-		session, err := s.sessions.Create("review", "192.0.2.10")
+		s.users = regressionUsers(t)
+		user, ok := s.users.Current("legacy-admin", 1)
+		if !ok {
+			t.Fatal("fixture identity missing")
+		}
+		session, err := s.sessions.CreateForUser(user, 1, "192.0.2.10")
 		if err != nil {
 			t.Fatal(err)
 		}

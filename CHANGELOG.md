@@ -6,6 +6,17 @@
 
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
+## 1.1.0-rc.13 — 2026-10-08
+
+Experimental prerelease. These additions have automated coverage; router hardware and browser visual acceptance remain separate.
+
+- Allow one benchmark to overlap compatible policy, Wake-on-LAN and manual route actions while retaining serialized routing transactions. Preserve manual selections made after benchmark admission; cancel and join tests before restart, restore or reboot.
+- Save subscription changes without waiting for network downloads. Discard results from obsolete source revisions, coalesce follow-up testing, and prevent older downloads overwriting newer provider caches.
+- Add multiple panel users, role templates and granular server-side permissions, immediate permission revocation, session invalidation, last-administrator protection, optimistic editing and attributed audit events. Preserve original credentials for documented owner recovery; downgrades do not preserve multiuser authorization.
+- Group the panel into Router and VPN submenus with permission-aware navigation and requests. Add router/VPN dashboards, explicit telemetry freshness and availability, cancellation and concurrent-operation views.
+- Keep up to 720 successful metric samples in daemon memory for last-hour graphs; add Linux/OpenWrt CPU sampling and distinguish unavailable WAN telemetry from idle traffic. WAN figures are aggregate interface traffic; history resets on restart.
+- Validate user stores and all operation reservations during read-only update trials. Retain interrupted/unknown companion-operation outcomes and strengthen the SIGKILL recovery regression.
+
 ## 1.1.0-rc.7 — 2026-10-04
 
 Experimental prerelease. Hardware acceptance remains separate from CI.

@@ -2,9 +2,38 @@
 
 const $ = (selector) => document.querySelector(selector);
 let csrf = '';
+let permissions = new Set();
+let currentUser = null;
+let usersData = [];
+let editingUserUpdatedAt = '';
+let permissionCatalog = [];
+let roleTemplates = {};
+let activePage = '';
+let authGeneration = 0;
+let pollLoading = false;
+const pagePermissions = { router: 'router.view', devices: 'router.clients', interfaces: 'router.view', system: 'router.system|router.reboot|updates.manage', users: 'users.manage', overview: 'vpn.view', subscriptions: 'subscriptions.view|subscriptions.manage', nodes: 'vpn.view', testing: 'vpn.view', events: 'events.view' };
+const pageGroups = { router: 'router', devices: 'router', interfaces: 'router', system: 'router', users: 'router', overview: 'vpn', subscriptions: 'vpn', nodes: 'vpn', testing: 'vpn', events: 'vpn' };
+function can(permission) { return permission.split('|').some((item) => permissions.has(item)); }
+function requestPermission(path) {
+  if (path.includes('/subscriptions')) return path.endsWith('/subscriptions') ? 'subscriptions.view|subscriptions.manage' : 'subscriptions.manage';
+  if (path.includes('/users')) return 'users.manage';
+  if (path.includes('/update/')) return 'updates.manage';
+  if (path.includes('/router/clients')) return 'router.clients';
+  if (path.includes('/router/logs') || path.includes('/router/diagnostics')) return 'router.system';
+  if (path.includes('/router/metrics')) return 'router.view';
+  if (path.includes('/nodes')) return 'vpn.view';
+  if (path.includes('/events')) return 'events.view';
+  if (path.includes('/actions/policy')) return 'router.policy';
+  if (path.includes('/actions/wake')) return 'router.wake';
+  if (path.includes('/actions/reboot')) return 'router.reboot';
+  if (path.includes('/actions/')) return 'vpn.control';
+  if (path.endsWith('/status')) return '';
+  return '';
+}
 let statusData = null;
 let nodesData = [];
 let subscriptionData = [];
+let clientsData = [];
 let pollTimer;
 let pendingUpdate = null;
 let updateState = null;
@@ -16,6 +45,9 @@ let documentVersion = '';
 let versionReloadRequested = false;
 
 async function api(path, options = {}) {
+  const required = requestPermission(path);
+  if (required && !can(required)) throw new Error('Недостаточно прав');
+  const generation = authGeneration;
   const method = options.method || 'GET';
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
@@ -24,16 +56,45 @@ async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('json') ? await response.json() : await response.text();
+  if (generation !== authGeneration || (required && !can(required))) throw new Error('Доступ изменён');
   if (response.status === 401) {
     showLogin();
     throw new Error('Требуется вход');
   }
-  if (!response.ok) throw new Error((data && data.error) || data || `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(errorMessage(data, response.status));
   return data;
+}
+
+function errorMessage(data, status) {
+  const messages = {
+    busy: 'Сейчас выполняется несовместимая операция. Повторите после её завершения.',
+    canceled: 'Операция отменена.',
+    settings_changed: 'Настройки изменились во время теста. Его результат не применён.',
+    conflict: 'Операция конфликтует с текущим состоянием. Обновите данные и повторите.',
+    unavailable: 'Операция временно недоступна. Повторите позже.',
+    user_changed: 'Пользователь уже изменён. Обновите список и откройте редактор заново.',
+  };
+  if (data?.code && messages[data.code]) return messages[data.code];
+  if (data?.error === 'user changed; reload before saving') return messages.user_changed;
+  return data?.error || data || `HTTP ${status}`;
 }
 
 function showLogin() {
   authenticated = false;
+  authGeneration++;
+  csrf = '';
+  permissions = new Set();
+  currentUser = null;
+  statusData = null;
+  nodesData = [];
+  clientsData = [];
+  usersData = [];
+  permissionCatalog = [];
+  roleTemplates = {};
+  clearUserEditor();
+  ['pool', 'sources', 'nodes-body', 'subscriptions-body', 'clients-body', 'ports', 'events-list', 'tool-output', 'users-body', 'test-results', 'operations-list', 'usage-chart', 'traffic-chart'].forEach((id) => { $(`#${id}`).innerHTML = ''; $(`#${id}`).textContent = ''; });
+  ['cpu', 'ram', 'wan', 'wan-detail', 'traffic', 'temperature', 'uptime', 'interface-summary', 'metrics-freshness', 'clients-freshness', 'pool-count', 'last-test', 'last-test-detail', 'route-mode', 'active-node', 'health', 'health-detail', 'operation', 'operation-detail'].forEach((id) => { $(`#${id}`).textContent = '—'; });
+  applyPermissions();
   clearInterval(pollTimer);
   pendingUpdate = null;
   updateState = null;
@@ -53,7 +114,9 @@ function hideLogin() {
 
 function fmtAge(value) {
   if (!value) return '—';
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return '—';
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
   if (seconds < 60) return `${seconds} сек назад`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)} мин назад`;
   return `${Math.floor(seconds / 3600)} ч назад`;
@@ -89,7 +152,7 @@ function formatUptime(seconds) {
 async function session() {
   try {
     const data = await api('/api/v1/session');
-    csrf = data.csrf;
+    acceptSession(data);
     hideLogin();
   } catch {
     showLogin();
@@ -121,12 +184,14 @@ async function loadStatus() {
 }
 
 function renderStatus(data) {
-  const state = data.state;
-  const operation = data.operation;
+  const state = data.state || { pool: [], sources: {} };
+  const operations = data.operations || (data.operation ? [data.operation] : []);
+  const operation = operations.find((item) => ['running', 'cancelling', 'queued'].includes(item.status)) || data.operation;
+  renderOperations(operations);
   const running = data.xray_running;
   const capabilities = data.capabilities || {};
 
-  $('#version').textContent = `v${data.version}`;
+  $('#version').textContent = data.version ? `v${data.version}` : '—';
   const activeSlot = state.pool?.find((slot) => slot.index === state.active_slot);
   if (state.automatic_routing_paused) {
     $('#status-dot').className = 'dot warn';
@@ -162,16 +227,17 @@ function renderStatus(data) {
     $('#operation-progress').style.width = operation?.status === 'succeeded' ? '100%' : '0%';
   }
 
-  $('#reboot').classList.toggle('hidden', !capabilities.reboot);
-  $('#system-logs').classList.toggle('hidden', !capabilities.system_logs);
-  $('#diagnostics').classList.toggle('hidden', !capabilities.diagnostics);
+  $('#reboot').classList.toggle('hidden', !capabilities.reboot || !can('router.reboot'));
+  $('#system-logs').classList.toggle('hidden', !capabilities.system_logs || !can('router.system'));
+  $('#diagnostics').classList.toggle('hidden', !capabilities.diagnostics || !can('router.system'));
 
+  $('#pool-count').textContent = String((state.pool || []).filter((slot) => slot.node_id && slot.healthy && slot.index !== state.active_slot).length);
+  $('#last-test').textContent = fmtAge(state.last_benchmark?.finished_at);
+  $('#last-test-detail').textContent = state.last_benchmark?.error || (state.last_benchmark?.finished_at ? `Проверено ${state.last_benchmark.tested_count || 0} из ${state.last_benchmark.node_count || 0} узлов` : 'Тест ещё не завершался');
   renderPool(state);
   renderSources(state.sources || {});
-  ['benchmark', 'direct', 'restart-xray', 'reboot'].forEach((id) => {
-    const element = $(`#${id}`);
-    if (element) element.disabled = Boolean(operation && operation.status === 'running');
-  });
+  if (!can('vpn.view')) { $('#status-dot').className = 'dot'; $('#status-text').textContent = 'Панель подключена'; }
+  ['benchmark', 'test-start'].forEach((id) => { $(`#${id}`).disabled = operations.some((item) => item.type === 'benchmark' && ['running', 'cancelling', 'queued'].includes(item.status)); });
 }
 
 function renderPool(state) {
@@ -180,7 +246,7 @@ function renderPool(state) {
       <div class="slot">Слот ${slot.index + 1} ${slot.index === state.active_slot && !state.direct_mode ? badge('Активен', 'ok') : ''}</div>
       <div class="name" title="${esc(slot.label || 'Свободен')}">${esc(slot.label || 'Свободен')}</div>
       <div class="stats">${slot.node_id ? `${Math.round(slot.score || 0)} score · ${fmtAge(slot.last_verified_at)}` : 'Нет узла'}</div>
-      ${slot.node_id ? `<button class="ghost compact slot-switch" data-index="${slot.index}">Переключить</button>` : ''}
+      ${slot.node_id && can('vpn.control') ? `<button class="ghost compact slot-switch" data-index="${slot.index}">Переключить</button>` : ''}
     </article>`).join('');
   document.querySelectorAll('.slot-switch').forEach((button) => {
     button.onclick = () => action('/api/v1/actions/switch', { index: Number(button.dataset.index) }, 'Переключение выполнено');
@@ -212,17 +278,17 @@ function subscriptionEndpointLabel(raw) {
 function renderSubscriptions() {
   const body = $('#subscriptions-body');
   body.innerHTML = subscriptionData.map((source) => {
-    const headerCount = Object.keys(source.headers || {}).length;
+    const headerCount = source.header_count ?? Object.keys(source.headers || {}).length;
     return `<tr>
       <td><strong>${esc(source.name || source.id)}</strong></td>
       <td><code>${esc(source.id)}</code></td>
-      <td>${esc(subscriptionEndpointLabel(source.url))}</td>
+      <td>${esc(source.url ? subscriptionEndpointLabel(source.url) : 'Скрыт')}</td>
       <td>${headerCount ? `${headerCount} шт.` : '—'}</td>
       <td>${source.enabled ? badge('Включена', 'ok') : badge('Выключена')}</td>
-      <td><div class="subscription-actions">
+      <td>${can('subscriptions.manage') ? `<div class="subscription-actions">
         <button class="ghost compact subscription-edit" data-id="${esc(source.id)}">Изменить</button>
         <button class="danger-outline compact subscription-delete" data-id="${esc(source.id)}">Удалить</button>
-      </div></td>
+      </div>` : 'Только просмотр'}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="6" class="muted">Подписки не настроены</td></tr>';
 
@@ -258,6 +324,7 @@ function clearSubscriptionEditor() {
 }
 
 function openSubscriptionEditor(id = '') {
+  if (!can('subscriptions.manage')) return;
   const source = subscriptionData.find((item) => item.id === id);
   $('#subscription-title').textContent = source ? 'Изменить подписку' : 'Добавить подписку';
   $('#subscription-id').value = source?.id || '';
@@ -348,20 +415,24 @@ function renderNodes() {
     <td>${node.measurement.score ? Math.round(node.measurement.score) : '—'}</td>
     <td>${node.measurement.healthy ? badge('Доступен', 'ok') : node.measurement.checked_at ? badge('Ошибка', 'bad') : badge('Не проверен')}</td>
   </tr>`).join('') || '<tr><td colspan="7" class="muted">Нет узлов</td></tr>';
+  $('#test-results').innerHTML = `<table><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость теста</th><th>Score</th><th>Состояние</th></tr></thead><tbody>${$('#nodes-body').innerHTML}</tbody></table>`;
 }
 
 async function loadRouter() {
   try {
-    const [metrics, clients] = await Promise.all([
-      api('/api/v1/router/metrics'),
-      api('/api/v1/router/clients'),
-    ]);
-    renderMetrics(metrics);
-    $('#clients-freshness').textContent = `Обновлено ${fmtAge(clients.updated_at)}${clients.stale ? ' · данные устарели' : ''}${clients.error ? ` · ${clients.error}` : ''}`;
-    renderClients(clients.value || []);
-  } catch (error) {
-    toast(error.message, true);
-  }
+    if (activePage === 'devices' && can('router.clients')) {
+      const clients = await api('/api/v1/router/clients');
+      $('#clients-freshness').textContent = `Обновлено ${fmtAge(clients.updated_at)}${clients.stale ? ' · данные устарели' : ''}${clients.error ? ` · ${clients.error}` : ''}`;
+      renderClients(clients.value || []);
+    } else if (can('router.view')) {
+      const metrics = await api('/api/v1/router/metrics');
+      renderMetrics(metrics);
+      if (activePage === 'router') {
+        const history = await api('/api/v1/router/metrics/history');
+        renderCharts((history.samples || []).map((sample) => sample.traffic_available ? sample : { ...sample, rx_mbps: null, tx_mbps: null }));
+      }
+    }
+  } catch (error) { toast(error.message, true); }
 }
 
 function renderMetrics(metrics) {
@@ -369,7 +440,10 @@ function renderMetrics(metrics) {
   $('#ram').textContent = metrics.ram_percent != null ? `${metrics.ram_percent.toFixed(0)}%` : '—';
   $('#wan').textContent = metrics.wan_connected === false ? 'Отключён' : metrics.wan_name || '—';
   $('#wan-detail').textContent = [metrics.wan_description, metrics.wan_ip].filter(Boolean).join(' · ') || '—';
-  $('#traffic').textContent = `↓ ${metrics.rx_mbps?.toFixed(1) || 0} · ↑ ${metrics.tx_mbps?.toFixed(1) || 0} Мбит/с`;
+  $('#traffic').textContent = `↓ ${metrics.traffic_available && Number.isFinite(metrics.rx_mbps) ? metrics.rx_mbps.toFixed(1) : '—'} · ↑ ${metrics.traffic_available && Number.isFinite(metrics.tx_mbps) ? metrics.tx_mbps.toFixed(1) : '—'} Мбит/с`;
+  const stale = metrics.stale || !Number.isFinite(Date.parse(metrics.updated_at)) || Date.now() - Date.parse(metrics.updated_at) > 15000;
+  $('#metrics-freshness').textContent = `Обновлено ${fmtAge(metrics.updated_at)}${stale ? ' · данные устарели' : ''}${metrics.error ? ` · ${metrics.error}` : ''}`;
+  $('#interface-summary').textContent = [metrics.wan_name, metrics.wan_description, metrics.wan_ip, metrics.wan_connected === false ? 'Отключён' : ''].filter(Boolean).join(' · ') || 'Данные WAN недоступны';
   $('#temperature').textContent = metrics.temperature_c != null ? `${metrics.temperature_c.toFixed(1)} °C` : '—';
   $('#uptime').textContent = formatUptime(metrics.uptime_seconds || 0);
   const ports = metrics.ports || [];
@@ -379,6 +453,7 @@ function renderMetrics(metrics) {
 }
 
 function renderClients(clients) {
+  clientsData = clients;
   const capabilities = statusData?.capabilities || {};
   $('#clients-body').innerHTML = clients.map((client) => `<tr>
     <td><strong>${esc(client.name || client.hostname || 'Без имени')}</strong></td>
@@ -386,8 +461,8 @@ function renderClients(clients) {
     <td>${client.active ? badge('В сети', 'ok') : badge('Не в сети')} ${esc(client.link || client.ssid || '')}</td>
     <td>${esc(client.connection_policy || '—')}</td>
     <td>
-      ${capabilities.wake_on_lan ? `<button class="ghost compact wake" data-mac="${esc(client.mac)}">WOL</button>` : ''}
-      ${capabilities.client_policy ? `<select class="policy" data-mac="${esc(client.mac)}"><option value="">Политика…</option><option value="xkeen">XKeen</option><option value="default">По умолчанию</option></select>` : ''}
+      ${capabilities.wake_on_lan && can('router.wake') ? `<button class="ghost compact wake" data-mac="${esc(client.mac)}">WOL</button>` : ''}
+      ${capabilities.client_policy && can('router.policy') ? `<select class="policy" data-mac="${esc(client.mac)}"><option value="">Политика…</option><option value="xkeen">XKeen</option><option value="default">По умолчанию</option></select>` : ''}
     </td>
   </tr>`).join('') || '<tr><td colspan="5" class="muted">Клиенты недоступны</td></tr>';
   document.querySelectorAll('.wake').forEach((button) => {
@@ -476,7 +551,7 @@ async function checkUpdate() {
 
 function renderUpdate() {
   const busy = updateSubmitting || Boolean(updateState?.applying);
-  const installable = authenticated && pendingUpdate?.available && pendingUpdate?.stage_supported;
+  const installable = authenticated && can('updates.manage') && pendingUpdate?.available && pendingUpdate?.stage_supported;
   $('#update-apply').classList.toggle('hidden', !installable);
   $('#update-apply').disabled = !installable || busy || updateChecking || updateState?.launcher === false || updateState?.enabled === false;
   $('#update-check').disabled = busy || updateChecking;
@@ -498,7 +573,7 @@ function renderUpdate() {
 }
 
 async function loadUpdateStatus() {
-  if (!authenticated || updateStatusLoading) return;
+  if (!authenticated || !can('updates.manage') || updateStatusLoading) return;
   updateStatusLoading = true;
   try {
     const state = await api('/api/v1/update/status');
@@ -519,7 +594,7 @@ async function loadUpdateStatus() {
 }
 
 async function applyUpdate() {
-  if (!authenticated || !pendingUpdate?.available || !pendingUpdate?.stage_supported || updateChecking || updateSubmitting || updateState?.applying || updateState?.launcher === false || updateState?.enabled === false) return;
+  if (!authenticated || !can('updates.manage') || !pendingUpdate?.available || !pendingUpdate?.stage_supported || updateChecking || updateSubmitting || updateState?.applying || updateState?.launcher === false || updateState?.enabled === false) return;
   const version = pendingUpdate.latest_version;
   if (!confirm(`Установить Kee Route Manager ${version}? Панель управления кратковременно переподключится.`)) return;
   updateSubmitting = true;
@@ -539,15 +614,22 @@ async function applyUpdate() {
 function startPolling() {
   clearInterval(pollTimer);
   loadStatus();
-  loadUpdateStatus();
-  let ticks = 0;
-  pollTimer = setInterval(() => {
+  if (can('updates.manage')) loadUpdateStatus();
+  navigate(window.location.hash?.slice(1) || activePage, false);
+  pollTimer = setInterval(poll, 3000);
+}
+async function poll() {
+  if (!authenticated || pollLoading || versionReloadRequested) return;
+  pollLoading = true;
+  try {
+    const data = await api('/api/v1/session');
     if (!authenticated) return;
-    loadStatus();
-    if (++ticks % 5 === 0 || updateState?.applying) loadUpdateStatus();
-    const active = document.querySelector('#tabs button.active')?.dataset.tab;
-    if (active === 'router') loadRouter();
-  }, 3000);
+    acceptSession(data);
+    await loadStatus();
+    if (can('updates.manage')) await loadUpdateStatus();
+    await loadPage(activePage);
+  } catch (error) { if (authenticated) toast(error.message, true); }
+  finally { pollLoading = false; }
 }
 
 $('#login-form').addEventListener('submit', async (event) => {
@@ -558,7 +640,7 @@ $('#login-form').addEventListener('submit', async (event) => {
       method: 'POST',
       body: JSON.stringify({ username: $('#username').value, password: $('#password').value }),
     });
-    csrf = data.csrf;
+    acceptSession(data);
     hideLogin();
   } catch (error) {
     $('#login-error').textContent = error.message;
@@ -572,19 +654,18 @@ $('#logout').onclick = async () => {
 };
 
 $('#tabs').onclick = (event) => {
-  const button = event.target.closest('button[data-tab]');
+  const button = event.target.closest('button');
   if (!button) return;
-  document.querySelectorAll('#tabs button').forEach((item) => item.classList.toggle('active', item === button));
-  document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item.id === `tab-${button.dataset.tab}`));
-  if (button.dataset.tab === 'subscriptions') loadSubscriptions();
-  if (button.dataset.tab === 'nodes') loadNodes();
-  if (button.dataset.tab === 'events') loadEvents();
-  if (button.dataset.tab === 'router') loadRouter();
+  if (button.dataset.tab) navigate(button.dataset.tab);
+  else if (button.dataset.group) toggleGroup(button.dataset.group);
 };
+if (window.addEventListener) window.addEventListener('hashchange', () => navigate(window.location.hash.slice(1), false));
 
 $('#add-subscription').onclick = () => openSubscriptionEditor();
 $('#subscription-cancel').onclick = clearSubscriptionEditor;
 $('#subscription-form').addEventListener('submit', saveSubscription);
+$('#test-start').onclick = () => action('/api/v1/actions/benchmark', {}, 'Тестирование запущено');
+$('#benchmark-cancel').onclick = () => action('/api/v1/actions/benchmark/cancel', {}, 'Отмена теста запрошена');
 $('#benchmark').onclick = () => action('/api/v1/actions/benchmark', {}, 'Тестирование запущено');
 $('#direct').onclick = () => confirm('Перевести управляемый трафик напрямую, минуя VPN?')
   && action('/api/v1/actions/direct', {}, 'Включён прямой маршрут');
@@ -598,6 +679,218 @@ $('#system-logs').onclick = loadSystemLogs;
 $('#diagnostics').onclick = runDiagnostics;
 $('#update-check').onclick = checkUpdate;
 $('#update-apply').onclick = applyUpdate;
+
+$('#add-user').onclick = () => openUserEditor();
+$('#user-cancel').onclick = clearUserEditor;
+$('#user-form').addEventListener('submit', saveUser);
+$('#user-role').onchange = () => {
+  const template = roleTemplates[$('#user-role').value];
+  if (template) document.querySelectorAll('#user-permissions input').forEach((input) => { input.checked = template.includes(input.value); });
+};
+
+function acceptSession(data) {
+  csrf = data.csrf || '';
+  currentUser = data.user || { username: data.username };
+  const next = new Set(Array.isArray(data.permissions) ? data.permissions : []);
+  const changed = next.size !== permissions.size || [...next].some((permission) => !permissions.has(permission));
+  permissions = next;
+  if (changed) {
+    // A response started before revocation must not repopulate restricted data.
+    authGeneration++;
+    if (!can('subscriptions.manage')) clearSubscriptionEditor();
+    if (!can('subscriptions.view|subscriptions.manage')) { subscriptionData = []; $('#subscriptions-body').innerHTML = ''; }
+    else if (!can('subscriptions.manage')) {
+      subscriptionData = subscriptionData.map(({ url, headers, ...source }) => ({ ...source, header_count: source.header_count ?? Object.keys(headers || {}).length }));
+      renderSubscriptions();
+    }
+    if (!can('users.manage')) { usersData = []; roleTemplates = {}; permissionCatalog = []; $('#users-body').innerHTML = ''; clearUserEditor(); }
+    if (!can('vpn.view')) { statusData = null; nodesData = []; ['route-mode', 'active-node', 'health', 'health-detail', 'operation', 'operation-detail', 'pool-count', 'last-test', 'last-test-detail'].forEach((id) => { $(`#${id}`).textContent = '—'; }); ['pool', 'sources', 'nodes-body', 'operations-list', 'test-results'].forEach((id) => { $(`#${id}`).innerHTML = ''; }); }
+    if (!can('router.clients')) { clientsData = []; $('#clients-body').innerHTML = ''; $('#clients-freshness').textContent = '—'; }
+    if (!can('router.view')) { ['ports', 'usage-chart', 'traffic-chart'].forEach((id) => { $(`#${id}`).innerHTML = ''; }); ['cpu', 'ram', 'wan', 'wan-detail', 'traffic', 'temperature', 'uptime', 'metrics-freshness', 'interface-summary'].forEach((id) => { $(`#${id}`).textContent = '—'; }); }
+    if (!can('events.view')) $('#events-list').innerHTML = '';
+    if (can('router.clients')) renderClients(clientsData);
+    if (!can('vpn.control')) { renderPool(statusData?.state || {}); }
+    if (!can('router.system')) { $('#tool-output').textContent = ''; $('#tool-output').classList.add('hidden'); }
+    if (!can('updates.manage')) { pendingUpdate = null; updateState = null; renderUpdate(); }
+    applyPermissions();
+    if (statusData) renderStatus(statusData);
+    if (!can(pagePermissions[activePage] || '')) navigate(activePage, false);
+  }
+}
+
+function applyPermissions() {
+  document.querySelectorAll('[data-permission]').forEach((element) => {
+    element.classList.toggle('hidden', !can(element.dataset.permission));
+  });
+  ['router', 'vpn'].forEach((group) => {
+    const available = Object.keys(pagePermissions).some((page) => pageGroups[page] === group && can(pagePermissions[page]));
+    $(`#tabs .nav-group[data-group="${group}"]`).classList.toggle('hidden', !available);
+  });
+  renderUpdate();
+}
+
+function toggleGroup(group, force) {
+  const button = $(`#tabs .group-toggle[data-group="${group}"]`);
+  const menu = $(`#menu-${group}`);
+  const expanded = force ?? menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !expanded);
+  button.setAttribute('aria-expanded', String(expanded));
+}
+
+function navigate(page, updateHash = true) {
+  if (!authenticated) return;
+  if (!pagePermissions[page] || !can(pagePermissions[page])) {
+    page = Object.keys(pagePermissions).find((item) => can(pagePermissions[item])) || '';
+  }
+  activePage = page;
+  document.querySelectorAll('#tabs [data-tab]').forEach((button) => {
+    const active = button.dataset.tab === page;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  document.querySelectorAll('.tab').forEach((section) => section.classList.toggle('active', section.id === `tab-${page}`));
+  $('#no-access').classList.toggle('hidden', Boolean(page));
+  if (!page) return;
+  ['router', 'vpn'].forEach((group) => toggleGroup(group, pageGroups[page] === group));
+  if (updateHash && window.location.hash !== `#${page}`) window.location.hash = page;
+  loadPage(page);
+}
+
+async function loadPage(page) {
+  if (!authenticated || !pagePermissions[page] || !can(pagePermissions[page])) return;
+  if (page === 'subscriptions') return loadSubscriptions();
+  if (page === 'nodes' || page === 'testing') return loadNodes();
+  if (page === 'events') return loadEvents();
+  if (['router', 'devices', 'interfaces'].includes(page)) return loadRouter();
+  if (page === 'users') return loadUsers();
+}
+
+function renderOperations(operations) {
+  const labels = { benchmark: 'Тестирование', 'switch-slot': 'Переключение маршрута', 'switch-direct': 'Прямой маршрут', 'client-policy': 'Политика устройства', 'wake-on-lan': 'Wake-on-LAN', 'xray-restart': 'Перезапуск Xray', 'router-reboot': 'Перезагрузка' };
+  const statuses = { running: 'Выполняется', queued: 'Ожидает применения', cancelling: 'Отменяется', cancelled: 'Отменена', canceled: 'Отменена', unknown: 'Результат неизвестен', succeeded: 'Завершена', failed: 'Ошибка' };
+  $('#operations-list').innerHTML = operations.map((item) => `<article class="card"><strong>${esc(labels[item.type] || item.type)}</strong> ${badge(statuses[item.status] || item.status, item.status === 'failed' ? 'bad' : '')}<p class="sub">${esc(item.error || item.message || item.stage || '')}</p>${item.total ? `<p class="sub">${Number(item.current) || 0} / ${Number(item.total) || 0}</p>` : ''}</article>`).join('') || '<p class="sub">Нет активных операций</p>';
+  $('#benchmark-cancel').classList.toggle('hidden', !can('vpn.control') || !operations.some((item) => item.type === 'benchmark' && item.status === 'running'));
+}
+
+function chartHTML(samples, series, percent = false) {
+  const end = Date.now();
+  const begin = end - 3600000;
+  const rows = samples.map((sample) => ({ ...sample, time: Date.parse(sample.updated_at) })).filter((sample) => Number.isFinite(sample.time) && sample.time >= begin && sample.time <= end).sort((a, b) => a.time - b.time);
+  const values = rows.flatMap((sample) => series.map(([key]) => sample[key])).filter(Number.isFinite);
+  if (!values.length) return '<p class="sub">Метрики недоступны</p>';
+  const max = percent ? 100 : Math.max(1, ...values);
+  const x = (time) => 42 + (time - begin) / 3600000 * 530;
+  const y = (value) => 156 - Math.max(0, Math.min(max, value)) / max * 132;
+  const lines = series.map(([key, label, color]) => {
+    let segments = [], current = [], lastTime = null;
+    for (const row of rows) {
+      if (!Number.isFinite(row[key]) || (lastTime !== null && row.time - lastTime > 15000)) {
+        if (current.length) segments.push(current);
+        current = [];
+      }
+      if (Number.isFinite(row[key])) current.push([x(row.time), y(row[key])]);
+      lastTime = row.time;
+    }
+    if (current.length) segments.push(current);
+    return segments.map((segment) => segment.length === 1
+      ? `<circle cx="${segment[0][0].toFixed(1)}" cy="${segment[0][1].toFixed(1)}" r="3" fill="${color}"/>`
+      : `<polyline points="${segment.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>`).join('');
+  }).join('');
+  return `<svg viewBox="0 0 600 190" role="img" aria-label="${esc(series.map(([, label]) => label).join(' и '))} за последний час"><text x="4" y="28" class="chart-label">${max.toFixed(percent ? 0 : 1)}</text><text x="22" y="156" class="chart-label">0</text><path d="M42 24V156H572" fill="none" stroke="var(--line)"/>${lines}<text x="42" y="182" class="chart-label">−60 мин</text><text x="500" y="182" class="chart-label">Сейчас</text></svg><div class="chart-legend">${series.map(([, label, color]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('')}</div>`;
+}
+
+function renderCharts(samples) {
+  $('#usage-chart').innerHTML = chartHTML(samples, [['cpu_percent', 'CPU', '#7ea2ff'], ['ram_percent', 'RAM', '#4bd39a']], true);
+  $('#traffic-chart').innerHTML = chartHTML(samples, [['rx_mbps', 'Входящий', '#7ea2ff'], ['tx_mbps', 'Исходящий', '#f3bd61']]);
+}
+
+const permissionLabels = {
+  'vpn.view': 'Просмотр VPN', 'vpn.control': 'Управление VPN и тестированием',
+  'subscriptions.view': 'Просмотр подписок', 'subscriptions.manage': 'Изменение подписок и доступ к секретам',
+  'router.view': 'Метрики и интерфейсы', 'router.clients': 'Просмотр устройств', 'router.policy': 'Изменение политик',
+  'router.wake': 'Wake-on-LAN', 'router.system': 'Системный журнал и диагностика', 'router.reboot': 'Перезагрузка роутера',
+  'updates.manage': 'Управление обновлениями', 'users.manage': 'Управление пользователями и правами', 'events.view': 'Просмотр событий',
+};
+
+async function loadUsers() {
+  try {
+    const data = await api('/api/v1/users');
+    usersData = Array.isArray(data.users) ? data.users : [];
+    permissionCatalog = Array.isArray(data.permissions) ? data.permissions : [];
+    roleTemplates = data.roles || {};
+    renderUsers();
+  } catch (error) { toast(error.message, true); }
+}
+
+function renderUsers() {
+  $('#users-body').innerHTML = usersData.map((user) => `<tr><td><strong>${esc(user.username)}</strong>${user.id === currentUser?.id ? ' (вы)' : ''}</td><td>${user.enabled ? badge('Включён', 'ok') : badge('Заблокирован', 'bad')}</td><td>${esc((user.permissions || []).map((permission) => permissionLabels[permission] || permission).join(', ') || 'Нет прав')}</td><td><div class="subscription-actions"><button class="ghost compact user-edit" data-id="${esc(user.id)}">Права и пароль</button><button class="ghost compact user-toggle" data-id="${esc(user.id)}">${user.enabled ? 'Заблокировать' : 'Включить'}</button><button class="danger-outline compact user-delete" data-id="${esc(user.id)}">Удалить</button></div></td></tr>`).join('') || '<tr><td colspan="4">Нет пользователей</td></tr>';
+  document.querySelectorAll('.user-edit').forEach((button) => { button.onclick = () => openUserEditor(button.dataset.id); });
+  document.querySelectorAll('.user-toggle').forEach((button) => { button.onclick = () => toggleUser(button.dataset.id); });
+  document.querySelectorAll('.user-delete').forEach((button) => { button.onclick = () => deleteUser(button.dataset.id); });
+}
+
+function clearUserEditor() {
+  editingUserUpdatedAt = '';
+  ['user-id', 'user-name', 'user-password', 'user-role'].forEach((id) => { $(`#${id}`).value = ''; });
+  $('#user-permissions').innerHTML = '';
+  $('#user-error').textContent = '';
+  $('#user-modal').classList.add('hidden');
+}
+
+function openUserEditor(id = '') {
+  if (!can('users.manage')) return;
+  const user = usersData.find((item) => item.id === id);
+  clearUserEditor();
+  $('#user-title').textContent = user ? 'Изменить пользователя' : 'Добавить пользователя';
+  $('#user-id').value = user?.id || '';
+  editingUserUpdatedAt = user?.updated_at || '';
+  $('#user-name').value = user?.username || '';
+  $('#user-password').required = !user;
+  $('#user-password-hint').textContent = user ? 'Оставьте пустым, чтобы сохранить пароль. Новый пароль завершит текущие сессии.' : 'Не менее 10 символов';
+  $('#user-enabled').checked = user ? Boolean(user.enabled) : true;
+  $('#user-permissions').innerHTML = permissionCatalog.map((permission) => `<label class="checkbox-label"><input type="checkbox" value="${esc(permission)}" ${user?.permissions?.includes(permission) ? 'checked' : ''}>${esc(permissionLabels[permission] || permission)}</label>`).join('');
+  $('#user-modal').classList.remove('hidden');
+  $('#user-name').focus();
+}
+
+async function refreshAccess() {
+  const data = await api('/api/v1/session');
+  acceptSession(data);
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  try {
+    const user = { username: $('#user-name').value.trim(), enabled: Boolean($('#user-enabled').checked), permissions: [...document.querySelectorAll('#user-permissions input')].filter((input) => input.checked).map((input) => input.value) };
+    if ($('#user-id').value) { user.id = $('#user-id').value; user.expected_updated_at = editingUserUpdatedAt; }
+    if ($('#user-password').value) user.password = $('#user-password').value;
+    await api('/api/v1/users/save', { method: 'POST', body: JSON.stringify(user) });
+    clearUserEditor();
+    toast('Пользователь сохранён');
+    await refreshAccess();
+    if (can('users.manage')) await loadUsers();
+  } catch (error) { $('#user-error').textContent = error.message; }
+}
+
+async function toggleUser(id) {
+  const user = usersData.find((item) => item.id === id);
+  if (!user || !confirm(`${user.enabled ? 'Заблокировать' : 'Включить'} пользователя «${user.username}»?`)) return;
+  try {
+    await api('/api/v1/users/save', { method: 'POST', body: JSON.stringify({ id: user.id, username: user.username, enabled: !user.enabled, permissions: user.permissions, expected_updated_at: user.updated_at }) });
+    await refreshAccess();
+    if (can('users.manage')) await loadUsers();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function deleteUser(id) {
+  const user = usersData.find((item) => item.id === id);
+  if (!user || !confirm(`Удалить пользователя «${user.username}»?`)) return;
+  try {
+    await api('/api/v1/users/delete', { method: 'POST', body: JSON.stringify({ id, expected_updated_at: user.updated_at }) });
+    await refreshAccess();
+    if (can('users.manage')) await loadUsers();
+  } catch (error) { toast(error.message, true); }
+}
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 session();

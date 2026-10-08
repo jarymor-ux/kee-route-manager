@@ -15,6 +15,7 @@ type generic struct {
 	kind            string
 	reboot, managed bool
 	firewallMu      sync.Mutex
+	cpu             cpuSampler
 }
 
 func newGeneric(c config.Config, r Runner, k string, reboot, managed bool) Adapter {
@@ -36,7 +37,13 @@ func (g *generic) RestartKRM(ctx context.Context) error {
 	_, e := g.r.Run(ctx, g.cfg.Platform.KRMRestartCommand)
 	return e
 }
-func (g *generic) Metrics(context.Context) (Metrics, error) { return linuxMetrics() }
+func (g *generic) Metrics(context.Context) (Metrics, error) {
+	m, err := linuxMetrics()
+	if err == nil {
+		m.CPUPercent = g.cpu.sample()
+	}
+	return m, err
+}
 func (g *generic) Clients(context.Context) ([]Client, error) {
 	return nil, fmt.Errorf("clients unsupported on %s", g.kind)
 }

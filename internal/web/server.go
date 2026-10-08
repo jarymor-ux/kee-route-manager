@@ -57,22 +57,22 @@ type Server struct {
 	mgr      Controller
 	updater  *update.Updater
 	restart  func(context.Context) error
-	creds    auth.Credentials
+	users    *auth.UserStore
 	sessions *auth.SessionStore
 	limiter  *auth.Limiter
 	handler  http.Handler
 }
 
 func New(c config.Config, mgr Controller, up *update.Updater, restart func(context.Context) error) (*Server, error) {
-	var creds auth.Credentials
+	var users *auth.UserStore
 	if c.API.Enabled {
 		var e error
-		creds, e = auth.LoadCredentials(c.Web.CredentialsFile)
+		users, e = auth.LoadUsers(c.Web.CredentialsFile)
 		if e != nil {
 			return nil, fmt.Errorf("load credentials: %w", e)
 		}
 	}
-	s := &Server{cfg: c, mgr: mgr, updater: up, restart: restart, creds: creds, sessions: auth.NewSessionStore(c.Web.SessionTTL.Duration), limiter: auth.NewLimiter(8, 15*time.Minute)}
+	s := &Server{cfg: c, mgr: mgr, updater: up, restart: restart, users: users, sessions: auth.NewSessionStore(c.Web.SessionTTL.Duration), limiter: auth.NewLimiter(8, 15*time.Minute)}
 	s.handler = s.routes()
 	return s, nil
 }
@@ -113,6 +113,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/subscriptions/save", s.protect(s.saveSubscription, true))
 	mux.HandleFunc("/api/v1/subscriptions/delete", s.protect(s.deleteSubscription, true))
 	mux.HandleFunc("/api/v1/events", s.protect(s.events, false))
+	mux.HandleFunc("/api/v1/users", s.protect(s.listUsers, false))
+	mux.HandleFunc("/api/v1/users/save", s.protect(s.saveUser, true))
+	mux.HandleFunc("/api/v1/users/delete", s.protect(s.deleteUser, true))
+	mux.HandleFunc("/api/v1/router/metrics/history", s.protect(s.metricsHistory, false))
+	mux.HandleFunc("/api/v1/actions/benchmark/cancel", s.protect(s.cancelBenchmark, true))
 	mux.HandleFunc("/api/v1/router/metrics", s.protect(s.metrics, false))
 	mux.HandleFunc("/api/v1/router/clients", s.protect(s.clients, false))
 	mux.HandleFunc("/api/v1/router/logs", s.protect(s.logs, false))
@@ -160,14 +165,26 @@ func (s *Server) security(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", id)
 		aw := &auditResponse{ResponseWriter: w}
 		start := time.Now()
+		audit := &auditIdentity{}
+		r = r.WithContext(context.WithValue(r.Context(), auditContextKey{}, audit))
 		next.ServeHTTP(aw, r)
+		if r.Method == http.MethodPost && aw.status >= 200 && aw.status < 300 && audit.actor != "" &&
+			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || r.URL.Path == "/api/v1/update/apply") {
+			if manager, ok := s.mgr.(interface{ RecordAudit(event.Event) }); ok {
+				manager.RecordAudit(event.Event{Level: "info", Type: "api.action", Message: "Control action accepted", OperationID: audit.operation, Fields: map[string]any{"actor_id": audit.actor, "request_id": id, "path": r.URL.Path, "status": aw.status, "operation_id": audit.operation}})
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			log.Printf("access request_id=%s method=%s path=%q status=%d duration_ms=%d", id, r.Method, r.URL.EscapedPath(), aw.status, time.Since(start).Milliseconds())
+			log.Printf("access request_id=%s actor_id=%q operation_id=%q target_user_id=%q method=%s path=%q status=%d duration_ms=%d", id, audit.actor, audit.operation, audit.target, r.Method, r.URL.EscapedPath(), aw.status, time.Since(start).Milliseconds())
 		}
 	}), s.cfg.API.TLS.Enabled)
 }
 func (s *Server) protect(fn func(http.ResponseWriter, *http.Request, auth.Session), mutation bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if s.users == nil || s.sessions == nil {
+			jsonError(w, 401, "unauthorized")
+			return
+		}
 		session, e := auth.ReadSession(r, s.sessions)
 		if e != nil {
 			jsonError(w, http.StatusUnauthorized, "unauthorized")
@@ -177,6 +194,20 @@ func (s *Server) protect(fn func(http.ResponseWriter, *http.Request, auth.Sessio
 			s.sessions.Delete(session.ID)
 			auth.ClearCookie(w, s.cfg.API.TLS.Enabled)
 			jsonError(w, http.StatusUnauthorized, "session address changed")
+			return
+		}
+		user, ok := s.users.Current(session.UserID, session.Revision)
+		if !ok {
+			s.sessions.Delete(session.ID)
+			auth.ClearCookie(w, s.cfg.API.TLS.Enabled)
+			jsonError(w, 401, "session revoked")
+			return
+		}
+		if audit, ok := r.Context().Value(auditContextKey{}).(*auditIdentity); ok {
+			audit.actor = user.ID
+		}
+		if !allowedRoute(user, r.URL.Path) {
+			jsonError(w, 403, "permission denied")
 			return
 		}
 		if !mutation && r.Method != http.MethodGet {
@@ -231,6 +262,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 403, "origin rejected")
 		return
 	}
+	if s.users == nil {
+		jsonError(w, 503, "authentication unavailable")
+		return
+	}
 	ip := auth.RemoteIP(r)
 	allowed := false
 	if peer := net.ParseIP(ip); peer != nil && peer.IsLoopback() {
@@ -249,19 +284,23 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if e := decodeBody(w, r, &q); e != nil {
 		return
 	}
-	if !auth.Verify(s.creds, q.Username, q.Password) {
+	user, revision, valid := s.users.Authenticate(q.Username, q.Password)
+	if !valid {
 		time.Sleep(250 * time.Millisecond)
 		jsonError(w, 401, "invalid credentials")
 		return
 	}
 	s.limiter.Reset(ip)
-	session, e := s.sessions.Create(s.creds.Username, ip)
+	session, e := s.sessions.CreateForUser(user, revision, ip)
 	if e != nil {
 		jsonError(w, 500, "session error")
 		return
 	}
 	auth.SetCookie(w, session, s.cfg.API.TLS.Enabled)
-	writeJSON(w, 200, map[string]any{"username": session.Username, "csrf": session.CSRF, "expires_at": session.ExpiresAt})
+	if audit, ok := r.Context().Value(auditContextKey{}).(*auditIdentity); ok {
+		audit.actor = user.ID
+	}
+	writeJSON(w, 200, sessionResponse(user, session))
 }
 func (s *Server) logout(w http.ResponseWriter, r *http.Request, v auth.Session) {
 	s.sessions.Delete(v.ID)
@@ -273,12 +312,38 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request, v auth.Session)
 		jsonError(w, 405, "method not allowed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"username": v.Username, "csrf": v.CSRF, "expires_at": v.ExpiresAt})
+	user, ok := s.users.Current(v.UserID, v.Revision)
+	if !ok {
+		jsonError(w, 401, "session revoked")
+		return
+	}
+	writeJSON(w, 200, sessionResponse(user, v))
 }
-func (s *Server) status(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+func (s *Server) status(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	v := s.mgr.Status(r.Context())
-	if v.Operation != nil && v.Operation.Error != "" {
-		v.Operation.Error = "operation failed; consult local logs"
+	if s.users != nil && session.UserID != "" {
+		user, _ := s.users.Current(session.UserID, session.Revision)
+		if !user.Has("vpn.view") {
+			writeJSON(w, 200, map[string]any{"version": v.Version, "platform": v.Platform, "capabilities": v.Capabilities, "server_time": v.ServerTime})
+			return
+		}
+		if !user.Has("subscriptions.view") && !user.Has("subscriptions.manage") {
+			v.State.Sources = nil
+		}
+	}
+	for i := range v.Operations {
+		if v.Operations[i].Error != "" {
+			v.Operations[i].Error = "operation failed; consult local logs"
+		}
+		v.Operations[i].Message = redact.Text(v.Operations[i].Message)
+	}
+	if v.Operation != nil {
+		public := *v.Operation
+		public.Message = redact.Text(public.Message)
+		if public.Error != "" {
+			public.Error = "operation failed; consult local logs"
+		}
+		v.Operation = &public
 	}
 	if v.State.XrayLastError != "" {
 		v.State.XrayLastError = "tunnel operation failed; consult local logs"
@@ -312,7 +377,7 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	}
 	writeJSON(w, 200, v)
 }
-func (s *Server) subscriptions(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+func (s *Server) subscriptions(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	manager, ok := s.mgr.(subscriptionController)
 	if !ok {
 		jsonError(w, http.StatusNotImplemented, "subscription management unavailable")
@@ -320,7 +385,19 @@ func (s *Server) subscriptions(w http.ResponseWriter, r *http.Request, _ auth.Se
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	writeJSON(w, http.StatusOK, map[string]any{"sources": manager.SubscriptionSources()})
+	sources := manager.SubscriptionSources()
+	if s.users != nil && session.UserID != "" {
+		user, _ := s.users.Current(session.UserID, session.Revision)
+		if !user.Has("subscriptions.manage") {
+			public := make([]map[string]any, 0, len(sources))
+			for _, source := range sources {
+				public = append(public, map[string]any{"id": source.ID, "name": redact.Text(source.Name), "enabled": source.Enabled})
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"sources": public})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
 }
 func (s *Server) saveSubscription(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	manager, ok := s.mgr.(subscriptionController)
@@ -403,21 +480,24 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request, _ auth.Sess
 func (s *Server) benchmark(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	op, e := s.mgr.RequestBenchmark(r.Context(), "http")
 	if e != nil {
-		jsonError(w, 409, "operation unavailable")
+		operationError(w, e)
 		return
+	}
+	if audit, ok := r.Context().Value(auditContextKey{}).(*auditIdentity); ok {
+		audit.operation = op.ID
 	}
 	writeJSON(w, 202, map[string]any{"accepted": true, "operation_id": op.ID})
 }
 func (s *Server) restartXray(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	if e := s.mgr.RestartXray(r.Context()); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 func (s *Server) reboot(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	if e := s.mgr.Reboot(r.Context()); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 202, map[string]any{"accepted": true})
@@ -430,7 +510,7 @@ func (s *Server) wake(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 		return
 	}
 	if e := s.mgr.Wake(r.Context(), q.MAC); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -444,7 +524,7 @@ func (s *Server) policy(w http.ResponseWriter, r *http.Request, _ auth.Session) 
 		return
 	}
 	if e := s.mgr.SetPolicy(r.Context(), q.MAC, q.Policy); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -461,14 +541,14 @@ func (s *Server) switchSlot(w http.ResponseWriter, r *http.Request, _ auth.Sessi
 		return
 	}
 	if e := s.mgr.SwitchSlot(r.Context(), *q.Index); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 func (s *Server) direct(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	if e := s.mgr.SwitchDirect(r.Context()); e != nil {
-		jsonError(w, 409, "operation rejected")
+		operationError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -608,6 +688,7 @@ func (s *Server) LocalHandler() http.Handler {
 	}
 	register("/api/v1/status", http.MethodGet, s.status)
 	register("/api/v1/actions/benchmark", http.MethodPost, s.benchmark)
+	register("/api/v1/actions/benchmark/cancel", http.MethodPost, s.cancelBenchmark)
 	register("/api/v1/actions/switch", http.MethodPost, s.switchSlot)
 	register("/api/v1/actions/direct", http.MethodPost, s.direct)
 	register("/api/v1/update/check", http.MethodGet, s.updateCheck)

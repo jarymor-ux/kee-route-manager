@@ -54,6 +54,7 @@ func (m *Manager) SaveSubscription(_ context.Context, source config.Source) erro
 		return fmt.Errorf("persist subscription sources: %w", err)
 	}
 
+	m.sourcesVersion++
 	if m.store != nil {
 		_ = m.store.Update(func(state *model.State) error {
 			current, exists := state.Sources[source.ID]
@@ -101,6 +102,7 @@ func (m *Manager) DeleteSubscription(_ context.Context, id string) error {
 	if err := fetcher.ReplaceSources(next); err != nil {
 		return fmt.Errorf("persist subscription sources: %w", err)
 	}
+	m.sourcesVersion++
 	if m.store != nil {
 		_ = m.store.Update(func(state *model.State) error {
 			delete(state.Sources, id)

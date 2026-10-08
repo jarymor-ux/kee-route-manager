@@ -385,3 +385,41 @@ func TestTrialStartupRejectsUnsafeStateWithoutRepair(t *testing.T) {
 		})
 	}
 }
+
+func TestTrialRejectsCorruptUsersWithoutWritingMigration(t *testing.T) {
+	c, _, _ := trialFixture(t)
+	if err := os.MkdirAll(c.Xray.ConfigDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := trialReady(context.Background(), c, "trial-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	sidecar := c.Web.CredentialsFile + ".users.json"
+	if _, err := os.Stat(sidecar); !os.IsNotExist(err) {
+		t.Fatal("read-only trial persisted migrated users")
+	}
+	if err := os.WriteFile(sidecar, []byte("invalid users fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := protectedTrialTree(t, c)
+	if err := trialReady(context.Background(), c, "trial-fixture"); err == nil {
+		t.Fatal("trial accepted corrupt users and would fail after activation")
+	}
+	if after := protectedTrialTree(t, c); !reflect.DeepEqual(before, after) {
+		t.Fatal("failed trial modified private state")
+	}
+}
+
+func TestTrialRefusesRunningCompanionOperation(t *testing.T) {
+	c, _, _ := trialFixture(t)
+	if err := os.WriteFile(filepath.Join(c.Paths.StateDir, "operation.json"), []byte(`{"status":"succeeded","operations":[{"status":"succeeded"},{"status":"running"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := protectedTrialTree(t, c)
+	if err := trialReady(context.Background(), c, "trial-fixture"); err == nil || !strings.Contains(err.Error(), "quiescent") {
+		t.Fatalf("trial accepted unfinished companion: %v", err)
+	}
+	if after := protectedTrialTree(t, c); !reflect.DeepEqual(before, after) {
+		t.Fatal("trial repaired operation record")
+	}
+}

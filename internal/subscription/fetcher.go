@@ -2,6 +2,8 @@ package subscription
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +29,7 @@ type Fetcher struct {
 	client      *http.Client
 	now         func() time.Time
 	sourceStore *SourceStore
+	owner       *Fetcher
 }
 type Result struct {
 	Nodes  []model.Node
@@ -38,6 +41,7 @@ type cache struct {
 	SourceID  string       `json:"source_id"`
 	FetchedAt time.Time    `json:"fetched_at"`
 	Nodes     []model.Node `json:"nodes"`
+	Identity  string       `json:"identity,omitempty"`
 }
 
 func New(cfg config.Subscriptions, b []config.Duration, cacheDir string) *Fetcher {
@@ -79,7 +83,12 @@ func (f *Fetcher) ReplaceSources(sources []config.Source) error {
 
 func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceState, force bool) Result {
 	f.mu.RLock()
-	defer f.mu.RUnlock()
+	cfg := f.cfg
+	cfg.Sources = cloneSources(f.cfg.Sources)
+	snapshot := &Fetcher{cfg: cfg, backoff: f.backoff, dir: f.dir, client: f.client, now: f.now, owner: f}
+	f.mu.RUnlock()
+	// Downloads use an immutable snapshot; replacing sources never waits for I/O.
+	f = snapshot
 	_ = os.MkdirAll(f.dir, 0700)
 	r := Result{States: map[string]model.SourceState{}}
 	type item struct {
@@ -143,7 +152,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	st.UsingCache = false
 	st.CacheExpiresAt = time.Time{}
 	if !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
-		if xs, c, e := f.load(s.ID); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
+		if xs, c, e := f.loadSource(s); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
 			st.UsingCache = true
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
@@ -151,7 +160,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 		}
 	}
 	if !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
-		if xs, c, e := f.load(s.ID); e == nil {
+		if xs, c, e := f.loadSource(s); e == nil {
 			st.UsingCache = true
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
@@ -176,7 +185,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 			if f.cfg.MaxNodesPerSource > 0 {
 				xs = Merge(xs, f.cfg.MaxNodesPerSource)
 			}
-			c := cache{1, s.ID, now, xs}
+			c := cache{Schema: 1, SourceID: s.ID, FetchedAt: now, Nodes: xs, Identity: sourceIdentity(s)}
 			if err = f.save(c); err == nil {
 				st.Status = "healthy"
 				if old.Status == "unavailable" {
@@ -211,7 +220,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	if err != nil {
 		st.LastError = redact.Text(err.Error())
 	}
-	if xs, c, e := f.load(s.ID); e == nil {
+	if xs, c, e := f.loadSource(s); e == nil {
 		st.UsingCache = true
 		st.NodeCount = len(xs)
 		st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
@@ -301,6 +310,21 @@ func limited(ctx context.Context, r io.Reader, n int64) ([]byte, error) {
 	return b, nil
 }
 func (f *Fetcher) save(c cache) error {
+	// An obsolete snapshot must not overwrite a newer provider's cache.
+	if f.owner != nil {
+		f.owner.mu.RLock()
+		defer f.owner.mu.RUnlock()
+		current := false
+		for _, source := range f.owner.cfg.Sources {
+			if source.ID == c.SourceID && sourceIdentity(source) == c.Identity {
+				current = true
+				break
+			}
+		}
+		if !current {
+			return errors.New("subscription changed before cache commit")
+		}
+	}
 	b, _ := json.MarshalIndent(c, "", "  ")
 	p := filepath.Join(f.dir, c.SourceID+".json")
 	fd, err := os.CreateTemp(f.dir, ".cache-*")
@@ -334,4 +358,22 @@ func (f *Fetcher) load(id string) ([]model.Node, cache, error) {
 		return nil, c, errors.New("invalid cache")
 	}
 	return c.Nodes, c, nil
+}
+
+func sourceIdentity(source config.Source) string {
+	// Hash the private source identity without putting its URL/headers in logs.
+	value := struct {
+		URL     string
+		Headers map[string]string
+	}{source.URL, source.Headers}
+	data, _ := json.Marshal(value)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+func (f *Fetcher) loadSource(source config.Source) ([]model.Node, cache, error) {
+	nodes, record, err := f.load(source.ID)
+	if err == nil && record.Identity != sourceIdentity(source) {
+		return nil, record, errors.New("subscription cache belongs to a different source configuration")
+	}
+	return nodes, record, err
 }

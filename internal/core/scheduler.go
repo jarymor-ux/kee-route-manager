@@ -53,9 +53,18 @@ func (m *Manager) sourceLoop() {
 	}
 }
 func (m *Manager) refreshSources() {
+	m.subscriptionMu.Lock()
+	revision := m.sourcesVersion
+	m.subscriptionMu.Unlock()
 	before := m.store.State()
 	result := m.fetcher.FetchAll(m.ctx, before.Sources, false)
+	m.subscriptionMu.Lock()
+	if revision != m.sourcesVersion {
+		m.subscriptionMu.Unlock()
+		return
+	}
 	_ = m.store.Update(func(s *model.State) error { s.Sources = result.States; return nil })
+	m.subscriptionMu.Unlock()
 	if len(result.Nodes) == 0 {
 		return
 	}
@@ -114,6 +123,12 @@ func (m *Manager) pollMetrics() {
 		v.Stale = false
 	}
 	m.metrics = v
+	if err == nil {
+		if m.metricHistory == nil {
+			m.metricHistory = &metricsHistory{}
+		}
+		m.metricHistory.add(v)
+	}
 }
 func (m *Manager) pollClients() {
 	if !m.platform.Capabilities().Clients {

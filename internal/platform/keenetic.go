@@ -308,16 +308,24 @@ func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 		}
 	}
 	connected := name != ""
-	m := Metrics{UpdatedAt: time.Now().UTC(), WANConnected: &connected, WANName: name, WANDescription: stringValue(wan["description"]), WANIP: stringValue(wan["address"]), RXBytes: uint64(number(stats["rxbytes"])), TXBytes: uint64(number(stats["txbytes"])), RXMbps: number(stats["rxspeed"]) * 8 / 1e6, TXMbps: number(stats["txspeed"]) * 8 / 1e6, Connections: int64(number(sys["conntotal"]) - number(sys["connfree"])), UptimeSeconds: int64(number(sys["uptime"]))}
+	m := Metrics{UpdatedAt: time.Now().UTC(), WANConnected: &connected, WANName: name, WANDescription: stringValue(wan["description"]), WANIP: stringValue(wan["address"]), RXBytes: uint64(number(stats["rxbytes"])), TXBytes: uint64(number(stats["txbytes"])), Connections: int64(number(sys["conntotal"]) - number(sys["connfree"])), UptimeSeconds: int64(number(sys["uptime"]))}
+	rxSpeed, rxOK := telemetryNumber(stats["rxspeed"])
+	txSpeed, txOK := telemetryNumber(stats["txspeed"])
+	m.TrafficAvailable = connected && rxOK && txOK
+	if m.TrafficAvailable {
+		m.RXMbps, m.TXMbps = rxSpeed/1e6*8, txSpeed/1e6*8
+	}
 	if cp, e := k.rci(ctx, "show/system/cpustat"); e == nil {
 		if busy, ok := cp["busy"].(map[string]any); ok {
-			v := number(busy["cur"])
-			m.CPUPercent = &v
+			if v, valid := telemetryNumber(busy["cur"]); valid && v <= 100 {
+				m.CPUPercent = &v
+			}
 		}
 	}
 	if m.CPUPercent == nil {
-		v := number(sys["cpuload"])
-		m.CPUPercent = &v
+		if v, valid := telemetryNumber(sys["cpuload"]); valid && v <= 100 {
+			m.CPUPercent = &v
+		}
 	}
 	mem := strings.Split(stringValue(sys["memory"]), "/")
 	if len(mem) == 2 {
@@ -337,11 +345,12 @@ func (k *keenetic) Metrics(ctx context.Context) (Metrics, error) {
 	}
 	sort.Slice(m.Ports, func(i, j int) bool { return m.Ports[i].ID < m.Ports[j].ID })
 	if b, e := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); e == nil {
-		v, _ := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
-		if v > 1000 {
-			v /= 1000
+		if v, valid := telemetryNumber(strings.TrimSpace(string(b))); valid {
+			if v > 1000 {
+				v /= 1000
+			}
+			m.TemperatureC = &v
 		}
-		m.TemperatureC = &v
 	}
 	return m, nil
 }
