@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, 'release/**']
+    branches: [main, release-candidate]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -75,16 +75,18 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          KRM_RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF_NAME" == v* ]]
-          channel=$(python3 scripts/release_channel.py "${GITHUB_REF_NAME#v}")
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/release-candidate:refs/remotes/origin/release-candidate'
+          version=$(python3 scripts/build-version.py --release --check-branch)
+          channel=$(python3 scripts/release_channel.py "$version")
           printf 'channel=%s\n' "$channel" >> "$GITHUB_OUTPUT"
           if [[ "$channel" == rc ]]; then printf 'prerelease=true\n' >> "$GITHUB_OUTPUT"; else printf 'prerelease=false\n' >> "$GITHUB_OUTPUT"; fi
-          [[ "$GITHUB_REF_NAME" == "v$(tr -d '[:space:]' < VERSION)" ]]
+          [[ "$GITHUB_REF_NAME" == "v$version" ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           [[ "$(git rev-parse "$GITHUB_REF^{commit}")" == "$GITHUB_SHA" ]]
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
           if grep -Fxq "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-tags"; then
@@ -96,6 +98,7 @@ jobs:
           KRM_RELEASE_SIGNING_KEY: ${{ secrets.KRM_RELEASE_SIGNING_KEY }}
           KRM_SOURCE_COMMIT: ${{ github.sha }}
           KRM_RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+          KRM_RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           umask 077
@@ -111,16 +114,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
           RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          KRM_RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           [[ "$(git ls-remote --exit-code origin "$GITHUB_REF" | awk '{print $1}')" == "$(git rev-parse "$GITHUB_REF")" ]]
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/release-candidate:refs/remotes/origin/release-candidate'
+          python3 scripts/build-version.py --release --check-branch >/dev/null
           [[ "$RELEASE_CHANNEL" == "$(python3 scripts/release_channel.py "${GITHUB_REF_NAME#v}")" ]]
           if [[ "$RELEASE_CHANNEL" == rc ]]; then release_label='experimental prerelease'; else release_label='stable channel release'; fi
           notes_file="$RUNNER_TEMP/release-notes.md"
           printf '%s\n\n%s\n\n%s\n' \
             "Kee Route Manager $GITHUB_REF_NAME — $release_label." \
             "Signed daemon, UI, CLI and stable launcher artifacts. Update protocol 1 supports explicit updates through the separately installed launcher; platform limits remain documented in docs/KNOWN_LIMITATIONS.md and docs/RELEASE.md." \
-            "Built from tested commit $GITHUB_SHA. Hardware acceptance remains separate from CI. Existing release tags and assets are unchanged." > "$notes_file"
+            "Built from tested commit $GITHUB_SHA. Platform support remains experimental: router reboot, power-loss, deliberately broken candidate rollback and complete concurrent-control/browser hardware acceptance remain unverified. See [maintained limitations](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/KNOWN_LIMITATIONS.md). Existing release tags and assets are unchanged." > "$notes_file"
           gh release create "$GITHUB_REF_NAME" release/dist/* --verify-tag --draft --prerelease="$RELEASE_PRERELEASE" --latest=false --notes-file "$notes_file"
           uploaded=$(mktemp -d "$RUNNER_TEMP/krm-uploaded.XXXXXX")
           trap 'rm -rf "$uploaded"' EXIT

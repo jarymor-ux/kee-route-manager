@@ -2,7 +2,10 @@
 set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-KRM_VERSION="$(tr -d '[:space:]' < VERSION)"
+KRM_VERSION="$(python3 scripts/build-version.py --release)"
+COMMIT="$(git rev-parse HEAD)"
+[[ -z "${KRM_SOURCE_COMMIT:-}" || "$KRM_SOURCE_COMMIT" == "$COMMIT" ]] || { echo 'KRM_SOURCE_COMMIT differs from the tagged source commit' >&2; exit 1; }
+export KRM_SOURCE_COMMIT="$COMMIT"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/release}"
 PRIVATE_KEY="${KRM_RELEASE_PRIVATE_KEY:-}"
 PUBLIC_KEY="${KRM_RELEASE_PUBLIC_KEY:-$ROOT/internal/releasetrust/public.key}"
@@ -22,7 +25,6 @@ mkdir -p "$DIST"
 TOOL_DIR="$(mktemp -d)"
 trap 'rm -rf "$TOOL_DIR"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TOOL_DIR/krm-release-tool" ./cmd/krm-release-tool
-COMMIT="${KRM_SOURCE_COMMIT:-$(git rev-parse --short=12 HEAD)}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LDFLAGS="-s -w -X main.version=$KRM_VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME"
 for target in amd64 arm64 armv7 mipsle; do

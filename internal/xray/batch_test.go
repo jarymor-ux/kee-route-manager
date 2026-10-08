@@ -112,12 +112,33 @@ func batchHelperConfig(t *testing.T, mode string) config.Config {
 	c := reproConfig(t)
 	c.Xray.Binary = os.Args[0]
 	c.Benchmark.TemporaryStartupTimeout = config.Dur(15 * time.Second)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	// The lifecycle fixture starts two adjacent listeners. A free first port
+	// does not imply its neighbour is free (for example another package's API).
+	reserved := false
+	for attempt := 0; attempt < 64; attempt++ {
+		first, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := first.Addr().(*net.TCPAddr).Port
+		if port == 65535 {
+			_ = first.Close()
+			continue
+		}
+		second, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port+1)))
+		if err != nil {
+			_ = first.Close()
+			continue
+		}
+		c.Benchmark.TemporaryProxyPortStart = port
+		reserved = true
+		_ = second.Close()
+		_ = first.Close()
+		break
 	}
-	c.Benchmark.TemporaryProxyPortStart = listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
+	if !reserved {
+		t.Fatal("no free contiguous fixture ports")
+	}
 	t.Setenv("KRM_BATCH_HELPER_PROCESS", mode)
 	return c
 }

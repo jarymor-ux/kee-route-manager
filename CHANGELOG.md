@@ -6,6 +6,13 @@
 
 - Complete fresh core/local-ui bootstrap on Keenetic, OpenWrt and Linux/systemd: after signed release verification, run the RU/EN wizard pinned to the bootstrap platform and validate private generated configs. Local-ui automatically creates its UI config with verified HTTPS controller upstream and `controller-ca.crt` trust. Preserve prepared-config installation, standalone UI trust requirements and refusal to overwrite existing installations.
 
+## 1.1.0 / 1.1.0-rc.15 — 2026-10-08
+
+Release and RC channels share the tested source baseline; platform support remains experimental until documented hardware acceptance is complete.
+
+- Remove the version file; derive release versions and source identity from exact immutable Git tags. Use `main` for stable publication and `release-candidate` for RC publication, mark untagged/dirty builds as development, and exercise signed fixtures in disposable tagged repositories.
+- Remove stale embedded fallback version numbers; raw Go builds identify themselves as development builds. Confirm both adjacent ports in the disposable Xray lifecycle fixture before starting its subprocess.
+
 ## 1.1.0-rc.14 — 2026-10-08
 
 Experimental prerelease. Stable-channel publication support does not establish hardware acceptance.

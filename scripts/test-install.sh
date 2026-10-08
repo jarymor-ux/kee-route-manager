@@ -12,10 +12,12 @@ cleanup(){
 }
 trap cleanup EXIT
 mkdir -p "$WORK/source" "$WORK/fake" "$WORK/private"
-tar -C "$ROOT" --exclude=.git --exclude=.omx --exclude=release --exclude=dist -cf - . | tar -xf - -C "$WORK/source"
+tar -C "$ROOT" --exclude=.git --exclude=.omx --exclude=release --exclude=dist --exclude=VERSION -cf - . | tar -xf - -C "$WORK/source"
 cd "$WORK/source"
 case "$(uname -m)" in aarch64) ARCH=arm64;; x86_64) ARCH=amd64;; *) exit 1;; esac
-VERSION=$(tr -d '[:space:]' < VERSION)
+# Canonical synthetic identity for disposable installer binaries and signed seed.
+# This is not the checkout's development version or a production release.
+VERSION=9.9.9-rc.1
 CHANNEL=$(python3 scripts/release_channel.py "$VERSION")
 mkdir dist
 for name in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do

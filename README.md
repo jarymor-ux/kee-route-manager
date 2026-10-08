@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **1.1.0-rc.14 is an experimental prerelease.** Hardware acceptance is tracked separately; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.1.0` and Release Candidate `v1.1.0-rc.15` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -57,3 +57,5 @@ go test -race ./...
 Documentation: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [security](docs/SECURITY.md), [limitations](docs/KNOWN_LIMITATIONS.md), [release](docs/RELEASE.md), [breaking changes](docs/BREAKING_CHANGES.md), [changelog](CHANGELOG.md). Automated verification runs in [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions).
 
 Licensed under [Apache-2.0](LICENSE), selected by the owner.
+
+Release development uses two branches: `main` for the stable line and `release-candidate` for candidates. Versions come from immutable Git tags (`vX.Y.Z` / `vX.Y.Z-rc.N`), not a version file. Branch pushes run checks; tags publish signed releases after channel/branch validation. Untagged local builds are marked `dev`. Publishing the stable channel does not certify device models or the unrun hardware scenarios. See [release publication](docs/RELEASE.md).

@@ -15,7 +15,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/launcher"
 )
 
-var version = "1.1.0-rc.7"
+var version = "dev"
 var commit = "dev"
 var buildTime = "unknown"
 

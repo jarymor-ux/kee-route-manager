@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-KRM 管理 Xray 节点池、订阅与故障切换。**1.1.0-rc.14 是实验性预发布版本。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
+KRM 管理 Xray 节点池、订阅与故障切换。**Release `v1.1.0` 与 Release Candidate `v1.1.0-rc.15` 使用独立发布渠道。平台支持在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
 面板现在分为路由器和 VPN 两个菜单，提供指标仪表板、有限历史记录和由服务端验证权限的多用户管理。基准测试期间可以执行兼容的路由器操作和手动切换路由；重启操作先取消测试并等待清理。参见[凭据迁移和回滚限制](docs/API.md#credential-migration-and-recovery)。
 
@@ -21,6 +21,8 @@ Linux/OpenWrt 的 `firewall_mode: managed` 仍支持全新安装和普通运行�
 
 AI 代理应先阅读 [AGENTS.md](AGENTS.md)，再按照 [完整安装流程](docs/AGENT_INSTALL.md) 执行 SSH、备份、配置、core/UI 安装、TLS、验证、卸载及回滚。
 
-安装时使用已发布的签名版本 `v1.1.0-rc.14`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
+安装时使用已发布的签名版本 `v1.1.0`，不要使用可变的 `main` 或 `/releases/latest`。在发布文件尚未齐全时停止安装，不要替换为旧版本。
 
 参见 [限制](docs/KNOWN_LIMITATIONS.md) 与 [发布流程](docs/RELEASE.md)。自动化验证见 [GitHub Actions](https://github.com/jarymor-ux/kee-route-manager/actions)。许可证：[Apache-2.0](LICENSE)。
+
+发布流程使用两个分支：`main` 为稳定发布线，`release-candidate` 为候选版本。版本号来自不可变 Git 标签 `vX.Y.Z` 或 `vX.Y.Z-rc.N`，无需版本文件。推送分支运行检查，推送标签通过分支和渠道检查后发布签名版本。未打标签的本地构建标记为 `dev`。发布稳定渠道不代表已完成设备型号和未执行硬件场景的验收；参见[发布流程](docs/RELEASE.md)。
