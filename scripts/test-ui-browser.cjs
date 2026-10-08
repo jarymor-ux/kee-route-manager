@@ -10,6 +10,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
 const staticRoot = path.join(__dirname, '../internal/web/ui/static');
 const screenshots = fs.mkdtempSync('/tmp/krm-ui-browser-');
 const permissions = ['vpn.view','vpn.control','subscriptions.view','subscriptions.manage','router.view','router.clients','router.policy','router.wake','router.system','router.reboot','updates.manage','users.manage','config.manage','events.view'];
+function sourceFixture() { return [{id:'primary',name:'Primary',url:'https://subscription.example.invalid/private-fixture',enabled:true,headers:{Authorization:'Bearer synthetic-fixture'}}]; }
+function usersFixture() { return [{id:'fixture-admin',username:'admin',enabled:true,permissions},{id:'fixture-user',username:'operator',enabled:true,permissions:['vpn.view'],updated_at:'fixture-user-original'}]; }
 function settingsFixture() {
   return {
     benchmark: { full_interval:'5m',batch_size:20,latency_workers:8,requests_per_weight:2,finalists:6,min_improvement_percent:15,switch_cooldown:'10m',stability_before_upgrade:'10m',speed:{enabled:false,workers:2,url_template:'https://speed.example.invalid/?bytes={bytes}',warmup_bytes:'8 MiB',min_sample_bytes:'64 MiB',max_sample_bytes:'512 MiB',target_duration:'6s',repetitions:3} },
@@ -19,7 +21,7 @@ function settingsFixture() {
     pool:{provider_diversity:{enabled:false,max_per_provider:1}},
   };
 }
-const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle' };
+const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle', sources:sourceFixture(),users:usersFixture(),activeSlot:0 };
 const now = () => new Date().toISOString();
 const metrics = () => ({cpu_percent:24,ram_percent:38,wan_connected:true,wan_name:'ISP',wan_ip:'192.0.2.10',wan_description:'Ethernet',traffic_available:true,rx_mbps:18.4,tx_mbps:2.1,updated_at:now(),temperature_c:42,uptime_seconds:86410,ports:[{id:'LAN 1',link:'up',speed:'1000 Мбит/с'}]});
 const nodes = [
@@ -33,15 +35,20 @@ function fakeAPI(url,method,body) {
   if(route === '/api/v1/auth/logout') { state.logged=false; return {}; }
   if(!state.logged) return {error:'unauthorized',httpStatus:401};
   if(route === '/api/v1/session') return {csrf:'fixture-csrf',permissions:state.permissions,user:{id:'fixture-admin',username:'admin'}};
-  if(route === '/api/v1/status') return {version:'1.3.0-fixture',xray_running:true,capabilities:{client_policy:true,wake_on_lan:true},state:{xray_configured:true,automatic_routing_paused:false,direct_mode:false,active_slot:0,active_node_id:'zero',health_status:'healthy',pool:[{index:0,node_id:'zero',label:'Zero latency',score:0}],sources:{Primary:{name:'Primary',status:'healthy',node_count:3}},last_benchmark:{finished_at:now()}}};
+  if(route === '/api/v1/status') return {version:'1.3.1-fixture',xray_running:true,capabilities:{client_policy:true,wake_on_lan:true},state:{xray_configured:true,automatic_routing_paused:false,direct_mode:false,active_slot:state.activeSlot,active_node_id:state.activeSlot?'known':'zero',health_status:'healthy',pool:[{index:0,node_id:'zero',label:'Zero latency',score:0},{index:1,node_id:'known',label:'Known node',score:100}],sources:{Primary:{name:'Primary',status:'healthy',node_count:3}},last_benchmark:{finished_at:now()}}};
   if(route === '/api/v1/nodes') return nodes;
-  if(route === '/api/v1/router/clients') return {updated_at:now(),value:[{name:`Workstation ${state.policyVersion}`,mac:'02:00:00:00:00:01',ip:'192.168.1.2',active:true,connection_policy:'XKeen',link:'LAN'}]};
+  if(route === '/api/v1/router/clients') return {updated_at:now(),value:[{name:`Workstation ${state.policyVersion}`,mac:'02:00:00:00:00:01',ip:'192.168.1.2',active:true,connection_policy:state.policyVersion%2?'Default route':'XKeen',link:'LAN'}]};
   if(route === '/api/v1/router/metrics') return metrics();
   if(route === '/api/v1/router/metrics/history') return {samples:[1200000,180000,175000,50000,45000].map((age,i)=>({...metrics(),cpu_percent:i*10,ram_percent:40,updated_at:new Date(Date.now()-age).toISOString()}))};
-  if(route === '/api/v1/subscriptions') return [{id:'primary',name:'Primary',url:'https://subscription.example.invalid/private-fixture',enabled:true,headers:{Authorization:'Bearer synthetic-fixture'}}];
-  if(route === '/api/v1/users') return {users:[{id:'fixture-admin',username:'admin',enabled:true,permissions}],permissions,roles:{admin:permissions,viewer:['vpn.view','router.view']}};
+  if(route === '/api/v1/subscriptions') return {sources:state.sources};
+  if(route === '/api/v1/subscriptions/save') {const source=JSON.parse(body);state.sources=state.sources.filter(item=>item.id!==source.id).concat(source);return {ok:true};}
+  if(route === '/api/v1/subscriptions/delete') {state.sources=state.sources.filter(item=>item.id!==JSON.parse(body).id);return {ok:true};}
+  if(route === '/api/v1/users') return {users:state.users,permissions,roles:{admin:permissions,viewer:['vpn.view','router.view']}};
+  if(route === '/api/v1/users/save') {const user=JSON.parse(body);state.users=state.users.filter(item=>item.id!==user.id).concat({...user,updated_at:'fixture-updated'});return {ok:true};}
+  if(route === '/api/v1/users/delete') {state.users=state.users.filter(item=>item.id!==JSON.parse(body).id);return {ok:true};}
+  if(route === '/api/v1/actions/switch') {state.activeSlot=JSON.parse(body).index;return {accepted:true,httpStatus:202};}
   if(route === '/api/v1/events') return [];
-  if(route === '/api/v1/update/status') return {enabled:true,launcher:true,channel:'stable',channel_switch_supported:true,phase:'idle',current_version:'1.3.0-fixture'};
+  if(route === '/api/v1/update/status') return {enabled:true,launcher:true,channel:'stable',channel_switch_supported:true,phase:'idle',current_version:'1.3.1-fixture'};
   if(route === '/api/v1/settings') return {settings:state.settings,revision:state.revision,pool_size:5,apply:{status:'applied',revision:state.revision}};
   if(route === '/api/v1/settings/validate') return {valid:true};
   if(route === '/api/v1/settings/save') { const input=JSON.parse(body); state.settings=input.settings;state.revision='fixture-saved';state.saves.push(input);return {changed:true,accepted:true,revision:state.revision,httpStatus:202}; }
@@ -76,11 +83,11 @@ async function main() {
   const browser=await chromium.launch({headless:true});
   try {
     for(const width of [1440,390,320]) for(const scheme of ['light','dark']) {
-      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';
+      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;
       const context=await browser.newContext({viewport:{width,height:width<761?844:1000},colorScheme:scheme,serviceWorkers:'block'});
       const page=await context.newPage(); const errors=[];
       page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});page.on('dialog',dialog=>dialog.accept());
-      await page.goto(origin+'/#router');await page.locator('#usage-chart svg').waitFor();
+      await page.goto(origin+'/#router');await page.locator('#usage-chart svg').waitFor();await page.evaluate(()=>clearInterval(pollTimer));
       await noOverflow(page,`${width}/${scheme} router`);
       const file=path.join(screenshots,`${width}-${scheme}-router.png`);await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});await page.waitForTimeout(100);await page.screenshot({path:file,fullPage:true});console.log(`Screenshot: ${file}`);
       await page.locator('#chart-range').selectOption('15');await page.locator('#usage-chart svg').waitFor();
@@ -98,8 +105,31 @@ async function main() {
       assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-id');assert.equal(await page.locator('main').evaluate(el=>el.inert),true);
       await page.locator('#subscription-modal button[type="submit"]').focus();await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-id');
       await page.keyboard.press('Escape');assert(await page.locator('#subscription-modal').evaluate(el=>el.classList.contains('hidden')));assert.equal(await page.evaluate(()=>document.activeElement.id),'add-subscription');
-      await navigate(page,'devices',width);await page.locator('.policy').waitFor();await page.locator('.policy').focus();await page.locator('.policy').evaluate(el=>{window.fixturePolicyElement=el;});state.policyVersion++;
-      await page.evaluate(()=>poll());assert(await page.locator('.policy').evaluate(el=>el===window.fixturePolicyElement),'poll replaced focused policy select');
+      const editSource=page.locator('.subscription-edit[data-id="primary"]');await editSource.focus();await editSource.click();
+      await page.locator('#subscription-name').fill('Primary renamed');await page.locator('#subscription-form button[type="submit"]').click();
+      await page.waitForFunction(()=>document.querySelector('#subscriptions-body').textContent.includes('Primary renamed'),{},{timeout:1000});
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'primary','subscription save lost keyboard row focus');
+      const sourceButton=page.locator('.subscription-edit[data-id="primary"]');await sourceButton.evaluate(el=>window.fixtureSourceElement=el);await page.evaluate(()=>loadSubscriptions());
+      assert(await sourceButton.evaluate(el=>el===window.fixtureSourceElement),'background subscription refresh replaced focused control');
+      state.sources[0].name='Background source change';await page.evaluate(()=>loadSubscriptions());assert((await page.locator('#subscriptions-body').textContent()).includes('Background source change'),'late source result left stale label');assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'primary','late source result lost keyboard row focus');
+      await page.locator('.subscription-delete[data-id="primary"]').focus();await page.locator('.subscription-delete[data-id="primary"]').click();
+      await page.waitForFunction(()=>!document.querySelector('.subscription-delete[data-id="primary"]'),{},{timeout:1000});assert.equal(await page.evaluate(()=>document.activeElement.id),'add-subscription','deleted subscription focus fallback');
+      await navigate(page,'users',width);const editUser=page.locator('.user-edit[data-id="fixture-user"]');await editUser.focus();await editUser.click();
+      await page.locator('#user-name').fill('operator renamed');await page.locator('#user-form button[type="submit"]').click();
+      await page.waitForFunction(()=>document.querySelector('#users-body').textContent.includes('operator renamed'),{},{timeout:1000});
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'fixture-user','user save lost keyboard row focus');
+      const toggleUserButton=page.locator('.user-toggle[data-id="fixture-user"]');await toggleUserButton.focus();await toggleUserButton.click();
+      await page.waitForFunction(()=>document.querySelector('.user-toggle[data-id="fixture-user"]').textContent==='Включить',{},{timeout:1000});
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'fixture-user','user toggle lost keyboard row focus');
+      const freshToggle=page.locator('.user-toggle[data-id="fixture-user"]');await freshToggle.evaluate(el=>window.fixtureUserElement=el);await page.evaluate(()=>loadUsers());
+      assert(await freshToggle.evaluate(el=>el===window.fixtureUserElement),'unchanged user refresh replaced focused control');state.users.find(user=>user.id==='fixture-user').username='Background user change';await page.evaluate(()=>loadUsers());assert((await page.locator('#users-body').textContent()).includes('Background user change'),'late user result left stale label');assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'fixture-user','late user result lost keyboard row focus');
+      await page.locator('.user-delete[data-id="fixture-user"]').focus();await page.locator('.user-delete[data-id="fixture-user"]').click();
+      await page.waitForFunction(()=>!document.querySelector('.user-delete[data-id="fixture-user"]'),{},{timeout:1000});assert.equal(await page.evaluate(()=>document.activeElement.id),'add-user','deleted user focus fallback');
+      await navigate(page,'nodes',width);await page.locator('.slot-switch[data-index="1"]').focus();await page.locator('.slot-switch[data-index="1"]').click();
+      await page.waitForFunction(()=>document.querySelector('.pool-item.active .slot-switch')?.dataset.index==='1',{},{timeout:1500});
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.index),'1','pool switch lost keyboard slot focus');state.activeSlot=0;await page.evaluate(()=>loadStatus());assert.equal(await page.locator('.pool-item.active .slot-switch').getAttribute('data-index'),'0','late accepted switch status stayed stale');assert.equal(await page.evaluate(()=>document.activeElement.dataset.index),'1','late switch result lost focused button key');
+      await navigate(page,'devices',width);await page.locator('.policy').waitFor();await page.locator('.policy').focus();await page.locator('.policy').evaluate(el=>{window.fixturePolicyElement=el;el.value='xkeen';});state.policyVersion++;
+      await page.evaluate(()=>poll());assert(await page.locator('.policy').evaluate(el=>el===window.fixturePolicyElement),'poll replaced focused policy select');assert.equal(await page.locator('.policy').inputValue(),'xkeen','metadata poll changed native selection');assert(await page.locator('.policy').evaluate(el=>document.activeElement===el),'metadata poll lost native select focus');assert((await page.locator('#clients-body tr td').nth(0).textContent()).includes('Workstation 1'),'focused select froze client name metadata');assert.equal(await page.locator('#clients-body tr td').nth(3).textContent(),'Default route','focused select froze committed policy metadata');
       state.permissions=permissions.filter(p=>p!=='router.policy');await page.evaluate(()=>poll());assert.equal(await page.locator('.policy').count(),0,'revocation left focused policy control');
       state.permissions=[...permissions];await page.evaluate(()=>poll());
       await navigate(page,'settings',width);await page.locator('#setting-benchmark-full_interval').waitFor();

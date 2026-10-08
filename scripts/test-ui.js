@@ -47,7 +47,7 @@ function visible(h) {
 }
 
 function statusChecks() {
-  const start = source.indexOf('function renderStatus(data)');
+  const start = source.indexOf('function renderStatus(data, force = false)');
   const end = source.indexOf('\nfunction renderPool', start);
   assert(start >= 0 && end > start, 'renderStatus must be present');
   const elements = new Map();
@@ -1047,6 +1047,46 @@ async function workspaceRegressionChecks() {
   assert(h.requests.slice(before).some((item)=>item.url.endsWith('/session')),'visibility resume refreshes session before workspace');
 }
 
+async function foregroundRefreshChecks() {
+  const h=appHarness();await new Promise(setImmediate);
+  h.run("closeDialog('login');authenticated=true;permissions=new Set(allPermissions);csrf='fixture-csrf'");
+  const source={id:'primary',name:'Primary',url:'https://subscription.example.invalid',enabled:true,headers:{}};
+  let sources=[source];let users=[{id:'fixture-user',username:'operator',enabled:true,permissions:['vpn.view'],updated_at:'fixture-original'}];
+  let activeSlot=0;
+  h.respond((url,options)=>{
+    const body=options.body?JSON.parse(options.body):{};
+    if(url.endsWith('/subscriptions/save'))sources=[body];
+    if(url.endsWith('/subscriptions/delete'))sources=[];
+    if(url.endsWith('/users/save'))users=[{...body,updated_at:'fixture-updated'}];
+    if(url.endsWith('/users/delete'))users=[];
+    const data=url.endsWith('/subscriptions')?{sources}:url.endsWith('/users')?{users,permissions:h.allPermissions}:url.endsWith('/session')?{csrf:'fixture-csrf',permissions:h.allPermissions}:url.endsWith('/status')?{version:'1.3.1-fixture',state:{active_slot:activeSlot,pool:[{index:0,node_id:'first',label:'First'},{index:1,node_id:'second',label:'Second'}],sources:{}}}:{};
+    return {status:200,ok:true,data};
+  });
+  await h.run('loadSubscriptions()');
+  const subscriptionButton=h.select('.subscription-edit');subscriptionButton.classList.add('subscription-edit');subscriptionButton.dataset.id='primary';subscriptionButton.parentElement=h.select('#subscriptions-body');h.many.set('.subscription-edit',[subscriptionButton]);subscriptionButton.focus();
+  const initialSources=h.select('#subscriptions-body').innerHTML;
+  await h.run('loadSubscriptions()');assert.equal(h.select('#subscriptions-body').innerHTML,initialSources,'unchanged subscription polling preserves focused row');
+  sources=[{...source,name:'Background name'}];await h.run('loadSubscriptions()');assert(h.select('#subscriptions-body').innerHTML.includes('Background name'),'late source result refreshes focused action row');assert.equal(h.document.activeElement,subscriptionButton,'late source result restores action focus');
+  h.run("openSubscriptionEditor('primary')");h.select('#subscription-name').value='Foreground name';
+  await h.run('saveSubscription({preventDefault(){}})');
+  assert(h.select('#subscriptions-body').innerHTML.includes('Foreground name'),'subscription save refreshes row while opener focused');
+  subscriptionButton.focus();await h.run("deleteSubscription('primary')");
+  assert(h.select('#subscriptions-body').innerHTML.includes('Подписки не настроены'),'focused subscription delete removes row');
+
+  await h.run('loadUsers()');
+  const userButton=h.select('.user-edit');userButton.classList.add('user-edit');userButton.dataset.id='fixture-user';userButton.parentElement=h.select('#users-body');h.many.set('.user-edit',[userButton]);userButton.focus();
+  const initialUsers=h.select('#users-body').innerHTML;await h.run('loadUsers()');assert.equal(h.select('#users-body').innerHTML,initialUsers,'unchanged users preserve focused row');users=[{...users[0],username:'Background user'}];await h.run('loadUsers()');assert(h.select('#users-body').innerHTML.includes('Background user'),'late user result refreshes focused action row');assert.equal(h.document.activeElement,userButton,'late user result restores focus');
+  h.run("openUserEditor('fixture-user')");h.select('#user-name').value='Foreground user';await h.run('saveUser({preventDefault(){}})');
+  assert(h.select('#users-body').innerHTML.includes('Foreground user'),'user save refreshes row while opener focused');
+  const toggle=h.select('.user-toggle');toggle.classList.add('user-toggle');toggle.dataset.id='fixture-user';toggle.parentElement=h.select('#users-body');h.many.set('.user-toggle',[toggle]);toggle.focus();await h.run("toggleUser('fixture-user')");
+  assert(h.select('#users-body').innerHTML.includes('Заблокирован'),'focused toggle refreshes enabled badge');
+  toggle.focus();await h.run("deleteUser('fixture-user')");assert(h.select('#users-body').innerHTML.includes('Нет пользователей'),'focused user delete removes row');
+
+  await h.run('loadStatus()');const slot=h.select('.slot-switch');slot.classList.add('slot-switch');slot.dataset.index='1';slot.parentElement=h.select('#pool');h.many.set('.slot-switch',[slot]);slot.focus();
+  const initialPool=h.select('#pool').innerHTML;await h.run('loadStatus()');assert.equal(h.select('#pool').innerHTML,initialPool,'unchanged pool preserves focused action');activeSlot=1;await h.run('loadStatus()');assert(h.select('#pool').innerHTML.indexOf('pool-item active')>h.select('#pool').innerHTML.indexOf('First'),'late accepted switch updates active badge despite focused action');activeSlot=0;await h.run('loadStatus(true)');activeSlot=1;await h.run('loadStatus(true)');assert(h.select('#pool').innerHTML.indexOf('pool-item active')>h.select('#pool').innerHTML.indexOf('First'),'foreground pool refresh moves active badge');
+  assert.equal(h.document.activeElement,slot,'foreground refresh restores same slot action focus');
+}
+
 async function dialogRegressionChecks() {
   const h=appHarness(); await new Promise(setImmediate);
   h.run("closeDialog('login'); authenticated=true; initializeDialogs()");
@@ -1105,6 +1145,7 @@ function chartRegressionChecks() {
 async function main() {
   chartRegressionChecks();
   await workspaceRegressionChecks();
+  await foregroundRefreshChecks();
   await dialogRegressionChecks();
   await settingsAndPanelProgressChecks();
   await panelEditorChecks();

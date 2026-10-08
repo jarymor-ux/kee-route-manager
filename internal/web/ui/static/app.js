@@ -173,7 +173,7 @@ async function session() {
   }
 }
 
-async function loadStatus() {
+async function loadStatus(force = false) {
   if (!authenticated || versionReloadRequested) return;
   try {
     const data = await api('/api/v1/status');
@@ -189,7 +189,7 @@ async function loadStatus() {
       documentVersion = version;
     }
     statusData = data;
-    renderStatus(data);
+    renderStatus(data, force);
   } catch {
     const reconnecting = Boolean(updateState?.applying);
     $('#status-dot').className = reconnecting ? 'dot warn' : 'dot bad';
@@ -206,7 +206,7 @@ function operationStatus(status) {
   return statuses[status] || status;
 }
 
-function renderStatus(data) {
+function renderStatus(data, force = false) {
   const state = data.state || { pool: [], sources: {} };
   const operations = data.operations || (data.operation ? [data.operation] : []);
   const operation = operations.find((item) => ['running', 'cancelling', 'queued'].includes(item.status)) || data.operation;
@@ -257,7 +257,7 @@ function renderStatus(data) {
   $('#pool-count').textContent = String((state.pool || []).filter((slot) => slot.node_id && slot.healthy && slot.index !== state.active_slot).length);
   $('#last-test').textContent = fmtAge(state.last_benchmark?.finished_at);
   $('#last-test-detail').textContent = state.last_benchmark?.error || (state.last_benchmark?.finished_at ? `Проверено ${state.last_benchmark.tested_count || 0} из ${state.last_benchmark.node_count || 0} узлов` : 'Тест ещё не завершался');
-  renderPool(state);
+  renderPool(state, force);
   renderSources(state.sources || {});
   if (!can('vpn.view')) { $('#status-dot').className = 'dot'; $('#status-text').textContent = 'Панель подключена'; }
   ['benchmark', 'test-start'].forEach((id) => { $(`#${id}`).disabled = operations.some((item) => item.type === 'benchmark' && ['running', 'cancelling', 'queued'].includes(item.status)); });
@@ -271,10 +271,12 @@ function renderPool(state, force = false) {
       <div class="stats">${slot.node_id ? `${Math.round(slot.score || 0)} score · ${fmtAge(slot.last_verified_at)}` : 'Нет узла'}</div>
       ${slot.node_id && can('vpn.control') ? `<button class="ghost compact slot-switch" data-index="${slot.index}">Переключить</button>` : ''}
     </article>`).join('');
-  if (!updateWorkspaceHTML($('#pool'), html, force)) return;
+  const focused = captureWorkspaceFocus($('#pool'), ['.slot-switch'], 'index');
+  if (!updateWorkspaceHTML($('#pool'), html, force || Boolean(focused?.selector))) return;
   document.querySelectorAll('.slot-switch').forEach((button) => {
     button.onclick = () => action('/api/v1/actions/switch', { index: Number(button.dataset.index) }, 'Переключение выполнено');
   });
+  restoreWorkspaceFocus($('#pool'), focused, 'index', can('vpn.control') ? '#benchmark' : '#logout');
 }
 
 function renderSources(sources) {
@@ -317,23 +319,25 @@ function renderSubscriptions(force = false) {
     </tr>`;
   }).join('') || '<tr><td colspan="6" class="muted">Подписки не настроены</td></tr>';
 
-  if (!updateWorkspaceHTML(body, html, force)) return;
+  const focused = captureWorkspaceFocus(body, ['.subscription-edit', '.subscription-delete'], 'id');
+  if (!updateWorkspaceHTML(body, html, force || Boolean(focused?.selector))) return;
   document.querySelectorAll('.subscription-edit').forEach((button) => {
     button.onclick = () => openSubscriptionEditor(button.dataset.id);
   });
   document.querySelectorAll('.subscription-delete').forEach((button) => {
     button.onclick = () => deleteSubscription(button.dataset.id);
   });
+  restoreWorkspaceFocus(body, focused, 'id', can('subscriptions.manage') ? '#add-subscription' : '#logout');
 }
 
-async function loadSubscriptions() {
+async function loadSubscriptions(force = false) {
   try {
     const data = await api('/api/v1/subscriptions');
     subscriptionData = Array.isArray(data.sources) ? data.sources : [];
-    renderSubscriptions();
+    renderSubscriptions(force);
   } catch (error) {
     subscriptionData = [];
-    renderSubscriptions();
+    renderSubscriptions(force);
     toast(error.message, true);
   }
 }
@@ -390,7 +394,7 @@ async function saveSubscription(event) {
     await api('/api/v1/subscriptions/save', { method: 'POST', body: JSON.stringify(source) });
     clearSubscriptionEditor();
     toast('Подписка сохранена');
-    await loadSubscriptions();
+    await loadSubscriptions(true);
     setTimeout(loadStatus, 100);
   } catch (error) {
     $('#subscription-error').textContent = error.message;
@@ -403,7 +407,7 @@ async function deleteSubscription(id) {
   try {
     await api('/api/v1/subscriptions/delete', { method: 'POST', body: JSON.stringify({ id }) });
     toast('Подписка удалена');
-    await loadSubscriptions();
+    await loadSubscriptions(true);
     setTimeout(loadStatus, 100);
   } catch (error) {
     toast(error.message, true);
@@ -414,7 +418,7 @@ async function action(path, body, success) {
   try {
     await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
     toast(success);
-    setTimeout(loadStatus, 400);
+    setTimeout(() => loadStatus(true), 400);
   } catch (error) {
     toast(error.message, true);
   }
@@ -758,22 +762,24 @@ const permissionLabels = {
   'config.manage': 'Редактирование настроек', 'updates.manage': 'Управление обновлениями', 'users.manage': 'Управление пользователями и правами', 'events.view': 'Просмотр событий',
 };
 
-async function loadUsers() {
+async function loadUsers(force = false) {
   try {
     const data = await api('/api/v1/users');
     usersData = Array.isArray(data.users) ? data.users : [];
     permissionCatalog = Array.isArray(data.permissions) ? data.permissions : [];
     roleTemplates = data.roles || {};
-    renderUsers();
+    renderUsers(force);
   } catch (error) { toast(error.message, true); }
 }
 
-function renderUsers() {
+function renderUsers(force = false) {
   const html = usersData.map((user) => `<tr><td><strong>${esc(user.username)}</strong>${user.id === currentUser?.id ? ' (вы)' : ''}</td><td>${user.enabled ? badge('Включён', 'ok') : badge('Заблокирован', 'bad')}</td><td>${esc((user.permissions || []).map((permission) => permissionLabels[permission] || permission).join(', ') || 'Нет прав')}</td><td><div class="subscription-actions"><button class="ghost compact user-edit" data-id="${esc(user.id)}">Права и пароль</button><button class="ghost compact user-toggle" data-id="${esc(user.id)}">${user.enabled ? 'Заблокировать' : 'Включить'}</button><button class="danger-outline compact user-delete" data-id="${esc(user.id)}">Удалить</button></div></td></tr>`).join('') || '<tr><td colspan="4">Нет пользователей</td></tr>';
-  if (!updateWorkspaceHTML($('#users-body'), html)) return;
+  const focused = captureWorkspaceFocus($('#users-body'), ['.user-edit', '.user-toggle', '.user-delete'], 'id');
+  if (!updateWorkspaceHTML($('#users-body'), html, force || Boolean(focused?.selector))) return;
   document.querySelectorAll('.user-edit').forEach((button) => { button.onclick = () => openUserEditor(button.dataset.id); });
   document.querySelectorAll('.user-toggle').forEach((button) => { button.onclick = () => toggleUser(button.dataset.id); });
   document.querySelectorAll('.user-delete').forEach((button) => { button.onclick = () => deleteUser(button.dataset.id); });
+  restoreWorkspaceFocus($('#users-body'), focused, 'id', '#add-user');
 }
 
 function clearUserEditor() {
@@ -815,7 +821,7 @@ async function saveUser(event) {
     clearUserEditor();
     toast('Пользователь сохранён');
     await refreshAccess();
-    if (can('users.manage')) await loadUsers();
+    if (can('users.manage')) await loadUsers(true);
   } catch (error) { $('#user-error').textContent = error.message; }
 }
 
@@ -825,7 +831,7 @@ async function toggleUser(id) {
   try {
     await api('/api/v1/users/save', { method: 'POST', body: JSON.stringify({ id: user.id, username: user.username, enabled: !user.enabled, permissions: user.permissions, expected_updated_at: user.updated_at }) });
     await refreshAccess();
-    if (can('users.manage')) await loadUsers();
+    if (can('users.manage')) await loadUsers(true);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -835,6 +841,6 @@ async function deleteUser(id) {
   try {
     await api('/api/v1/users/delete', { method: 'POST', body: JSON.stringify({ id, expected_updated_at: user.updated_at }) });
     await refreshAccess();
-    if (can('users.manage')) await loadUsers();
+    if (can('users.manage')) await loadUsers(true);
   } catch (error) { toast(error.message, true); }
 }

@@ -77,7 +77,7 @@ Fresh wizard settings: benchmark interval defaults to6h, new interactive subscri
 
 For firmware with loopback `/ci/` export denied, use v1.2.1+ application binaries. Configuration reads fall back to bounded validated local NDMC `more` commands after HTTP403/404; saved/running checksum and whole-config ownership checks remain mandatory. Existing v1.2.0 release files remain immutable.
 
-## v1.3.0 workspace UI
+## v1.3.1 workspace UI
 
 This release changes embedded static UI assets only; it does not change the controller schema or launcher protocol. An existing compatible protocol-1 launcher can apply the signed application bundle through its ordinary update flow. Keep benchmark intervals, subscription caching, local address and TLS identities from the installed configuration. Older standalone UI installations still need their documented separate maintenance.
 
