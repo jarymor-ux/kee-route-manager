@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://jarymor-ux.github.io/kee-route-manager/sitemap.xml

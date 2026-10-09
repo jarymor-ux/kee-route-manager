@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#10171a">
+<meta name="description" content="Kee Route Manager: open-source Xray gateway control for Keenetic, OpenWrt and Linux. VPN subscriptions, health checks, controlled failover and web UI.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kee Route Manager — Xray gateway control">
+<meta property="og:description" content="Open-source Xray gateway control. Subscriptions, health checks, failover and a self-hosted web panel.">
+<meta property="og:url" content="https://jarymor-ux.github.io/kee-route-manager/">
+<link rel="canonical" href="https://jarymor-ux.github.io/kee-route-manager/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Kee Route Manager — Xray gateway control</title>
+<style>
+:root{color-scheme:dark;--bg:#10171a;--panel:#192328;--edge:#344348;--text:#eef3f0;--muted:#adbcb9;--accent:#bcec89;--dark:#11210c}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+a{color:inherit;text-decoration:none}a:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.wrap{width:min(1120px,calc(100% - 40px));margin:0 auto}
+header{position:sticky;z-index:8;top:0;border-bottom:1px solid var(--edge);background:#10171aeb;backdrop-filter:blur(12px)}.header{min-height:76px;display:flex;gap:22px;justify-content:space-between;align-items:center}
+.logo{display:flex;gap:11px;align-items:center;font-size:18px;font-weight:800;letter-spacing:-.04em;white-space:nowrap}.logo-icon{width:39px;height:39px;border-radius:11px;display:grid;place-items:center;color:var(--dark);background:var(--accent);font-weight:900}
+nav{display:flex;align-items:center;gap:23px;color:var(--muted);font-size:13px;font-weight:700}nav a:hover,footer a:hover{color:var(--accent)}.lang{font:inherit;color:var(--text);border:1px solid #5d7069;background:transparent;border-radius:9px;padding:8px 12px;cursor:pointer}
+.hero{padding:100px 0 84px;overflow:hidden;background:radial-gradient(ellipse at 100% 0,rgba(168,238,139,.08),transparent 48%)}
+.hero-grid{display:grid;grid-template-columns:1fr .94fr;align-items:center;gap:64px}.kicker,.overline{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:850;text-transform:uppercase}
+h1{font-size:clamp(44px,5.5vw,71px);letter-spacing:-.07em;line-height:1.07;margin:19px 0 24px}h1 em{font-style:normal;color:var(--accent)}
+.lead{color:var(--muted);font-size:18px;line-height:1.75;max-width:580px}.buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:13px 19px;border-radius:10px;font-size:14px;font-weight:800;transition:transform .15s}.btn:hover{transform:translateY(-2px)}
+.primary{color:var(--dark);background:var(--accent)}.secondary{background:#1c292b;border:1px solid #51645c}.facts{display:flex;flex-wrap:wrap;gap:16px;margin-top:28px;color:var(--muted);font-size:12px}.facts span:before{content:"✓";margin-right:7px;color:var(--accent)}
+.visual{padding:24px;background:linear-gradient(135deg,#233630,#111a1f);border:1px solid #486054;border-radius:21px;box-shadow:0 35px 90px #0008}
+.visual-h{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #52685a;padding-bottom:17px;margin-bottom:20px;font-size:11px;font-weight:850;letter-spacing:.15em;color:#d3e4da}
+.visual-h i{display:block;width:8px;height:8px;background:var(--accent);border-radius:50%;box-shadow:0 0 15px var(--accent)}
+.nodes{display:grid;grid-template-columns:1fr 27px 1fr;gap:8px;align-items:center}.node{min-height:105px;background:#20312f;border:1px solid #4a645a;border-radius:11px;padding:15px}
+.node small{display:block;color:var(--accent);font-size:11px;letter-spacing:.12em;font-weight:850}.node b{display:block;margin-top:8px;font-size:15px;line-height:1.4}.node.active{background:#294630;border-color:#7c9d6b}
+.arrow{font-size:22px;text-align:center;color:var(--accent)}.down{text-align:center;height:54px;display:grid;place-items:center;font-size:26px;color:#93ad9a}
+.visual-bottom{display:flex;gap:9px;align-items:center;margin-top:22px;padding:13px;background:#173326;border-radius:10px;font-size:12px;color:#d7e9dc}
+.visual-bottom:before{content:"●";color:var(--accent)}.caption{text-align:right;font-size:11px;color:#91a69e;margin-top:11px}
+.strip{background:#162025;border-block:1px solid var(--edge)}.strip-row{padding:20px 0;display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13px;color:#c3d2ce}
+.pills{display:flex;gap:8px;flex-wrap:wrap}.pills span{padding:6px 11px;border:1px solid var(--edge);border-radius:8px;background:#202d31;font-size:12px;font-weight:700}
+section.block{padding:96px 0 0}h2{font-size:clamp(31px,3.6vw,45px);line-height:1.15;letter-spacing:-.055em;margin:13px 0}p.intro{color:var(--muted);max-width:650px;margin:0 0 31px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--panel);border:1px solid var(--edge);border-radius:17px;padding:27px;min-height:207px}
+.icon{width:39px;height:39px;display:grid;place-items:center;background:#283d30;border:1px solid #587a58;border-radius:10px;color:var(--accent);font-size:19px;font-weight:800}
+.card h3{margin:19px 0 7px;font-size:17px;letter-spacing:-.02em}.card p{margin:0;font-size:14px;line-height:1.7;color:var(--muted)}
+.arch{display:grid;grid-template-columns:.78fr 1.22fr;gap:40px;align-items:start}.arch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.arch-cell{padding:22px;background:var(--panel);border:1px solid var(--edge);border-radius:14px}.arch-cell code{font-size:12px;color:var(--accent);font-weight:800;overflow-wrap:anywhere}.arch-cell p{color:var(--muted);font-size:13px;margin:11px 0 0}
+.warning{margin-top:60px;border:1px solid #65784c;border-radius:14px;padding:23px 27px;background:#263021}.warning strong{color:#e1f5c4}.warning p{color:#c1cfb7;margin:6px 0 0;font-size:14px}.warning a{text-decoration:underline;text-underline-offset:3px}
+.cta{padding:94px 0}.cta-box{padding:48px;border-radius:23px;border:1px solid #61835e;background:linear-gradient(115deg,#253e2f,#1b2927)}.cta-box h2{max-width:680px}.cta-box p{max-width:680px;color:#c5d6c5}
+footer{border-top:1px solid var(--edge);padding:29px 0 45px;color:var(--muted);font-size:13px}.foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}.footlinks{display:flex;gap:19px;flex-wrap:wrap}
+@media(max-width:900px){.hero-grid,.arch{grid-template-columns:1fr}.hero-grid{gap:40px}.visual{max-width:620px}.cards{grid-template-columns:repeat(2,1fr)}.hero{padding:75px 0}}
+@media(max-width:600px){.wrap{width:calc(100% - 30px)}nav{gap:12px}nav .hide-mobile{display:none}.logo{font-size:15px}.hero{padding:57px 0}.lead{font-size:16px}.cards,.arch-grid{grid-template-columns:1fr}.card{min-height:0}.visual{padding:16px}.nodes{grid-template-columns:1fr 22px 1fr;gap:4px}.node{min-height:103px;padding:12px}.node b{font-size:13px}.cta{padding:58px 0}.cta-box{padding:28px 23px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}}
+</style>
+</head>
+<body>
+<header><div class="wrap header"><a class="logo" href="#top" aria-label="Kee Route Manager home"><span class="logo-icon">K/</span>Kee Route Manager</a>
+<nav aria-label="Main navigation"><a class="hide-mobile" href="#features" data-t="navFeatures">Features</a><a class="hide-mobile" href="#architecture" data-t="navArch">Architecture</a><a href="https://github.com/jarymor-ux/kee-route-manager">GitHub ↗</a><button id="lang" class="lang" type="button" aria-label="Switch language to Russian">RU</button></nav></div></header>
+<main id="top">
+<section class="hero"><div class="wrap hero-grid"><div>
+<div class="kicker" data-t="kicker">OPEN SOURCE · SELF-HOSTED · GO</div>
+<h1><span data-t="heroFirst">Take control of</span><br><em data-t="heroSecond">Xray routing.</em></h1>
+<p class="lead" data-t="heroLead">VPN subscriptions, health checks, hot-pool selection and controlled failover for Xray gateways — all from a self-hosted web panel.</p>
+<div class="buttons"><a class="btn primary" href="https://github.com/jarymor-ux/kee-route-manager" data-t="github">Explore on GitHub ↗</a><a class="btn secondary" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/AGENT_INSTALL.md" data-t="install">Installation guide ↗</a></div>
+<div class="facts"><span data-t="tagline1">Apache-2.0</span><span data-t="tagline2">No hosted account</span><span data-t="tagline3">Experimental project</span></div>
+</div><div>
+<div class="visual" role="img" aria-label="Conceptual VPN control flow: VLESS sources, independent health checks, route decision and Xray hot pool">
+<div class="visual-h"><span data-t="visualTitle">CONTROL FLOW / CONCEPT</span><i aria-hidden="true"></i></div>
+<div class="nodes"><div class="node"><small>01 / INPUT</small><b data-t="visual1">VLESS sources</b></div><div class="arrow" aria-hidden="true">→</div><div class="node"><small>02 / VERIFY</small><b data-t="visual2">Independent probes</b></div></div>
+<div class="down" aria-hidden="true">↓</div>
+<div class="nodes"><div class="node active"><small>04 / RUNTIME</small><b data-t="visual4">Xray hot pool</b></div><div class="arrow" aria-hidden="true">←</div><div class="node"><small>03 / DECIDE</small><b data-t="visual3">Route decision</b></div></div>
+<div class="visual-bottom" data-t="visualNote">Ambiguous probe results preserve the current selection</div>
+</div><div class="caption" data-t="visualCaption">Concept illustration, not live telemetry</div>
+</div></div></section>
+<div class="strip"><div class="wrap strip-row"><span data-t="builtFor">Built for gateway environments</span><div class="pills"><span>Keenetic</span><span>OpenWrt</span><span>Linux</span><span data-t="experimental">Hardware support: experimental</span></div></div></div>
+<section class="block" id="features"><div class="wrap"><div class="overline" data-t="featuresTag">CAPABILITIES</div><h2 data-t="featuresTitle">Visibility and control, in one place.</h2><p class="intro" data-t="featuresIntro">Operate Xray without changing routes every time a network probe is temporarily inconclusive.</p>
+<div class="cards">
+<article class="card"><div class="icon" aria-hidden="true">◇</div><h3 data-t="f1">Quorum health checks</h3><p data-t="f1d">Independent targets via VPN and WAN. Ambiguous results preserve the current route.</p></article>
+<article class="card"><div class="icon" aria-hidden="true">↔</div><h3 data-t="f2">Controlled failover</h3><p data-t="f2d">A scored Xray hot pool with deliberate switching and safety constraints.</p></article>
+<article class="card"><div class="icon" aria-hidden="true">≡</div><h3 data-t="f3">Subscription management</h3><p data-t="f3d">Supported VLESS subscription sources in one interface.</p></article>
+<article class="card"><div class="icon" aria-hidden="true">▣</div><h3 data-t="f4">Web management</h3><p data-t="f4d">Dashboards, settings, diagnostics and server-enforced permissions.</p></article>
+<article class="card"><div class="icon" aria-hidden="true">✓</div><h3 data-t="f5">Signed updates</h3><p data-t="f5d">Verifiable releases and guarded update trials with documented rollback limits.</p></article>
+<article class="card"><div class="icon" aria-hidden="true">⌘</div><h3 data-t="f6">CLI & API</h3><p data-t="f6d">Headless daemon, local CLI operations and authenticated APIs.</p></article>
+</div></div></section>
+<section class="block" id="architecture"><div class="wrap"><div class="arch">
+<div><div class="overline" data-t="archTag">UNDER THE HOOD</div><h2 data-t="archTitle">Separated responsibilities.</h2><p class="intro" data-t="archIntro">Go components keep privileged network control separate from the web user interface.</p><a class="btn secondary" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/ARCHITECTURE.md" data-t="readArch">Architecture docs ↗</a></div>
+<div class="arch-grid"><div class="arch-cell"><code>kee-route-managerd</code><p data-t="a1">Controller, state, scheduler and Xray/firewall.</p></div><div class="arch-cell"><code>kee-route-manager-ui</code><p data-t="a2">Web panel and TLS-verified API proxy.</p></div><div class="arch-cell"><code>kee-route-managerctl</code><p data-t="a3">Local administration and configuration.</p></div><div class="arch-cell"><code>kee-route-manager-launcher</code><p data-t="a4">Signed slots and supervised update trials.</p></div></div></div>
+<div class="warning" role="note"><strong data-t="warningTitle">Important limitation</strong><p><span data-t="warning">Platform support is experimental. Automatic direct bypass on Keenetic during total Xray failure is not supported. Back up your device and review limitations before installing.</span> <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/KNOWN_LIMITATIONS.md" data-t="limits">Known limitations ↗</a></p></div></div></section>
+<section class="cta"><div class="wrap"><div class="cta-box"><h2 data-t="ctaTitle">Explore the project or help test it.</h2><p data-t="ctaText">Open-source and Apache-2.0 licensed. Hardware reports and real-world feedback are especially valuable.</p>
+<div class="buttons"><a class="btn primary" href="https://github.com/jarymor-ux/kee-route-manager/releases" data-t="releases">View releases ↗</a><a class="btn secondary" href="https://github.com/jarymor-ux/kee-route-manager/issues" data-t="issues">Report an issue ↗</a></div>
+</div></div></section></main>
+<footer><div class="wrap foot"><span>© Kee Route Manager · Apache-2.0</span><div class="footlinks"><a href="https://github.com/jarymor-ux/kee-route-manager">GitHub</a><a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/README.ru.md">Русский README</a><a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/README.zh-CN.md">中文 README</a><a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/SECURITY.md" data-t="security">Security</a></div></div></footer>
+<script>
+(()=>{const ru={"navFeatures":"Возможности","navArch":"Архитектура","kicker":"OPEN SOURCE · SELF-HOSTED · GO","heroFirst":"Контролируйте","heroSecond":"маршруты Xray.","heroLead":"VPN-подписки, проверки доступности, пул серверов и контролируемое переключение маршрутов — через веб-панель на собственном устройстве.","github":"Открыть GitHub ↗","install":"Инструкция по установке ↗","tagline1":"Apache-2.0","tagline2":"Без облачного аккаунта","tagline3":"Экспериментальный проект","visualTitle":"КАК УСТРОЕНО УПРАВЛЕНИЕ","visual1":"Источники VLESS","visual2":"Независимые проверки","visual3":"Решение о маршруте","visual4":"Пул Xray","visualNote":"Неопределённость не вызывает лишних переключений","visualCaption":"Схема работы, а не данные работающего устройства","builtFor":"Для маршрутизаторов и Linux-шлюзов","experimental":"Аппаратная поддержка: экспериментальная","featuresTag":"ВОЗМОЖНОСТИ","featuresTitle":"Диагностика и управление в одном месте.","featuresIntro":"KRM помогает управлять Xray без ненужных переключений из-за кратковременных сбоев сети.","f1":"Проверки с кворумом","f1d":"Проверки независимых целей через VPN и WAN. Неоднозначный результат сохраняет текущий выбор.","f2":"Управляемый failover","f2d":"Горячий пул Xray, оценка узлов и переключение с предусмотренными ограничениями.","f3":"Управление подписками","f3d":"Поддерживаемые источники VLESS-подписок в едином интерфейсе.","f4":"Веб-панель","f4d":"Дашборды, настройки, диагностика и серверные права доступа.","f5":"Подписанные обновления","f5d":"Проверяемые релизы и пробное обновление с ограничениями отката.","f6":"CLI и API","f6d":"Работа демона без UI, локальные команды и API с аутентификацией.","archTag":"ПОД КАПОТОМ","archTitle":"Разделение ответственности.","archIntro":"Компоненты на Go отделяют управление сетью от пользовательского интерфейса.","readArch":"Описание архитектуры ↗","a1":"Контроллер, состояние, планировщик и Xray/firewall.","a2":"Веб-панель и TLS-проверяемый API-прокси.","a3":"Локальные операции и конфигурация.","a4":"Подписанные слоты и контролируемые обновления.","warningTitle":"Важное ограничение","warning":"Поддержка платформ остаётся экспериментальной. Автоматический direct-обход на Keenetic при полной остановке Xray не поддерживается. Перед установкой сделайте резервную копию и прочитайте ограничения.","limits":"Все ограничения ↗","ctaTitle":"Изучите проект или помогите с тестированием.","ctaText":"Исходный код открыт. Отчёты о работе на реальных устройствах особенно полезны для дальнейшего развития.","releases":"Смотреть релизы ↗","issues":"Сообщить о проблеме ↗","security":"Безопасность"};const en={};document.querySelectorAll("[data-t]").forEach(el=>{en[el.dataset.t]=el.textContent;});const b=document.getElementById("lang");let current="en";function change(code){current=code;document.documentElement.lang=code;const t=code==="ru"?ru:en;document.querySelectorAll("[data-t]").forEach(el=>{if(Object.prototype.hasOwnProperty.call(t,el.dataset.t))el.textContent=t[el.dataset.t];});b.textContent=code==="ru"?"EN":"RU";b.setAttribute("aria-label",code==="ru"?"Switch language to English":"Переключить язык на русский");document.title=code==="ru"?"Kee Route Manager — управление Xray":"Kee Route Manager — Xray gateway control";}b.addEventListener("click",()=>change(current==="en"?"ru":"en"));const queryLang=new URLSearchParams(location.search).get("lang");if(queryLang==="ru"||queryLang==="en")change(queryLang);})();
+</script>
+</body></html>
