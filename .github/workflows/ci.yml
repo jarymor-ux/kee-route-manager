@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -27,7 +27,15 @@ jobs:
         run: go test -race ./...
       - name: Static analysis
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          # The released Staticcheck importer needs the newer Go export reader.
+          # Keep this tool-only dependency upgrade outside the product module.
+          tools_dir=$(mktemp -d "$RUNNER_TEMP/krm-analysis.XXXXXX")
+          (
+            cd "$tools_dir"
+            go mod init example.invalid/krm-analysis-tools
+            go get honnef.co/go/tools@v0.8.1 golang.org/x/tools@v0.50.0
+            go install -mod=mod honnef.co/go/tools/cmd/staticcheck
+          )
           staticcheck ./...
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
@@ -66,7 +74,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

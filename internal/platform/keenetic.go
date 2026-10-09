@@ -448,6 +448,9 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if !validMAC(mac) || (choice != "xkeen" && choice != "default") {
 		return fmt.Errorf("invalid policy request")
 	}
+	if _, err := os.Lstat(k.panelDNSJournal()); !os.IsNotExist(err) {
+		return ErrPanelDNSPending
+	}
 	mac = strings.ToLower(mac)
 	cfg, e := k.rci(ctx, "ip/hotspot")
 	if e != nil {
@@ -492,8 +495,39 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		_, err := k.rciPost(c, "ip/hotspot/host", body)
 		return err
 	}
+	var ownershipBaseline []byte
+	var ownedConfig []byte
+	originalChecksum := ""
+	verifyHost := func(c context.Context, policy string, conform bool) error {
+		current, err := k.rci(c, "ip/hotspot")
+		if err != nil {
+			return err
+		}
+		host := findHost(current)
+		if host == nil || truth(host["conform"]) != conform || stringValue(host["policy"]) != policy || stringValue(host["access"]) != stringValue(before["access"]) {
+			return fmt.Errorf("router did not retain requested client policy safely")
+		}
+		return nil
+	}
 	saveAttempted := false
-	save := func(c context.Context, expectedChecksum string) error {
+	save := func(c context.Context, expectedChecksum string, expectedConfig []byte) error {
+		currentConfig, err := k.configFile(c, "running-config.txt")
+		if err != nil {
+			return err
+		}
+		if normalizeKeeneticConfiguration(expectedConfig) == "" || normalizeKeeneticConfiguration(currentConfig) != normalizeKeeneticConfiguration(expectedConfig) {
+			return fmt.Errorf("external configuration drift detected before client policy save")
+		}
+		policy, conform := pid, false
+		if choice == "default" {
+			policy, conform = "", true
+		}
+		if expectedChecksum == originalChecksum {
+			policy, conform = stringValue(before["policy"]), truth(before["conform"])
+		}
+		if err := verifyHost(c, policy, conform); err != nil {
+			return err
+		}
 		currentChecksum, err := k.runningConfigChecksum(c)
 		if err != nil {
 			return err
@@ -509,12 +543,10 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		if _, err := k.rciPost(c, "system/configuration/save", map[string]any{}); err != nil {
 			return err
 		}
-		return k.waitConfigurationSaved(c, expectedChecksum)
+		return k.waitConfigurationSavedContent(c, expectedChecksum, expectedConfig)
 	}
 
-	originalChecksum := ""
 	ownedMutationChecksum := ""
-	var ownershipBaseline []byte
 	rollback := func(cause error) error {
 		// Recovery must outlive a disconnected caller, but remain bounded as a whole.
 		timeout := k.r.Timeout
@@ -612,24 +644,52 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 		}
 		// A global save is allowed only for configuration revisions owned by this
 		// operation. Generic "unsaved" state may include concurrent external changes.
-		runningChecksum, err := k.runningConfigChecksum(recovery)
+		runningChecksum, err := k.waitConfigurationRevision(recovery, func(checksum string) bool {
+			return originalChecksum != "" && checksum == originalChecksum
+		}, func(c context.Context) error {
+			current, err := k.configFile(c, "running-config.txt")
+			if err != nil {
+				return err
+			}
+			if normalizeKeeneticConfiguration(current) != normalizeKeeneticConfiguration(ownershipBaseline) {
+				return fmt.Errorf("configuration drift detected; refusing global save")
+			}
+			return nil
+		})
 		if err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
 		if originalChecksum == "" || runningChecksum != originalChecksum {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
 		}
-		startupChecksum, err := k.startupConfigChecksum(recovery)
+		readStartup := func() (string, []byte, error) {
+			data, err := k.configFile(recovery, "startup-config.txt")
+			if err != nil {
+				return "", nil, err
+			}
+			match := keeneticSavedChecksumPattern.FindSubmatch(data)
+			if len(match) != 2 {
+				return "", nil, fmt.Errorf("keenetic startup-config missing MD5 checksum")
+			}
+			return strings.ToLower(string(match[1])), data, nil
+		}
+		startupChecksum, startupConfig, err := readStartup()
 		if err != nil {
 			return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 		}
 		if startupChecksum == originalChecksum && !saveAttempted {
+			if normalizeKeeneticConfiguration(startupConfig) != normalizeKeeneticConfiguration(ownershipBaseline) {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: startup configuration drift detected; refusing global save"))
+			}
 			return cause
 		}
 		// The previous save may still be writing the mutation snapshot. Do not
 		// mistake the old startup revision for proof that no write is pending,
 		// or race a second save against it. Confirm the owned write first.
-		for startupChecksum == originalChecksum && saveAttempted {
+		for saveAttempted && (startupChecksum == originalChecksum || startupChecksum == ownedMutationChecksum && normalizeKeeneticConfiguration(startupConfig) != normalizeKeeneticConfiguration(ownedConfig)) {
+			if normalized := normalizeKeeneticConfiguration(startupConfig); normalized != normalizeKeeneticConfiguration(ownershipBaseline) && normalized != normalizeKeeneticConfiguration(ownedConfig) {
+				return errors.Join(cause, fmt.Errorf("client policy rollback: startup configuration drift detected; refusing global save"))
+			}
 			timer := time.NewTimer(100 * time.Millisecond)
 			select {
 			case <-recovery.Done():
@@ -644,13 +704,13 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 			if runningChecksum != originalChecksum {
 				return errors.Join(cause, fmt.Errorf("client policy rollback: configuration drift detected; refusing global save"))
 			}
-			startupChecksum, err = k.startupConfigChecksum(recovery)
+			startupChecksum, startupConfig, err = readStartup()
 			if err != nil {
 				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 			}
 		}
-		if ownedMutationChecksum != "" && startupChecksum == ownedMutationChecksum {
-			if err := save(recovery, originalChecksum); err != nil {
+		if ownedMutationChecksum != "" && startupChecksum == ownedMutationChecksum && normalizeKeeneticConfiguration(startupConfig) == normalizeKeeneticConfiguration(ownedConfig) {
+			if err := save(recovery, originalChecksum, ownershipBaseline); err != nil {
 				return errors.Join(cause, fmt.Errorf("client policy rollback: %w", err))
 			}
 			return cause
@@ -696,6 +756,13 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if baselineChecksum != originalChecksum {
 		return fmt.Errorf("external configuration drift while reading client policy baseline; refusing client policy change")
 	}
+	savedBaseline, err := k.configFile(ctx, "startup-config.txt")
+	if err != nil {
+		return fmt.Errorf("read Keenetic saved configuration baseline: %w", err)
+	}
+	if normalizeKeeneticConfiguration(savedBaseline) != normalizeKeeneticConfiguration(ownershipBaseline) {
+		return fmt.Errorf("router has pre-existing unsaved configuration content; refusing client policy change")
+	}
 
 	if choice == "xkeen" {
 		// Stage the target policy first. While conform is enabled this is latent,
@@ -739,17 +806,32 @@ func (k *keenetic) SetClientPolicy(ctx context.Context, mac, choice string) erro
 	if after == nil || truth(after["conform"]) != expectedConform || stringValue(after["policy"]) != expectedPolicy || stringValue(after["access"]) != stringValue(before["access"]) {
 		return rollback(fmt.Errorf("router did not apply policy safely"))
 	}
-	ownedMutationChecksum, e = k.runningConfigChecksum(ctx)
+	ownedMutationChecksum, e = k.waitConfigurationRevision(ctx, func(checksum string) bool {
+		return checksum != originalChecksum
+	}, func(c context.Context) error {
+		if err := verifyHost(c, expectedPolicy, expectedConform); err != nil {
+			return err
+		}
+		current, err := k.configFile(c, "running-config.txt")
+		if err != nil {
+			return err
+		}
+		if normalizePolicyOwnershipConfig(current, mac) != normalizePolicyOwnershipConfig(ownershipBaseline, mac) {
+			return fmt.Errorf("external configuration drift detected during client policy change")
+		}
+		if err := verifyHost(c, expectedPolicy, expectedConform); err != nil {
+			return err
+		}
+		ownedConfig = current
+		return nil
+	})
 	if e != nil {
 		return rollback(e)
-	}
-	if ownedMutationChecksum == originalChecksum {
-		return rollback(fmt.Errorf("router policy changed without configuration checksum change"))
 	}
 	if e = k.verifyPolicyMutationOwnership(ctx, ownershipBaseline, mac); e != nil {
 		return rollback(e)
 	}
-	if e = save(ctx, ownedMutationChecksum); e != nil {
+	if e = save(ctx, ownedMutationChecksum, ownedConfig); e != nil {
 		return rollback(e)
 	}
 	return nil

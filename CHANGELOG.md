@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.3.2 / 1.3.2-rc.1 — 2026-10-09
+
+- Wait for coherent Keenetic configuration checksums after client policy and local DNS writes, retaining exact target, whole-file ownership and clean saved-baseline checks. Verify complete saved configuration content instead of treating matching metadata alone as successful persistence.
+- Wait for delayed policy rollback revisions, preserve unrelated changes and confirm the owned preceding save before persisting recovery.
+- Build release artifacts and isolated Linux checks with security-patched Go 1.27.2.
+- Retry unfinished local DNS additions safely without duplicating an alias. Keep the daemon API available if DNS recovery remains pending, retain its private journal/backup, block policy saves and expose specific DNS errors and a recovery event. No interval, subscription-cache or launcher-protocol changes.
+
 ## 1.3.1 / 1.3.1-rc.1 — 2026-10-09
 
 - Rework the workspace around a desktop sidebar and mobile drawer with Router/VPN submenus, a visible page title and connection status. Use compact router KPIs, prominent graphs and calmer dark/light surfaces with readable semantic colors and reduced-motion support.
