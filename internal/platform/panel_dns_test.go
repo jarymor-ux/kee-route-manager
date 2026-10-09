@@ -18,23 +18,27 @@ import (
 )
 
 type panelDNSFixture struct {
-	rejectDownloads                      bool
-	readCommands                         []string
-	mu                                   sync.Mutex
-	k                                    *keenetic
-	running, original, mutated, baseline string
-	saved                                string
-	cmds                                 [][]string
-	saves, reads, checks                 int
-	injectRead, injectCheck              int
-	parseFailure, saveFailure, lostSave  bool
-	server                               *httptest.Server
+	rejectDownloads                                      bool
+	readCommands                                         []string
+	mu                                                   sync.Mutex
+	k                                                    *keenetic
+	running, original, mutated, baseline                 string
+	saved, savedConfig                                   string
+	cmds                                                 [][]string
+	saves, reads, checks                                 int
+	injectRead, injectCheck                              int
+	parseFailure, saveFailure, lostSave                  bool
+	delayChecksum, delaySavedContent, delaySavedChecksum int
+	holdChecksum                                         bool
+	pendingSavedConfig, pendingSavedChecksum             string
+	server                                               *httptest.Server
 }
 
 func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 	t.Helper()
 	f := &panelDNSFixture{original: regressionChecksum(1), mutated: regressionChecksum(2), saved: regressionChecksum(1), baseline: "hostname router\nusername admin password PRIVATE-DNS-BASELINE-SECRET\nip host other.jopa 192.168.1.2\ninterface Home\n    ip address 192.168.1.1 255.255.255.0\n"}
 	f.running = f.baseline
+	f.savedConfig = f.baseline
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -44,7 +48,7 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			if f.injectCheck == f.checks {
 				f.running += "ip name-server 8.8.8.8\n"
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"checksum": f.checksum()})
+			_ = json.NewEncoder(w).Encode(map[string]any{"checksum": f.reportedChecksum()})
 		case "/ci/running-config.txt":
 			if f.rejectDownloads {
 				http.Error(w, "downloads denied", http.StatusForbidden)
@@ -56,18 +60,19 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 			}
 			_, _ = fmt.Fprint(w, f.running)
 		case "/ci/startup-config.txt":
+			f.advanceSavedRead()
 			if f.rejectDownloads {
 				http.Error(w, "downloads denied", http.StatusForbidden)
 				return
 			}
-			_, _ = fmt.Fprint(w, regressionStartupConfig(f.saved))
+			_, _ = fmt.Fprint(w, regressionStartupConfig(f.saved)+f.savedConfig+"!\n")
 		case "/rci/system/configuration/save":
 			if r.Method != "POST" {
 				t.Error("save did not use POST")
 			}
 			f.saves++
 			if f.lostSave {
-				f.saved = f.checksum()
+				f.applySave()
 				http.Error(w, "lost response", http.StatusServiceUnavailable)
 				return
 			}
@@ -75,7 +80,7 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 				http.Error(w, "PRIVATE-RCI-ERROR", http.StatusServiceUnavailable)
 				return
 			}
-			f.saved = f.checksum()
+			f.applySave()
 			_, _ = fmt.Fprint(w, `{}`)
 		case "/native-ndmc":
 			var args []string
@@ -91,11 +96,8 @@ func newPanelDNSFixture(t *testing.T) *panelDNSFixture {
 					}
 					_, _ = fmt.Fprint(w, "\x1b[K"+regressionStartupConfig(f.checksum())+f.running+"!\n\x1b[K")
 				} else {
-					body := f.baseline
-					if f.saved == f.mutated {
-						body += "ip host alice.jopa 192.168.1.1\n"
-					}
-					_, _ = fmt.Fprint(w, "\x1b[K"+regressionStartupConfig(f.saved)+body+"!\n\x1b[K")
+					f.advanceSavedRead()
+					_, _ = fmt.Fprint(w, "\x1b[K"+regressionStartupConfig(f.saved)+f.savedConfig+"!\n\x1b[K")
 				}
 				return
 			}
@@ -137,6 +139,44 @@ func (f *panelDNSFixture) checksum() string {
 		return f.mutated
 	}
 	return regressionChecksum(99)
+}
+func (f *panelDNSFixture) reportedChecksum() string {
+	current := f.checksum()
+	if current == f.mutated && (f.holdChecksum || f.delayChecksum > 0) {
+		if f.delayChecksum > 0 {
+			f.delayChecksum--
+		}
+		return f.original
+	}
+	return current
+}
+func (f *panelDNSFixture) applySave() {
+	if f.delaySavedChecksum > 0 {
+		f.pendingSavedChecksum = f.checksum()
+	} else {
+		f.saved = f.checksum()
+	}
+	if f.delaySavedContent > 0 {
+		f.pendingSavedConfig = f.running
+	} else {
+		f.savedConfig = f.running
+	}
+}
+func (f *panelDNSFixture) advanceSavedRead() {
+	if f.pendingSavedConfig != "" {
+		f.delaySavedContent--
+		if f.delaySavedContent <= 0 {
+			f.savedConfig = f.pendingSavedConfig
+			f.pendingSavedConfig = ""
+		}
+	}
+	if f.pendingSavedChecksum != "" {
+		f.delaySavedChecksum--
+		if f.delaySavedChecksum <= 0 {
+			f.saved = f.pendingSavedChecksum
+			f.pendingSavedChecksum = ""
+		}
+	}
 }
 func requirePanelDNSError(t *testing.T, err, want error) {
 	t.Helper()
@@ -442,6 +482,7 @@ func TestPanelDNSNativeFallbackPreservesWholeSaveAndDriftGuards(t *testing.T) {
 			case "noop":
 				f.running += "ip host alice.jopa 192.168.1.1\n"
 				f.saved = f.mutated
+				f.savedConfig = f.running
 			case "unsaved":
 				f.running += "ip name-server 8.8.8.8\n"
 			case "conflict":
@@ -483,6 +524,203 @@ func TestPanelDNSNativeFallbackPreservesWholeSaveAndDriftGuards(t *testing.T) {
 				}
 			} else if f.saves != 0 {
 				t.Fatal("native fallback saved unrelated changes")
+			}
+		})
+	}
+}
+
+func TestPanelDNSWaitsForOwnedRevisionAndSavedContent(t *testing.T) {
+	for _, mode := range []string{"delayed-revision", "moving-revision", "delayed-saved-body", "delayed-saved-header"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newPanelDNSFixture(t)
+			switch mode {
+			case "delayed-revision":
+				f.delayChecksum = 5
+			case "moving-revision":
+				f.delayChecksum = 1
+			case "delayed-saved-body":
+				f.delaySavedContent = 4
+			case "delayed-saved-header":
+				f.delaySavedChecksum = 4
+			}
+			if err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"); err != nil {
+				t.Fatal(err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.saves != 1 || len(f.cmds) != 1 || f.saved != f.mutated || f.savedConfig != f.running {
+				t.Fatal("settling did not persist the exact owned configuration once")
+			}
+			if _, err := os.Stat(f.k.panelDNSJournal()); !os.IsNotExist(err) {
+				t.Fatal("confirmed save retained pending journal")
+			}
+		})
+	}
+}
+
+func TestPanelDNSUnchangedChecksumRetainsIntentAndRetryReconciles(t *testing.T) {
+	f := newPanelDNSFixture(t)
+	f.holdChecksum = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := time.Now()
+	requirePanelDNSError(t, f.k.EnsurePanelAlias(ctx, "alice.jopa", "192.168.1.1"), ErrPanelDNSPending)
+	if time.Since(started) > 2*time.Second {
+		t.Fatal("DNS revision wait exceeded caller bound")
+	}
+	intent := f.pendingIntent(t)
+	if intent.Phase != "added" && intent.Phase != "prepared" {
+		t.Fatal("owned effect was not recorded before settling")
+	}
+	f.mu.Lock()
+	if f.saves != 0 || len(f.cmds) != 1 || f.savedConfig != f.baseline || f.running != f.baseline+"ip host alice.jopa 192.168.1.1\n" {
+		t.Fatal("stale checksum was accepted as persisted revision")
+	}
+	f.holdChecksum = false
+	f.mu.Unlock()
+	if err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.saves != 1 || len(f.cmds) != 1 || f.savedConfig != f.running {
+		t.Fatal("retry repeated alias add or failed to persist owned pending effect")
+	}
+}
+
+func TestPanelDNSRejectsUnsavedContentEvenWithMatchingHeaders(t *testing.T) {
+	f := newPanelDNSFixture(t)
+	f.mu.Lock()
+	f.savedConfig += "ip name-server 203.0.113.1\n"
+	f.mu.Unlock()
+	requirePanelDNSError(t, f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"), ErrPanelDNSDrift)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.saves != 0 || len(f.cmds) != 0 {
+		t.Fatal("matching stale checksums authorized unrelated content save")
+	}
+	if _, err := os.Stat(f.k.panelDNSJournal()); !os.IsNotExist(err) {
+		t.Fatal("preflight content mismatch retained intent without effects")
+	}
+}
+
+func TestPanelDNSPendingLostSaveWithDelayedHeaderDoesNotRepeatSave(t *testing.T) {
+	f := newPanelDNSFixture(t)
+	f.lostSave = true
+	f.delaySavedChecksum = 4
+	requirePanelDNSError(t, f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"), ErrPanelDNSPending)
+	f.mu.Lock()
+	f.lostSave = false
+	f.mu.Unlock()
+	if err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.saves != 1 || len(f.cmds) != 1 || f.savedConfig != f.running || f.saved != f.mutated {
+		t.Fatal("lost save with stale header caused duplicate persistent save")
+	}
+}
+
+func TestPanelDNSDelayedOwnedRevisionStillRejectsForeignContent(t *testing.T) {
+	f := newPanelDNSFixture(t)
+	f.delayChecksum = 10
+	f.injectRead = 4
+	requirePanelDNSError(t, f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"), ErrPanelDNSDrift)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.saves != 0 || len(f.cmds) != 1 {
+		t.Fatal("revision retry saved foreign router configuration")
+	}
+}
+
+func TestPanelDNSUnconfirmedSavedBodyRetainsIntentUntilRetry(t *testing.T) {
+	f := newPanelDNSFixture(t)
+	f.delaySavedContent = 100
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	originalTransport := f.k.http.Transport
+	transport := originalTransport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	var canceled sync.Once
+	f.k.http.Transport = platformRegressionRT(func(r *http.Request) (*http.Response, error) {
+		response, err := transport.RoundTrip(r)
+		if err == nil && r.URL.Path == "/ci/startup-config.txt" {
+			f.mu.Lock()
+			acceptedUnconfirmed := f.saves == 1 && f.saved == f.mutated && f.savedConfig == f.baseline
+			f.mu.Unlock()
+			if acceptedUnconfirmed {
+				canceled.Do(cancel)
+			}
+		}
+		return response, err
+	})
+	// Interrupt the first saved-content read after the save is accepted. The
+	// operation can take arbitrarily long to reach that stage under build load.
+	requirePanelDNSError(t, f.k.EnsurePanelAlias(ctx, "alice.jopa", "192.168.1.1"), ErrPanelDNSPending)
+	if ctx.Err() != context.Canceled {
+		t.Fatal("save was not interrupted at unconfirmed saved-body read")
+	}
+	f.k.http.Transport = originalTransport
+	intent := f.pendingIntent(t)
+	if intent.Phase != "saving" {
+		t.Fatal("save without content confirmation lost durable intent")
+	}
+	f.mu.Lock()
+	if f.saves != 1 || f.saved != f.mutated || f.savedConfig != f.baseline {
+		t.Fatal("test did not expose checksum-only save confirmation")
+	}
+	f.delaySavedContent = 0
+	f.mu.Unlock()
+	if err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1"); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.saves != 1 || len(f.cmds) != 1 || f.savedConfig != f.running {
+		t.Fatal("saved-body retry repeated an already accepted save")
+	}
+}
+
+func TestPanelDNSExistingAliasMustAlreadyBePersisted(t *testing.T) {
+	for _, mode := range []string{"running-only", "stale-saved-header", "saved-conflict", "saved-duplicate", "persisted-with-unrelated-unsaved"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newPanelDNSFixture(t)
+			alias := "ip host alice.jopa 192.168.1.1\n"
+			f.running += alias
+			want := ErrPanelDNSDrift
+			switch mode {
+			case "stale-saved-header":
+				f.saved = f.mutated
+			case "saved-conflict":
+				f.savedConfig += "ip host alice.jopa 192.168.1.9\n"
+				want = ErrPanelDNSConflict
+			case "saved-duplicate":
+				f.savedConfig += alias + alias
+				want = ErrPanelDNSConflict
+			case "persisted-with-unrelated-unsaved":
+				f.saved = f.mutated
+				f.savedConfig = f.running
+				f.running += "ip name-server 203.0.113.1\n"
+				want = nil
+			}
+			err := f.k.EnsurePanelAlias(context.Background(), "alice.jopa", "192.168.1.1")
+			if want == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				requirePanelDNSError(t, err, want)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.saves != 0 || len(f.cmds) != 0 {
+				t.Fatal("existing alias caused a foreign global save or mutation")
+			}
+			if _, err := os.Stat(f.k.panelDNSJournal()); !os.IsNotExist(err) {
+				t.Fatal("existing alias check created a pending intent")
 			}
 		})
 	}

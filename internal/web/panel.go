@@ -88,7 +88,7 @@ func (s *Server) panelChange(w http.ResponseWriter, r *http.Request, _ auth.Sess
 				return
 			} else if err := dns.EnsurePanelAlias(r.Context(), panel.Hostname, panel.ListenIP); err != nil {
 				// DNS commands and complete router configurations never reach users.
-				jsonError(w, http.StatusConflict, "local DNS could not be verified or saved; check the name and pending router changes")
+				operationError(w, err)
 				return
 			}
 		}

@@ -114,7 +114,7 @@ func TestRegressionKeeneticPolicyMutationsUseRCI(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
 			savedChecksum = runningChecksum
@@ -192,7 +192,7 @@ func TestRegressionKeeneticPolicyRefusesPreexistingUnsavedConfiguration(t *testi
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost:
 			writes++
 			return platformRegressionResponse(`{"status":[{"status":"message"}]}`), nil
@@ -239,7 +239,7 @@ func TestRegressionKeeneticPolicyRollbackUsesRCIAfterCancellation(t *testing.T) 
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -327,7 +327,7 @@ func TestRegressionKeeneticPolicyRollbackDoesNotSaveAfterLostResponseWhenStartup
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -416,7 +416,7 @@ func TestRegressionKeeneticPolicyRollbackFailuresAreReported(t *testing.T) {
 				case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 					return platformRegressionResponse("ip hotspot\n"), nil
 				case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-					return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+					return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 				case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 					var body map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -512,7 +512,7 @@ func TestKeeneticWaitConfigurationSavedUsesRunningAndStartupChecksums(t *testing
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
 		}
@@ -542,7 +542,7 @@ func TestKeeneticWaitConfigurationSavedDeadline(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
 		}
@@ -575,7 +575,7 @@ func TestKeeneticWaitConfigurationSavedRejectsRunningDrift(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 			return platformRegressionResponse("ip hotspot\n"), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		default:
 			return nil, fmt.Errorf("unexpected RCI request %s %s", r.Method, r.URL.Path)
 		}
@@ -636,9 +636,13 @@ func TestRegressionKeeneticPolicyRejectsDriftBeforeSave(t *testing.T) {
 			body, _ := json.Marshal(map[string]any{"checksum": runningChecksum})
 			return platformRegressionResponse(string(body)), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
-			return platformRegressionResponse("ip hotspot\n"), nil
+			body := "ip hotspot\n"
+			if runningChecksum == regressionChecksum(3) {
+				body += "ip name-server 1.1.1.1\n"
+			}
+			return platformRegressionResponse(body), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/system/configuration/save":
 			saves++
 			savedChecksum = runningChecksum
@@ -649,7 +653,7 @@ func TestRegressionKeeneticPolicyRejectsDriftBeforeSave(t *testing.T) {
 	})}
 
 	err := k.SetClientPolicy(context.Background(), mac, "xkeen")
-	if err == nil || !strings.Contains(err.Error(), "changed before save") {
+	if err == nil || !strings.Contains(err.Error(), "configuration drift") {
 		t.Fatalf("drift before save was not rejected: %v", err)
 	}
 	if saves != 0 {
@@ -681,9 +685,13 @@ func TestRegressionKeeneticRollbackRefusesToSaveExternalDrift(t *testing.T) {
 			body, _ := json.Marshal(map[string]any{"checksum": runningChecksum})
 			return platformRegressionResponse(string(body)), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
-			return platformRegressionResponse("ip hotspot\n"), nil
+			body := "ip hotspot\n"
+			if runningChecksum == regressionChecksum(3) {
+				body += "ip name-server 1.1.1.1\n"
+			}
+			return platformRegressionResponse(body), nil
 		case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-			return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+			return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n"), nil
 		case r.Method == http.MethodPost && r.URL.Path == "/rci/ip/hotspot/host":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -750,7 +758,7 @@ func TestRegressionKeeneticPolicyRejectsExternalDriftDuringMutation(t *testing.T
 					body, _ := json.Marshal(map[string]any{"checksum": runningChecksum})
 					return platformRegressionResponse(string(body)), nil
 				case r.Method == http.MethodGet && r.URL.Path == "/ci/startup-config.txt":
-					return platformRegressionResponse(regressionStartupConfig(savedChecksum)), nil
+					return platformRegressionResponse(regressionStartupConfig(savedChecksum) + "ip hotspot\n    host " + mac + " permit\n    host " + mac + " conform\n"), nil
 				case r.Method == http.MethodGet && r.URL.Path == "/ci/running-config.txt":
 					if timing == "baseline" && !externalDrift {
 						externalDrift = true
@@ -886,7 +894,7 @@ func TestRegressionKeeneticPolicyRollbackWaitsForInflightSave(t *testing.T) {
 							saved, pending = pending, ""
 						}
 					}
-					return platformRegressionResponse(regressionStartupConfig(saved)), nil
+					return platformRegressionResponse(regressionStartupConfig(saved) + "ip hotspot\n"), nil
 				case "/rci/ip/hotspot/host":
 					var body map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

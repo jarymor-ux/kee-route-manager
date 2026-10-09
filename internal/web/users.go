@@ -153,6 +153,14 @@ func (s *Server) metricsHistory(w http.ResponseWriter, r *http.Request, _ auth.S
 func operationError(w http.ResponseWriter, err error) {
 	code, message, publicCode := http.StatusConflict, "operation conflict", "conflict"
 	switch {
+	case errors.Is(err, platform.ErrPanelDNSConflict):
+		message, publicCode = "local DNS name is assigned to another address", "dns_conflict"
+	case errors.Is(err, platform.ErrPanelDNSDrift):
+		message, publicCode = "router configuration has unrelated pending changes", "dns_drift"
+	case errors.Is(err, platform.ErrPanelDNSPending):
+		message, publicCode = "local DNS recovery is pending; retry the panel address operation", "dns_pending"
+	case errors.Is(err, platform.ErrPanelDNSUnavailable):
+		code, message, publicCode = http.StatusServiceUnavailable, "local DNS verification unavailable", "dns_unavailable"
 	case errors.Is(err, operation.ErrBusy):
 		message, publicCode = "operation busy", "busy"
 	case errors.Is(err, operation.ErrSuperseded):

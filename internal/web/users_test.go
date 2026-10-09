@@ -299,6 +299,10 @@ func TestPublicOperationErrors(t *testing.T) {
 		{operation.ErrBusy, 409, "operation busy"},
 		{context.Canceled, 409, "operation canceled"},
 		{context.DeadlineExceeded, 503, "operation unavailable"},
+		{platform.ErrPanelDNSConflict, 409, "dns_conflict"},
+		{platform.ErrPanelDNSDrift, 409, "dns_drift"},
+		{platform.ErrPanelDNSPending, 409, "dns_pending"},
+		{platform.ErrPanelDNSUnavailable, 503, "dns_unavailable"},
 	} {
 		w := httptest.NewRecorder()
 		operationError(w, tc.err)

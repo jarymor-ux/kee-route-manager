@@ -15,6 +15,7 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
+	"github.com/jarymor-ux/kee-route-manager/internal/event"
 	"github.com/jarymor-ux/kee-route-manager/internal/logging"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/operation"
@@ -63,14 +64,24 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	if e != nil {
 		return false, e
 	}
+	var dnsRecoveryErr error
 	if dns, ok := p.(interface{ ReconcilePanelAlias(context.Context) error }); ok {
-		if err := dns.ReconcilePanelAlias(ctx); err != nil {
-			return false, fmt.Errorf("local panel DNS recovery requires operator reconciliation")
+		dnsRecoveryErr = dns.ReconcilePanelAlias(ctx)
+		if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
 	}
 	st, e := store.New(c.Paths.StateDir, c.Paths.CacheDir, model.NewState(version, c.Xray.SlotTagPrefix, c.Pool.Size))
 	if e != nil {
 		return false, e
+	}
+	if dnsRecoveryErr != nil {
+		// Keep the recovery API available. The private intent remains intact and
+		// the adapter refuses policy/global-save operations until it is resolved.
+		log.Printf("local panel DNS recovery pending: %v", dnsRecoveryErr)
+		if _, err := st.Append(event.Event{Level: "error", Type: "panel.dns.recovery_pending", Message: "Local panel DNS recovery is pending; retry the panel address operation."}); err != nil {
+			return false, fmt.Errorf("record pending panel DNS recovery: %w", err)
+		}
 	}
 	ops, e := operation.New(c.Paths.StateDir)
 	if e != nil {
