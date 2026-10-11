@@ -3,6 +3,9 @@ package components
 
 import (
  "context"
+ "encoding/json"
+ "os"
+ "path/filepath"
  "errors"
  "fmt"
  "sync"
@@ -43,6 +46,7 @@ type Manager struct {
  backend Backend
  now func() time.Time
  last Snapshot
+ cacheFile string
 }
 
 func supported(platform string) ([]ID, error) {
@@ -92,6 +96,7 @@ func (m *Manager) Check(ctx context.Context, force bool) (Snapshot, error) {
   snapshot.Items = append(snapshot.Items,item)
  }
  m.last = copySnapshot(snapshot)
+ if err := m.persist(); err != nil { return Snapshot{}, err }
  return snapshot, nil
 }
 
@@ -114,6 +119,7 @@ func (m *Manager) Install(ctx context.Context, id ID) (Item,error) {
  if installed == "" { return Item{},fmt.Errorf("%s installation could not be verified",id) }
  // Installation changes installed state: invalidate discovery cache.
  m.last=Snapshot{}
+ if err := m.persist(); err != nil { return Item{},err }
  return Item{ID:id,InstalledVersion:installed,LatestVersion:latest,UpdateAvailable:installed!=latest},nil
 }
 
@@ -121,4 +127,48 @@ func copySnapshot(s Snapshot) Snapshot {
  out:=s
  out.Items=append([]Item(nil),s.Items...)
  return out
+}
+
+// SetCacheFile restores and persists only public component update metadata.
+// The private state directory must be created and locked by the daemon first.
+func (m *Manager) SetCacheFile(path string) error {
+ m.mu.Lock()
+ defer m.mu.Unlock()
+ if path=="" || !filepath.IsAbs(path) {return errors.New("component cache path must be absolute")}
+ if info,err:=os.Lstat(path);err==nil {
+  if !info.Mode().IsRegular() || info.Mode().Perm()&0077!=0 {
+   return errors.New("component cache must be private regular file")
+  }
+  data,err:=os.ReadFile(path)
+  if err!=nil{return err}
+  if len(data)>128*1024 {return errors.New("component cache oversized")}
+  var snapshot Snapshot
+  if err=json.Unmarshal(data,&snapshot);err!=nil {return err}
+  if snapshot.CheckedAt.After(m.now().Add(time.Hour)) {return errors.New("component cache timestamp is in the future")}
+  ids,_:=supported(m.platform)
+  if len(snapshot.Items)!=0 {
+   if len(snapshot.Items)!=len(ids) {return errors.New("component cache platform mismatch")}
+   for i,item:=range snapshot.Items {
+    if item.ID!=ids[i] {return errors.New("component cache platform mismatch")}
+   }
+  }
+  m.last=copySnapshot(snapshot)
+ }else if !errors.Is(err,os.ErrNotExist){return err}
+ m.cacheFile=path
+ return nil
+}
+
+func (m *Manager) persist() error {
+ if m.cacheFile=="" {return nil}
+ dir:=filepath.Dir(m.cacheFile)
+ tmp,err:=os.CreateTemp(dir,".krm-components-*")
+ if err!=nil{return err}
+ defer os.Remove(tmp.Name())
+ if err:=tmp.Chmod(0600);err!=nil {tmp.Close();return err}
+ data,err:=json.Marshal(m.last)
+ if err!=nil {tmp.Close();return err}
+ if _,err=tmp.Write(data);err!=nil {tmp.Close();return err}
+ if err=tmp.Sync();err!=nil {tmp.Close();return err}
+ if err=tmp.Close();err!=nil{return err}
+ return os.Rename(tmp.Name(),m.cacheFile)
 }
