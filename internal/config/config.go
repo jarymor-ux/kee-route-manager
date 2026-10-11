@@ -35,6 +35,7 @@ type Config struct {
 	Pool          Pool          `json:"pool"`
 	Benchmark     Benchmark     `json:"benchmark"`
 	Update        Update        `json:"update"`
+	Components    Components    `json:"components"`
 	UIProxy       UIProxy       `json:"ui"`
 }
 type Instance struct {
@@ -216,6 +217,10 @@ type Update struct {
 	HealthGracePeriod Duration `json:"health_grace_period"`
 	AllowDowngrade    bool     `json:"allow_downgrade"`
 }
+// Components controls the independent VPN runtime update-check schedule.
+type Components struct {
+	CheckInterval Duration `json:"check_interval"`
+}
 type UIProxy struct {
 	Enabled            bool     `json:"enabled"`
 	UpstreamCAFile     string   `json:"upstream_ca_file"`
@@ -243,6 +248,7 @@ func Default() Config {
 		Pool:          Pool{Size: 5},
 		Benchmark:     Benchmark{FullInterval: Dur(6 * time.Hour), BatchSize: 20, LatencyWorkers: 8, RequestsPerWeight: 2, Finalists: 6, MinImprovementPercent: 15, SwitchCooldown: Dur(10 * time.Minute), StabilityBeforeUpgrade: Dur(10 * time.Minute), TemporaryProxyPortStart: 20000, TemporaryStartupTimeout: Dur(10 * time.Second), Speed: Speed{Enabled: false, Workers: 2, WarmupBytes: 8 << 20, MinSampleBytes: 64 << 20, MaxSampleBytes: 512 << 20, TargetDuration: Dur(6 * time.Second), Repetitions: 3}},
 		Update:        Update{Enabled: false, Channel: "rc", CheckInterval: Dur(24 * time.Hour), HealthGracePeriod: Dur(30 * time.Second)},
+		Components:    Components{CheckInterval: Dur(7 * 24 * time.Hour)},
 		UIProxy:       UIProxy{Enabled: true, RequestTimeout: Dur(30 * time.Second)},
 	}
 }
@@ -621,6 +627,9 @@ func (c Config) Validate() error {
 		if c.Benchmark.Speed.MinSampleBytes <= 0 || c.Benchmark.Speed.MaxSampleBytes < c.Benchmark.Speed.MinSampleBytes {
 			es = append(es, fmt.Errorf("benchmark speed sizes invalid"))
 		}
+	}
+	if c.Components.CheckInterval.Duration < time.Hour || c.Components.CheckInterval.Duration > 365*24*time.Hour {
+		es = append(es, fmt.Errorf("components.check_interval must be between 1h and 365d"))
 	}
 	if c.Update.Enabled {
 		if c.Update.Channel != "rc" && c.Update.Channel != "stable" {
