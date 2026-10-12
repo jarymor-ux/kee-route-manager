@@ -160,7 +160,7 @@ func ParseConfig(data []byte) (Profile, error) {
 					p.Interface.H4 = value
 				}
 			case "randomtrailers", "disablecookies":
-				if value != "true" && value != "false" {
+				if value != "on" && value != "off" {
 					return Profile{}, fmt.Errorf("invalid AWG3.1 boolean %s", key)
 				}
 				p.Interface.Additional[key] = value
