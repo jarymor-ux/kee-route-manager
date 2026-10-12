@@ -17,7 +17,7 @@ type lifecycleFaultRunner struct {
 }
 
 func (f *lifecycleFaultRunner) Run(_ context.Context, name string, args ...string) error {
-	f.calls = append(f.calls, name + " " + strings.Join(args, " "))
+	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
 	if f.fail[len(f.calls)] {
 		return errors.New("injected system command failure")
 	}
@@ -57,13 +57,13 @@ func TestAWGStopRestoresRuleAfterRouteRemovalFailure(t *testing.T) {
 	if err := rt.Stop(ctx, id); err == nil {
 		t.Fatal("failed route removal must be reported")
 	}
-	if got, want := runner.calls[len(runner.calls)-1], "ip rule add fwmark " + table + " lookup " + table; got != want {
+	if got, want := runner.calls[len(runner.calls)-1], "ip rule add fwmark "+table+" lookup "+table; got != want {
 		t.Fatalf("failed Stop must restore routing rule: got %q, want %q", got, want)
 	}
 	if !rt.active[id] {
 		t.Fatal("failed Stop must not forget an active interface")
 	}
-	if _, err := os.Stat(filepath.Join(rt.dir, deviceName(id) + ".conf")); err != nil {
+	if _, err := os.Stat(filepath.Join(rt.dir, deviceName(id)+".conf")); err != nil {
 		t.Fatalf("failed Stop lost recovery configuration: %v", err)
 	}
 	delete(runner.fail, 5)
@@ -108,7 +108,7 @@ func TestAWGFailedStartupRollbackRetainsRecoveryConfiguration(t *testing.T) {
 	if _, _, err := rt.Ensure(context.Background(), id); err == nil {
 		t.Fatal("failed startup must be reported")
 	}
-	path := filepath.Join(rt.dir, deviceName(id) + ".conf")
+	path := filepath.Join(rt.dir, deviceName(id)+".conf")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("failed rollback must preserve config for recovery: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestAWGEnsureRejectsOrphanedConfigBeforeChangingNetworking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(rt.dir, deviceName(id) + ".conf")
+	path := filepath.Join(rt.dir, deviceName(id)+".conf")
 	if err := os.WriteFile(path, safe, 0600); err != nil {
 		t.Fatal(err)
 	}
