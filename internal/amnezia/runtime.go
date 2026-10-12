@@ -143,6 +143,9 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 		if state.Phase != "active" {
 			return "", "", fmt.Errorf("AWG interface %s has incomplete lifecycle intent", name)
 		}
+		if err := inspectActiveKernel(ctx, r.runner, name, table); err != nil {
+			return "", "", err
+		}
 		return name, address, nil
 	}
 	// A previous daemon may have been killed after creating its private
