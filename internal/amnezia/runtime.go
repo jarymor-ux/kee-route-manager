@@ -64,6 +64,7 @@ func NewRuntime(store *ProfileStore, dir string, runner Runner) (*Runtime, error
 	return &Runtime{store: store, dir: dir, runner: runner, active: map[string]bool{}}, nil
 }
 func deviceName(id string) string { return "krmawg" + id[:8] }
+
 // RoutingMark identifies one AWG profile independently from its private tunnel IP.
 // The same numeric value is used for the Xray SO_MARK and policy routing table.
 func RoutingMark(id string) (uint32, error) {
