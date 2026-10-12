@@ -31,6 +31,8 @@ System journal contract is `{ "output": "..." }` in backend and frontend. Audit 
 
 ## Subscription management
 
+Local AmneziaWG profiles are managed by the controller: `GET /api/v1/awg/profiles` (`vpn.view`) lists public profile metadata without cryptographic keys. `POST /api/v1/awg/import` (`subscriptions.manage`) accepts a CSRF-protected multipart form with `name` and one `config` `.conf` file (256 KiB maximum). `POST /api/v1/awg/delete` (`subscriptions.manage`) accepts `{ "id": "32-character-hex-profile-id" }` and refuses removal while the profile is retained in the active pool. Profiles are mode 0600 under the private state directory; import triggers a rebenchmark when enabled. AWG runtime launch is isolated from the HTTP handler.
+
 Panel sessions with `subscriptions.manage` can manage subscription sources at runtime:
 
 - `GET /api/v1/subscriptions` requires `subscriptions.view` or `subscriptions.manage`. Managers receive configured sources including URL and headers required by the editor; readers receive only ID, redacted name and enabled state. The response is marked `Cache-Control: no-store`; treat it as secret material.
