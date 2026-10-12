@@ -264,7 +264,7 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
     self.assertEqual(r.returncode,0,r.stderr)
     self.assertIn(f'ctl:init-config-platform:{platform}',(d/'order.log').read_text().splitlines())
  def test_missing_config_local_ui_generates_pair(self):
-  for platform,expected in (('keenetic','fixture-ui: generated-https\n'),('openwrt','fixture-ui: generated-https\n'),('linux-systemd','fixture-ui: generated-https\n')):
+  for platform,expected in (('keenetic','fixture-ui: generated-http\n'),('openwrt','fixture-ui: generated-http\n'),('linux-systemd','fixture-ui: generated-http\n')):
    with self.subTest(platform=platform):
     d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';r=self.run_bootstrap_tty(d,e)
     self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n');self.assertEqual((d/'ui-config-used').read_text(),expected)
