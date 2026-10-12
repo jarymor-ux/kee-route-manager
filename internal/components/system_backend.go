@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,14 +99,15 @@ func (b *SystemBackend) Installed(ctx context.Context, id ID) (string, error) {
 }
 
 func (b *SystemBackend) Latest(ctx context.Context, id ID) (string, error) {
+	if id == AmneziaWG {
+		return b.latestAWGTag(ctx)
+	}
 	var path string
 	switch id {
 	case Xray:
 		path = "/repos/XTLS/Xray-core/releases/latest"
 	case XKeen:
 		path = "/repos/Corvus-Malus/XKeen/releases/latest"
-	case AmneziaWG:
-		path = "/repos/amnezia-vpn/amneziawg-go/releases/latest"
 	default:
 		return "", errors.New("unsupported component")
 	}
@@ -138,6 +140,101 @@ func (b *SystemBackend) Latest(ctx context.Context, id ID) (string, error) {
 		return "", errors.New("invalid upstream version")
 	}
 	return version, nil
+}
+
+
+// AWG userspace publishes source Git tags but no GitHub Releases. Discovery
+// reports source version metadata only; it must never trigger binary installation.
+var stableAWGTagPattern = regexp.MustCompile("^v([0-9]+(?:\\.[0-9]+){1,3})$")
+
+func newerAWGTag(candidate, existing string) bool {
+	if existing == "" {
+		return true
+	}
+	a, b := strings.Split(candidate, "."), strings.Split(existing, ".")
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var av, bv uint64
+		var err error
+		if i < len(a) {
+			av, err = strconv.ParseUint(a[i], 10, 32)
+			if err != nil {
+				return false
+			}
+		}
+		if i < len(b) {
+			bv, err = strconv.ParseUint(b[i], 10, 32)
+			if err != nil {
+				return false
+			}
+		}
+		if av != bv {
+			return av > bv
+		}
+	}
+	return false
+}
+
+func (b *SystemBackend) latestAWGTag(ctx context.Context) (string, error) {
+	const pageSize = 100
+	const maxPages = 10
+	var latest string
+	for page := 1; page <= maxPages; page++ {
+		url := fmt.Sprintf("https://api.github.com/repos/amnezia-vpn/amneziawg-go/git/refs/tags?per_page=%d&page=%d", pageSize, page)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "Kee-Route-Manager")
+		res, err := b.client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		if res.StatusCode != http.StatusOK {
+			res.Body.Close()
+			return "", fmt.Errorf("AWG upstream tag lookup HTTP %d", res.StatusCode)
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(res.Body, 128*1024+1))
+		closeErr := res.Body.Close()
+		if readErr != nil {
+			return "", readErr
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		if len(raw) > 128*1024 {
+			return "", errors.New("AWG upstream tag list oversized")
+		}
+		var refs []struct {
+			Ref string `json:"ref"`
+		}
+		if err := json.Unmarshal(raw, &refs); err != nil {
+			return "", fmt.Errorf("invalid AWG tag response: %w", err)
+		}
+		if len(refs) > pageSize {
+			return "", errors.New("AWG upstream tag page exceeds limit")
+		}
+		for _, ref := range refs {
+			if !strings.HasPrefix(ref.Ref, "refs/tags/") {
+				continue
+			}
+			tag := strings.TrimPrefix(ref.Ref, "refs/tags/")
+			match := stableAWGTagPattern.FindStringSubmatch(tag)
+			if len(match) != 2 {
+				continue
+			}
+			if newerAWGTag(match[1], latest) {
+				latest = match[1]
+			}
+		}
+		if len(refs) < pageSize {
+			if latest == "" {
+				return "", errors.New("AWG upstream has no stable version tags")
+			}
+			return latest, nil
+		}
+	}
+	return "", errors.New("AWG upstream tag pagination limit exceeded")
 }
 
 func (*SystemBackend) Install(context.Context, ID, string) error {
