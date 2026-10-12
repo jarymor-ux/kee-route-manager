@@ -40,7 +40,7 @@ func TestAWGLatestUsesVersionedUpstreamGitTagsWithoutReleases(t *testing.T) {
 func TestAWGLatestFailsClosedWithNoStableTag(t *testing.T) {
 	client := &http.Client{Transport: fakeRoundTrip(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK,
-			Body: io.NopCloser(strings.NewReader("[{\"ref\":\"refs/tags/foo\"},{\"ref\":\"refs/tags/v3.1.0-rc1\"}]")),
+			Body:   io.NopCloser(strings.NewReader("[{\"ref\":\"refs/tags/foo\"},{\"ref\":\"refs/tags/v3.1.0-rc1\"}]")),
 			Header: http.Header{}}, nil
 	})}
 	cfg := config.Default()
@@ -55,7 +55,7 @@ func TestComponentDiscoveryDoesNotReportUnknownInstalledVersionAsUpgrade(t *test
 		installed: map[ID]string{AmneziaWG: "present"},
 		latest: map[ID]string{AmneziaWG: "3.1.20260828", Xray: "26.9.9"},
 	}
-	m, err := NewManager("linux-systemd", 7*24*time.Hour, backend, func() time.Time {
+	m, err := NewManager("linux-systemd", 7 * 24 * time.Hour, backend, func() time.Time {
 		return time.Date(2026, 10, 12, 1, 2, 3, 0, time.UTC)
 	})
 	if err != nil {
