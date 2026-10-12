@@ -218,6 +218,15 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", f.Arg(0))
 	}
+	uiOutputFlagPresent := false
+	f.Visit(func(opt *flag.Flag) {
+		if opt.Name == "ui-output" {
+			uiOutputFlagPresent = true
+		}
+	})
+	if uiOutputFlagPresent && *uiOutput == "" {
+		return fmt.Errorf("ui-output path cannot be empty")
+	}
 	if *uiOutput != "" || *tlsDir != "" {
 		if *overwrite {
 			return fmt.Errorf("local UI pair cannot overwrite existing files")
