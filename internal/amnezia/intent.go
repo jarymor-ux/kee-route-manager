@@ -53,3 +53,35 @@ func (r *Runtime) removeIntent(id string) error {
 	}
 	return nil
 }
+
+func (r *Runtime) validateIntent(id string) error {
+	path := r.intentPath(id)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// Pre-journal installations may retain only their private config.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 4096 {
+		return errors.New("unsafe AWG lifecycle intent")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var saved runtimeIntent
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return fmt.Errorf("decode AWG lifecycle intent: %w", err)
+	}
+	table, err := tableNumber(id)
+	if err != nil {
+		return err
+	}
+	if saved.ProfileID != id || saved.Interface != deviceName(id) || saved.Table != table ||
+		(saved.Phase != "starting" && saved.Phase != "active" && saved.Phase != "stopping") {
+		return errors.New("AWG lifecycle intent does not match managed profile")
+	}
+	return nil
+}
