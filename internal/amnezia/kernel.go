@@ -170,3 +170,84 @@ func kernelMarkMatches(raw, maskRaw json.RawMessage, mark uint32) (bool, error) 
 	}
 	return (n & mask) == (uint64(mark) & mask), nil
 }
+
+// inspectActiveKernel prevents process-local memory from masquerading as
+// evidence that an already managed tunnel still exists in Linux. This is a
+// read-only drift check; it never tries to repair unknown external mutations.
+func inspectActiveKernel(ctx context.Context, runner Runner, iface, table string) error {
+	inspector, ok := runner.(kernelInspector)
+	if !ok {
+		return nil // unit-test runner; production SystemRunner always inspects
+	}
+	data, err := inspector.Inspect(ctx, "ip", "-j", "link", "show")
+	if err != nil {
+		return fmt.Errorf("inspect active AWG interface: %w", err)
+	}
+	var links []struct {
+		Name string `json:"ifname"`
+	}
+	if err := json.Unmarshal(data, &links); err != nil || links == nil {
+		return errors.New("invalid active AWG interface observation")
+	}
+	found := false
+	for _, item := range links {
+		if item.Name == iface {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("AWG interface %s disappeared from kernel", iface)
+	}
+	data, err = inspector.Inspect(ctx, "ip", "-j", "route", "show", "table", table)
+	if err != nil {
+		return fmt.Errorf("inspect active AWG route: %w", err)
+	}
+	var routes []struct {
+		Dst string `json:"dst"`
+		Dev string `json:"dev"`
+	}
+	if err := json.Unmarshal(data, &routes); err != nil || routes == nil {
+		return errors.New("invalid active AWG route observation")
+	}
+	found = false
+	for _, route := range routes {
+		if route.Dev == iface && (route.Dst == "default" || route.Dst == "0.0.0.0/0") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("AWG interface %s has no managed default route", iface)
+	}
+	data, err = inspector.Inspect(ctx, "ip", "-j", "rule", "show")
+	if err != nil {
+		return fmt.Errorf("inspect active AWG rules: %w", err)
+	}
+	var rules []struct {
+		Mark   json.RawMessage `json:"fwmark"`
+		Mask   json.RawMessage `json:"fwmask"`
+		Table  json.RawMessage `json:"table"`
+		Lookup json.RawMessage `json:"lookup"`
+	}
+	if err := json.Unmarshal(data, &rules); err != nil || rules == nil {
+		return errors.New("invalid active AWG policy-rule observation")
+	}
+	value, err := strconv.ParseUint(table, 10, 32)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if !kernelTableMatches(rule.Table, value) && !kernelTableMatches(rule.Lookup, value) {
+			continue
+		}
+		matches, err := kernelMarkMatches(rule.Mark, rule.Mask, uint32(value))
+		if err != nil {
+			return fmt.Errorf("inspect active AWG fwmark: %w", err)
+		}
+		if matches {
+			return nil
+		}
+	}
+	return fmt.Errorf("AWG routing mark %s has no matching policy rule", table)
+}
