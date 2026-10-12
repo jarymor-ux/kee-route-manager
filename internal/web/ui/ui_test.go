@@ -111,6 +111,29 @@ func TestHTTPBrowserLoginKeepsSessionCookieAndOriginWorking(t *testing.T) {
 	}
 }
 
+func TestHTTPBrowserLoginAcceptsSessionFromHTTPSController(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "krm_session", Value: "secure-upstream-session", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	c := config.Default()
+	c.UIProxy.Upstream = upstream.URL
+	c.Web.TLS.Enabled = false
+	h, err := ProxyHandler(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://192.168.1.1:9444/api/v1/auth/login", strings.NewReader("{}"))
+	req.Header.Set("Origin", "http://192.168.1.1:9444")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	cookies := w.Result().Cookies()
+	if w.Code != http.StatusOK || len(cookies) != 1 || cookies[0].Name != "krm_session" || cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("HTTP browser login must receive usable session cookie: status=%d cookies=%+v", w.Code, cookies)
+	}
+}
+
 func TestProxyRejectsForeignOriginBeforeRewrite(t *testing.T) {
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
