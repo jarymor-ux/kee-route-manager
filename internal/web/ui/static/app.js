@@ -11,10 +11,11 @@ let roleTemplates = {};
 let activePage = '';
 let authGeneration = 0;
 let pollLoading = false;
-const pagePermissions = { router: 'router.view', devices: 'router.clients', interfaces: 'router.view', system: 'router.system|router.reboot|updates.manage', components: 'updates.manage', users: 'users.manage', settings: 'config.manage|users.manage', overview: 'vpn.view', subscriptions: 'subscriptions.view|subscriptions.manage', nodes: 'vpn.view', testing: 'vpn.view', events: 'events.view' };
-const pageGroups = { router: 'router', devices: 'router', interfaces: 'router', system: 'router', components: 'router', users: 'router', settings: 'router', overview: 'vpn', subscriptions: 'vpn', nodes: 'vpn', testing: 'vpn', events: 'vpn' };
+const pagePermissions = { router: 'router.view', devices: 'router.clients', interfaces: 'router.view', system: 'router.system|router.reboot|updates.manage', components: 'updates.manage', users: 'users.manage', settings: 'config.manage|users.manage', overview: 'vpn.view', subscriptions: 'subscriptions.view|subscriptions.manage', awg: 'vpn.view|subscriptions.manage', nodes: 'vpn.view', testing: 'vpn.view', events: 'events.view' };
+const pageGroups = { router: 'router', devices: 'router', interfaces: 'router', system: 'router', components: 'router', users: 'router', settings: 'router', overview: 'vpn', subscriptions: 'vpn', awg: 'vpn', nodes: 'vpn', testing: 'vpn', events: 'vpn' };
 function can(permission) { return permission.split('|').some((item) => permissions.has(item)); }
 function requestPermission(path) {
+  if (path.includes('/awg/')) return path.endsWith('/profiles') ? 'vpn.view|subscriptions.manage' : 'subscriptions.manage';
   if (path.includes('/subscriptions')) return path.endsWith('/subscriptions') ? 'subscriptions.view|subscriptions.manage' : 'subscriptions.manage';
   if (path.includes('/panel/')) return 'config.manage|users.manage';
   if (path.includes('/settings')) return 'config.manage|users.manage';
@@ -54,7 +55,7 @@ async function api(path, options = {}) {
   const generation = authGeneration;
   const method = options.method || 'GET';
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  if (typeof options.body === 'string' && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && method !== 'HEAD' && csrf) headers['X-KRM-CSRF'] = csrf;
 
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
@@ -743,6 +744,7 @@ function applyPermissions() {
 async function loadPage(page) {
   if (!authenticated || !pagePermissions[page] || !can(pagePermissions[page])) return;
   if (page === 'components') return loadComponents(false);
+  if (page === 'awg') return loadAWGProfiles();
   if (page === 'subscriptions') return loadSubscriptions();
   if (page === 'nodes' || page === 'testing') return loadNodes();
   if (page === 'events') return loadEvents();
