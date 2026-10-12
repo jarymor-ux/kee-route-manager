@@ -23,6 +23,8 @@ type Node struct {
 	WSHost      string   `json:"ws_host,omitempty"`
 	WSPath      string   `json:"ws_path,omitempty"`
 	ALPN        []string `json:"alpn,omitempty"`
+	AWGProfileID string `json:"awg_profile_id,omitempty"`
+	AWGLocalIPv4 string `json:"awg_local_ipv4,omitempty"`
 	Sources     []string `json:"sources"`
 }
 type Measurement struct {
