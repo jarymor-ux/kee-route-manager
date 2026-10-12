@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -125,6 +126,23 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 		return "", "", err
 	}
 	if r.active[id] {
+		// An attempted Stop can have partially changed kernel routing.
+		// Until its durable intent is committed active again, never claim
+		// idempotent Ensure success based solely on a process-local map.
+		if err := r.validateIntent(id); err != nil {
+			return "", "", err
+		}
+		data, err := os.ReadFile(r.intentPath(id))
+		if err != nil {
+			return "", "", fmt.Errorf("read active AWG intent: %w", err)
+		}
+		var state runtimeIntent
+		if err := json.Unmarshal(data, &state); err != nil {
+			return "", "", err
+		}
+		if state.Phase != "active" {
+			return "", "", fmt.Errorf("AWG interface %s has incomplete lifecycle intent", name)
+		}
 		return name, address, nil
 	}
 	// A previous daemon may have been killed after creating its private
