@@ -57,7 +57,7 @@ func TestAWGStopRestoresRuleAfterRouteRemovalFailure(t *testing.T) {
 	if err := rt.Stop(ctx, id); err == nil {
 		t.Fatal("failed route removal must be reported")
 	}
-	if got, want := runner.calls[len(runner.calls)-1], "ip rule add fwmark "+table+" lookup "+table; got != want {
+	if got, want := runner.calls[len(runner.calls)-1], "ip rule add fwmark " + table + " lookup " + table; got != want {
 		t.Fatalf("failed Stop must restore routing rule: got %q, want %q", got, want)
 	}
 	if !rt.active[id] {
@@ -87,7 +87,7 @@ func TestAWGStopRestoresRouteAndRuleAfterDownFailure(t *testing.T) {
 		t.Fatal("failed interface shutdown must be reported")
 	}
 	last := runner.calls[len(runner.calls)-2:]
-	wantRoute := "ip route add table "+table+" default dev "+deviceName(id)
+	wantRoute := "ip route add table " + table + " default dev " + deviceName(id)
 	wantRule := "ip rule add fwmark "+table+" lookup "+table
 	if last[0] != wantRoute || last[1] != wantRule {
 		t.Fatalf("shutdown failure must restore both route and rule: %v", last)
