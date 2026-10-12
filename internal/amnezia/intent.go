@@ -35,8 +35,8 @@ func (r *Runtime) writeIntent(id, phase string) error {
 	data, err := json.Marshal(runtimeIntent{
 		ProfileID: id,
 		Interface: deviceName(id),
-		Table: table,
-		Phase: phase,
+		Table:     table,
+		Phase:     phase,
 	})
 	if err != nil {
 		return err
