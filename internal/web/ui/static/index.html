@@ -47,6 +47,7 @@
     <div id="menu-vpn" class="submenu hidden">
       <button data-tab="overview" data-permission="vpn.view">Обзор</button>
       <button data-tab="subscriptions" data-permission="subscriptions.view|subscriptions.manage">Подписки</button>
+      <button data-tab="awg" data-permission="vpn.view|subscriptions.manage">AmneziaWG</button>
       <button data-tab="nodes" data-permission="vpn.view">Узлы и горячий пул</button>
       <button data-tab="testing" data-permission="vpn.view">Тестирование и результаты</button>
       <button data-tab="events" data-permission="events.view">События</button>
@@ -63,6 +64,7 @@
   <div class="grid vpn-metrics-grid"><article class="card"><div class="eyebrow">Готовые резервные узлы</div><div id="pool-count" class="metric">—</div></article><article class="card"><div class="eyebrow">Последний тест</div><div id="last-test" class="metric small-metric">—</div><div id="last-test-detail" class="sub">—</div></article></div>
   <h2>Источники</h2><div id="sources" class="grid sources-grid"></div>
 </section>
+<section id="tab-awg" class="tab"><div class="section-head"><div><h2>AmneziaWG</h2><p>Импортируйте .conf для хранения в приватном профиле KRM. Передача и запуск туннеля доступны после проверки совместимости runtime.</p></div></div><form id="awg-form" class="card" data-permission="subscriptions.manage"><label>Название<input id="awg-name" type="text" maxlength="128" required placeholder="Домашний VPN"></label><label>Файл .conf<input id="awg-conf" type="file" accept=".conf" required></label><button id="awg-upload" type="submit" class="primary">Импортировать .conf</button></form><p class="sub" id="awg-status">Список профилей не загружен</p><div id="awg-profiles" class="grid"></div></section>
 <section id="tab-subscriptions" class="tab">
   <div class="section-head">
     <div><h2>Подписки</h2><p>Источники узлов. Изменения применяются сразу и сохраняются приватно.</p></div>
@@ -162,5 +164,6 @@
 <script src="/assets/settings.js" defer></script>
 <script src="/assets/panel.js" defer></script>
 <script src="/assets/components.js" defer></script>
+<script src="/assets/awg.js" defer></script>
 <script src="/assets/boot.js" defer></script>
 </body></html>
