@@ -57,6 +57,8 @@ func tableNumber(id string)(string,error){
 }
 func (r *Runtime) Ensure(ctx context.Context,id string)(string,string,error){
  if !profileIDPattern.MatchString(id){return "","",errors.New("invalid AWG profile identity")}
+ r.mu.Lock()
+ defer r.mu.Unlock()
  raw,err:=r.store.Read(id)
  if err!=nil{return "","",err}
  p,err:=ParseConfig(raw)
@@ -73,8 +75,6 @@ func (r *Runtime) Ensure(ctx context.Context,id string)(string,string,error){
  name:=deviceName(id)
  table,err:=tableNumber(id)
  if err!=nil{return "","",err}
- r.mu.Lock()
- defer r.mu.Unlock()
  if r.active[id] {return name,address,nil}
  safe,err:=isolatedConfig(raw)
  if err!=nil{return "","",err}
@@ -119,9 +119,18 @@ func isolatedConfig(raw []byte)([]byte,error){
  return out.Bytes(),nil
 }
 func (r *Runtime) Stop(ctx context.Context,id string)error{
- if !profileIDPattern.MatchString(id){return errors.New("invalid profile ID")}
  r.mu.Lock()
  defer r.mu.Unlock()
+ return r.stopLocked(ctx,id)
+}
+func (r *Runtime) DeleteProfile(ctx context.Context,id string)error {
+ r.mu.Lock()
+ defer r.mu.Unlock()
+ if err:=r.stopLocked(ctx,id);err!=nil{return err}
+ return r.store.Delete(id)
+}
+func (r *Runtime) stopLocked(ctx context.Context,id string)error {
+ if !profileIDPattern.MatchString(id){return errors.New("invalid profile ID")}
  if !r.active[id] {return nil}
  name:=deviceName(id)
  table,err:=tableNumber(id)
