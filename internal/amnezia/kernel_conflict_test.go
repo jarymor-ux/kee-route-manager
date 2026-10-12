@@ -98,9 +98,9 @@ func TestAWGEnsureAllowsEmptyKernelResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	probe := &kernelProbeRunner{outputs: map[string]string{
-		"ip -j link show":                  "[]",
+		"ip -j link show":                 "[]",
 		"ip -j route show table " + table: "[]",
-		"ip -j rule show":                  `[{"priority":32766,"table":"main"},{"priority":32767,"table":"default"}]`,
+		"ip -j rule show":                 `[{"priority":32766,"table":"main"},{"priority":32767,"table":"default"}]`,
 	}}
 	rt.runner = probe
 	if _, _, err := rt.Ensure(context.Background(), id); err != nil {
