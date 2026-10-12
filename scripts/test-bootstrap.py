@@ -194,8 +194,6 @@ case "${1:-}" in
   [ -n "$output" ] || exit 2
   if [ -n "$ui_output" ]; then
    printf 'fixture-ui: generated-http\\n' > "$ui_output"
-   mkdir "$tls_dir"
-   printf 'public certificate\\n' > "$tls_dir/tls.crt"
   fi
   case "${KRM_TEST_WIZARD_RESULT:-valid}" in
    cancel) exit 130;;
