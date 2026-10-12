@@ -147,6 +147,11 @@ func (b *SystemBackend) Latest(ctx context.Context, id ID) (string, error) {
 var stableAWGTagPattern = regexp.MustCompile("^v([0-9]+(?:\\.[0-9]+){1,3})$")
 
 func newerAWGTag(candidate, existing string) bool {
+	for _, part := range strings.Split(candidate, ".") {
+		if _, err := strconv.ParseUint(part, 10, 32); err != nil {
+			return false
+		}
+	}
 	if existing == "" {
 		return true
 	}
