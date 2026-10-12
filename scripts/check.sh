@@ -12,8 +12,7 @@ for path in paths:
     if p.suffix=='.go' and p.is_file():
         print('KRMGFMT:'+json.dumps({'path':path,'content':p.read_text()},ensure_ascii=True))
 PY_KRM_FORMAT
-go test ./internal/amnezia ./internal/subscription ./internal/xray ./internal/web ./internal/core ./internal/control
-# Intentionally stop this isolated formatter diagnostic before expensive CI stages.
+# Finish formatter-only diagnostic here.
 exit 1
 unformatted="$(gofmt -l cmd internal)"
 [[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
