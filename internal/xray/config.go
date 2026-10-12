@@ -67,19 +67,25 @@ func managedRouting(cfg config.Config) map[string]any {
 	}
 	return map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}
 }
+
 var safeAWGIdentity = regexp.MustCompile("^[a-f0-9]{32}$")
+
 func Outbound(n model.Node, tag string) (map[string]any, error) {
- if n.Protocol == "amneziawg" {
-  if !safeAWGIdentity.MatchString(n.AWGProfileID) {return nil,fmt.Errorf("invalid AWG identity")}
-  address,err := netip.ParseAddr(n.AWGLocalIPv4)
-  if err != nil || !address.Is4() {return nil,fmt.Errorf("invalid AWG source IPv4")}
-  return map[string]any{
-    "tag":tag, "protocol":"freedom", "sendThrough":address.String(),
-    "settings":map[string]any{"domainStrategy":"UseIP"},
-    "streamSettings":map[string]any{"sockopt":map[string]any{"interface":"krmawg"+n.AWGProfileID[:8]}},
-  },nil
- }
- if n.Protocol != "vless" {
+	if n.Protocol == "amneziawg" {
+		if !safeAWGIdentity.MatchString(n.AWGProfileID) {
+			return nil, fmt.Errorf("invalid AWG identity")
+		}
+		address, err := netip.ParseAddr(n.AWGLocalIPv4)
+		if err != nil || !address.Is4() {
+			return nil, fmt.Errorf("invalid AWG source IPv4")
+		}
+		return map[string]any{
+			"tag": tag, "protocol": "freedom", "sendThrough": address.String(),
+			"settings":       map[string]any{"domainStrategy": "UseIP"},
+			"streamSettings": map[string]any{"sockopt": map[string]any{"interface": "krmawg" + n.AWGProfileID[:8]}},
+		}, nil
+	}
+	if n.Protocol != "vless" {
 		return nil, fmt.Errorf("unsupported protocol %q", n.Protocol)
 	}
 	user := map[string]any{"id": n.UUID, "encryption": defaultString(n.Encryption, "none"), "level": 0}
