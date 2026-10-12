@@ -123,9 +123,11 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 		return false, e
 	}
 	srv.UseAWGProfiles(awgProfiles)
+	srv.UseAWGRuntime(awgRuntime)
 	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	defer func(){ if err:=awgRuntime.StopAll(context.Background());err!=nil {log.Printf("AWG runtime cleanup failed: %v",err)} }()
 	defer mgr.Stop()
 	gate := &updateGate{manager: mgr, version: version, settings: settings}
 	var activate <-chan struct{}
