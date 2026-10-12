@@ -64,15 +64,24 @@ func NewRuntime(store *ProfileStore, dir string, runner Runner) (*Runtime, error
 	return &Runtime{store: store, dir: dir, runner: runner, active: map[string]bool{}}, nil
 }
 func deviceName(id string) string { return "krmawg" + id[:8] }
-func tableNumber(id string) (string, error) {
+// RoutingMark identifies one AWG profile independently from its private tunnel IP.
+// The same numeric value is used for the Xray SO_MARK and policy routing table.
+func RoutingMark(id string) (uint32, error) {
 	if !profileIDPattern.MatchString(id) {
-		return "", errors.New("invalid AWG profile identity")
+		return 0, errors.New("invalid AWG profile identity")
 	}
 	n, err := strconv.ParseUint(id[:6], 16, 32)
 	if err != nil {
+		return 0, err
+	}
+	return uint32(n + 200000), nil
+}
+func tableNumber(id string) (string, error) {
+	mark, err := RoutingMark(id)
+	if err != nil {
 		return "", err
 	}
-	return strconv.FormatUint(n+200000, 10), nil
+	return strconv.FormatUint(uint64(mark), 10), nil
 }
 func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error) {
 	if !profileIDPattern.MatchString(id) {
@@ -134,7 +143,7 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 		rollback()
 		return "", "", err
 	}
-	if err = r.runner.Run(ctx, "ip", "rule", "add", "pref", table, "from", address+"/32", "lookup", table); err != nil {
+	if err = r.runner.Run(ctx, "ip", "rule", "add", "pref", table, "fwmark", table, "lookup", table); err != nil {
 		_ = r.runner.Run(context.Background(), "ip", "route", "flush", "table", table)
 		rollback()
 		return "", "", err
@@ -223,7 +232,7 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 	if address == "" {
 		return errors.New("missing AWG local IPv4")
 	}
-	if err = r.runner.Run(ctx, "ip", "rule", "del", "pref", table, "from", address+"/32", "lookup", table); err != nil {
+	if err = r.runner.Run(ctx, "ip", "rule", "del", "pref", table, "fwmark", table, "lookup", table); err != nil {
 		return err
 	}
 	if err = r.runner.Run(ctx, "ip", "route", "flush", "table", table); err != nil {
