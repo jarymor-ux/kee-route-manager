@@ -99,10 +99,18 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 			return false, fmt.Errorf("validate managed subscription sources: %w", err)
 		}
 	}
+	awgProfiles, e := amnezia.NewProfileStore(c.Paths.StateDir)
+	if e != nil { return false, fmt.Errorf("AWG profile storage: %w", e) }
+	awgRuntime, e := amnezia.NewRuntime(awgProfiles, filepath.Join(c.Paths.StateDir,"awg-runtime"), amnezia.SystemRunner{})
+	if e != nil { return false, fmt.Errorf("AWG runtime: %w", e) }
 	xm := xray.NewManager(c, r, p)
+	xm.UseAWGRuntime(awgRuntime)
 	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
 	fetcher.UseSourceStore(sourceStore)
-	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
+	fetcher.UseAWGProfiles(awgProfiles)
+	batch := xray.NewBatchRunner(c)
+	batch.UseAWGRuntime(awgRuntime)
+	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets},batch))
 	componentManager, e := components.NewManager(c.Platform.Kind, c.Components.CheckInterval.Duration, components.NewSystemBackend(c, nil), time.Now)
 	if e != nil {
 		return false, fmt.Errorf("component manager: %w", e)
@@ -114,8 +122,6 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	if e != nil {
 		return false, e
 	}
-	awgProfiles, e := amnezia.NewProfileStore(c.Paths.StateDir)
-	if e != nil { return false, fmt.Errorf("AWG profile storage: %w", e) }
 	srv.UseAWGProfiles(awgProfiles)
 	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
