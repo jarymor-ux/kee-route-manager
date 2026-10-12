@@ -93,9 +93,13 @@ func isolatedConfig(raw []byte)([]byte,error){
  for reader.Scan(){
   line:=reader.Text()
   trimmed:=strings.TrimSpace(line)
-  if strings.EqualFold(trimmed,"[Peer]") && !inserted {
+  if strings.EqualFold(trimmed,"[Interface]") {
+   if inserted {return nil,errors.New("duplicate interface")}
+   out.WriteString(line)
+   out.WriteByte('\n')
    out.WriteString("Table = off\n")
    inserted=true
+   continue
   }
   key,_,isKey:=strings.Cut(trimmed,"=")
   if isKey && strings.EqualFold(strings.TrimSpace(key),"DNS") {continue}
@@ -103,7 +107,7 @@ func isolatedConfig(raw []byte)([]byte,error){
   out.WriteByte('\n')
  }
  if err:=reader.Err();err!=nil{return nil,err}
- if !inserted{return nil,errors.New("AWG peer section missing")}
+ if !inserted{return nil,errors.New("AWG interface section missing")}
  return out.Bytes(),nil
 }
 func (r *Runtime) Stop(ctx context.Context,id string)error{
