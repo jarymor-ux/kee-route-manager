@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 	"syscall"
+	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
-	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/components"
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
@@ -103,7 +103,9 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	fetcher.UseSourceStore(sourceStore)
 	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
 	componentManager, e := components.NewManager(c.Platform.Kind, c.Components.CheckInterval.Duration, components.NewSystemBackend(c, nil), time.Now)
-	if e != nil { return false, fmt.Errorf("component manager: %w", e) }
+	if e != nil {
+		return false, fmt.Errorf("component manager: %w", e)
+	}
 	if e = componentManager.SetCacheFile(filepath.Join(c.Paths.StateDir, "components-status.json")); e != nil {
 		log.Printf("component check cache unavailable: %v", e)
 	}
@@ -140,7 +142,11 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 				if _, err := componentManager.Check(ctx, false); err != nil && ctx.Err() == nil {
 					log.Printf("component update check failed: %v", err)
 				}
-				select { case <-ctx.Done(): return; case <-ticker.C: }
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
 			}
 		}()
 		if candidate != nil {
