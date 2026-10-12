@@ -153,7 +153,7 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 		rollback()
 		return "", "", err
 	}
-	if err = r.runner.Run(ctx, "ip", "rule", "add", "pref", table, "fwmark", table, "lookup", table); err != nil {
+	if err = r.runner.Run(ctx, "ip", "rule", "add", "fwmark", table, "lookup", table); err != nil {
 		_ = r.runner.Run(context.Background(), "ip", "route", "del", "table", table, "default", "dev", name)
 		rollback()
 		return "", "", err
@@ -242,7 +242,7 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 	if address == "" {
 		return errors.New("missing AWG local IPv4")
 	}
-	if err = r.runner.Run(ctx, "ip", "rule", "del", "pref", table, "fwmark", table, "lookup", table); err != nil {
+	if err = r.runner.Run(ctx, "ip", "rule", "del", "fwmark", table, "lookup", table); err != nil {
 		return err
 	}
 	if err = r.runner.Run(ctx, "ip", "route", "del", "table", table, "default", "dev", name); err != nil {
