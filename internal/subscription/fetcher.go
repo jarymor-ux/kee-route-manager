@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 	"io"
 	"net/http"
+	"net"
+	"net/netip"
+	"strconv"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,6 +34,7 @@ type Fetcher struct {
 	now         func() time.Time
 	sourceStore *SourceStore
 	owner       *Fetcher
+	awgProfiles *amnezia.ProfileStore
 }
 type Result struct {
 	Nodes  []model.Node
@@ -61,6 +66,11 @@ func (f *Fetcher) UseSourceStore(store *SourceStore) {
 	f.sourceStore = store
 }
 
+func (f *Fetcher) UseAWGProfiles(store *amnezia.ProfileStore) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.awgProfiles=store
+}
 func (f *Fetcher) Sources() []config.Source {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -85,7 +95,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceStat
 	f.mu.RLock()
 	cfg := f.cfg
 	cfg.Sources = cloneSources(f.cfg.Sources)
-	snapshot := &Fetcher{cfg: cfg, backoff: f.backoff, dir: f.dir, client: f.client, now: f.now, owner: f}
+	snapshot := &Fetcher{cfg: cfg, backoff: f.backoff, dir: f.dir, client: f.client, now: f.now, owner: f, awgProfiles:f.awgProfiles}
 	f.mu.RUnlock()
 	// Downloads use an immutable snapshot; replacing sources never waits for I/O.
 	f = snapshot
@@ -142,6 +152,35 @@ func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceStat
 	}
 	if len(all) == 0 {
 		all = emergency
+	}
+	if f.awgProfiles!=nil {
+		profiles,e:=f.awgProfiles.List()
+		if e!=nil {r.Errors=append(r.Errors,fmt.Errorf("AmneziaWG profiles unavailable"))}
+		for _,item:=range profiles {
+			raw,e:=f.awgProfiles.Read(item.ID)
+			if e!=nil {continue}
+			profile,e:=amnezia.ParseConfig(raw)
+			if e!=nil {continue}
+			var localAddress string
+			for _,cidr:=range profile.Interface.Addresses {
+				address,parseErr:=netip.ParsePrefix(cidr)
+				if parseErr==nil && address.Addr().Is4(){localAddress=address.Addr().String();break}
+			}
+			if localAddress=="" {continue}
+			// A profile without a default tunnel route cannot proxy arbitrary destinations.
+			fullTunnel:=false
+			for _,cidr:=range profile.Peer.AllowedIPs {if cidr=="0.0.0.0/0" {fullTunnel=true}}
+			if !fullTunnel {continue}
+			host,portText,parseErr:=net.SplitHostPort(profile.Peer.Endpoint)
+			if parseErr!=nil {continue}
+			port,parseErr:=strconv.Atoi(portText)
+			if parseErr!=nil {continue}
+			sourceID:="awg-"+item.ID
+			node:=model.Node{ID:item.ID,Label:item.Name,Protocol:"amneziawg",Network:"udp",Security:"awg",Address:host,Port:port,AWGProfileID:item.ID,AWGLocalIPv4:localAddress,Sources:[]string{sourceID}}
+			all[sourceID]=[]model.Node{node}
+			order=append(order,sourceID)
+			r.States[sourceID]=model.SourceState{ID:sourceID,Name:item.Name,Status:"healthy",NodeCount:1}
+		}
 	}
 	r.Nodes = fairMerge(all, order, f.cfg.MaxNodes, f.cfg.MaxNodesPerSource)
 	return r
