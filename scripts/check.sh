@@ -2,17 +2,6 @@
 set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-# TEMPORARY formatting extraction for PR review; removed after applying gofmt.
-gofmt -w cmd internal
-python3 - <<'PY_KRM_FORMAT'
-import pathlib, subprocess, json
-changed = subprocess.check_output(["git","diff","--name-only","--","cmd","internal"], text=True).splitlines()
-for name in changed:
-    p = pathlib.Path(name)
-    if p.suffix == ".go" and p.is_file():
-        print("KRMGFMT:" + json.dumps({"path":name,"content":p.read_text()},ensure_ascii=True))
-PY_KRM_FORMAT
-exit 0
 unformatted="$(gofmt -l cmd internal)"
 [[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
 go test ./...
