@@ -10,7 +10,7 @@ Router → Settings edits supported runtime configuration with validation, revis
 
 Runtime components:
 
-- `kee-route-managerd`: sole owner of state, scheduler, Xray/firewall and authenticated HTTPS/Unix APIs. Runs without UI.
+- `kee-route-managerd`: sole owner of state, scheduler, Xray/firewall and authenticated HTTP loopback/Unix APIs. Runs without UI.
 - `kee-route-manager-ui`: embedded Web/PWA and TLS-verified API proxy. No router/core/process-execution dependency.
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 - `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/OpenWrt local installations, UI; verifies signed release slots and applies updates on explicit request.
@@ -34,7 +34,7 @@ sh /tmp/krm-bootstrap.sh
 
 Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` asset URL. Use a signed release that includes the interactive installer; previously published assets remain unchanged.
 
-After verification of all release assets, the RU/EN wizard configures Xray paths, explicit routing tags, subscriptions and headers, score/health targets, pool size, optional speed testing and update discovery. With no `KRM_MODE`, installation defaults to `local-ui`; use `KRM_MODE=core sh /tmp/krm-bootstrap.sh` for controller only. The wizard generates a validated private controller config; `local-ui` also creates the UI config automatically, using `https://127.0.0.1:9443` and the controller's public certificate installed as `controller-ca.crt`. TLS verification remains enabled. An interactive terminal is required.
+After verification of all release assets, the RU/EN wizard configures Xray paths, explicit routing tags, subscriptions and headers, score/health targets, pool size, optional speed testing and update discovery. With no `KRM_MODE`, installation defaults to `local-ui`; use `KRM_MODE=core sh /tmp/krm-bootstrap.sh` for controller only. The wizard generates a validated private controller config; `local-ui` also creates the UI config automatically, using loopback `http://127.0.0.1:9443` and a certificate-free HTTP panel bound to a selected private/loopback IP. Never expose the HTTP panel to the Internet; credentials and cookies are plaintext on the local network. An interactive terminal is required.
 
 Routing tags must come from the actual Xray rules: inspect `kee-route-managerctl route-candidates --file PATH`; never guess a tag. Use health targets on independent hosts, preferably different operators, so one target outage does not look like VPN failure. Safe defaults retain existing firewall management, keep API access on loopback, disable speed tests and keep `auto_apply: false`; update discovery does not apply updates. Subscription URLs, headers and credentials belong in private files, never logs.
 
@@ -46,7 +46,7 @@ KRM_CONFIG_FILE=/root/krm-install/config.yaml \
 sh /tmp/krm-bootstrap.sh
 ```
 
-Prepared `local-ui` installations also require `KRM_UI_CONFIG_FILE`; prepare both files and their TLS settings explicitly. Standalone `KRM_MODE=ui` requires a prepared UI config, a trusted upstream CA supplied via `KRM_UPSTREAM_CA_FILE`, and an authenticated SSH tunnel. The wizard does not bypass remote trust requirements. Existing installations are refused rather than overwritten; follow the runbook for restore, uninstall and reinstall. No mutable `main` installation or insecure upstream TLS defaults.
+Prepared `local-ui` installations also require `KRM_UI_CONFIG_FILE`; prepare both files and their matching local HTTP settings explicitly. Standalone `KRM_MODE=ui` requires a prepared UI config, a trusted upstream CA supplied via `KRM_UPSTREAM_CA_FILE`, and an authenticated SSH tunnel. The wizard does not bypass remote trust requirements. Existing installations are refused rather than overwritten; follow the runbook for restore, uninstall and reinstall. No mutable `main` installation or insecure upstream TLS defaults.
 
 ```sh
 make build
