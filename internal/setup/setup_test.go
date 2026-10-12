@@ -394,7 +394,7 @@ func TestBuildUIConfig(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			cfg, err := BuildUIConfig(UIOptions{
 				Platform: platform,
-				Listen:   "0.0.0.0:9444",
+				Listen:   "192.168.1.1:9444",
 				Upstream: "https://127.0.0.1:9443",
 			})
 			if err != nil {
@@ -414,7 +414,7 @@ func TestBuildUIConfig(t *testing.T) {
 func TestBuildUIConfigDefaultsToLoopbackHTTPUpstream(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
 		Platform: PlatformLinuxSystemd,
-		Listen:   "0.0.0.0:9444",
+		Listen:   "192.168.1.1:9444",
 	})
 	if err != nil {
 		t.Fatalf("BuildUIConfig: %v", err)
@@ -425,8 +425,8 @@ func TestBuildUIConfigDefaultsToLoopbackHTTPUpstream(t *testing.T) {
 	if cfg.UIProxy.InsecureTLS || cfg.UIProxy.UpstreamCAFile != "" || cfg.UIProxy.UpstreamSPKISHA256 != "" {
 		t.Fatalf("loopback HTTP upstream must not carry TLS trust settings: %#v", cfg.UIProxy)
 	}
-	if !cfg.Web.TLS.Enabled {
-		t.Fatal("browser-facing UI must keep HTTPS enabled")
+	if cfg.Web.TLS.Enabled {
+		t.Fatal("browser-facing UI must use HTTP by default")
 	}
 	roundTrip(t, cfg)
 }
@@ -444,7 +444,7 @@ func TestBuildUIConfigRejectsTLSOptionsForHTTPUpstream(t *testing.T) {
 	}
 }
 
-func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
+func TestShippedSplitConfigsUseHTTPBrowserBoundary(t *testing.T) {
 	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
 		t.Run("controller/"+name, func(t *testing.T) {
 			cfg, err := config.Load(filepath.Join("..", "..", "configs", name))
@@ -465,8 +465,8 @@ func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !cfg.Web.TLS.Enabled {
-				t.Fatal("browser-facing UI must keep HTTPS enabled")
+			if cfg.Web.TLS.Enabled {
+				t.Fatal("shipped UI must use HTTP without certificates")
 			}
 			if cfg.UIProxy.Upstream != "http://127.0.0.1:9443" {
 				t.Fatalf("UI upstream = %q", cfg.UIProxy.Upstream)
@@ -519,7 +519,7 @@ func TestBuildUIConfigRejectsUnmanagedHTTPSCAPath(t *testing.T) {
 func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
 		Platform:    PlatformLinuxSystemd,
-		Listen:      "0.0.0.0:9444",
+		Listen:      "192.168.1.1:9444",
 		Upstream:    "https://127.0.0.1:9443",
 		InsecureTLS: true,
 	})
@@ -577,7 +577,7 @@ func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
 func TestWriteUIConfigOmitsControllerOnlySections(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
 		Platform: PlatformLinuxSystemd,
-		Listen:   "0.0.0.0:9444",
+		Listen:   "192.168.1.1:9444",
 		Upstream: "https://127.0.0.1:9443",
 	})
 	if err != nil {
