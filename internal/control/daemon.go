@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
@@ -113,6 +114,9 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	if e != nil {
 		return false, e
 	}
+	awgProfiles, e := amnezia.NewProfileStore(c.Paths.StateDir)
+	if e != nil { return false, fmt.Errorf("AWG profile storage: %w", e) }
+	srv.UseAWGProfiles(awgProfiles)
 	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
