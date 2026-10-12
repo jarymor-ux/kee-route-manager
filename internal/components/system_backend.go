@@ -142,7 +142,6 @@ func (b *SystemBackend) Latest(ctx context.Context, id ID) (string, error) {
 	return version, nil
 }
 
-
 // AWG userspace publishes source Git tags but no GitHub Releases. Discovery
 // reports source version metadata only; it must never trigger binary installation.
 var stableAWGTagPattern = regexp.MustCompile("^v([0-9]+(?:\\.[0-9]+){1,3})$")
