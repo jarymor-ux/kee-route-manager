@@ -233,6 +233,14 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 		return errors.New("invalid profile ID")
 	}
 	if !r.active[id] {
+		// Process-local active state is not proof that the OS interface is
+		// absent. After SIGKILL or power loss, retain both the runtime
+		// config and the source profile for explicit reconciliation.
+		if _, err := os.Lstat(filepath.Join(r.dir, deviceName(id)+".conf")); err == nil {
+			return fmt.Errorf("AWG interface %s has unreconciled runtime state", deviceName(id))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect AWG runtime config: %w", err)
+		}
 		return nil
 	}
 	name := deviceName(id)
