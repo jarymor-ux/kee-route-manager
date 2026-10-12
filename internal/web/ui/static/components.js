@@ -84,6 +84,7 @@ async function loadComponents(manual = false) {
   } finally {
     if (generation === componentsRequestGeneration) {
       componentsBusy = false;
+      if (componentsSnapshot) renderComponents(componentsSnapshot);
       $('#component-check').disabled = false;
     }
   }
