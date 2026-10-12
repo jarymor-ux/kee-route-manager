@@ -297,6 +297,12 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// A process-local active flag does not establish exclusive ownership of
+	// current kernel resources. Refuse teardown if a route, rule or link has
+	// disappeared or been replaced since Ensure. Never delete foreign state.
+	if err := inspectActiveKernel(ctx, r.runner, name, table); err != nil {
+		return fmt.Errorf("refuse AWG stop with unverified kernel state: %w", err)
+	}
 	raw, err := r.store.Read(id)
 	if err != nil {
 		return err
