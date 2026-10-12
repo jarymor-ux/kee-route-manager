@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
+	"github.com/jarymor-ux/kee-route-manager/internal/auth"
 	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
@@ -55,18 +55,18 @@ type subscriptionController interface {
 }
 
 type Server struct {
-	cfg        config.Config
-	mgr        Controller
-	updater    *update.Updater
-	components *components.Manager
+	cfg         config.Config
+	mgr         Controller
+	updater     *update.Updater
+	components  *components.Manager
 	awgProfiles *amnezia.ProfileStore
-	awgRuntime *amnezia.Runtime
-	restart    func(context.Context) error
-	users      *auth.UserStore
-	sessions   *auth.SessionStore
-	limiter    *auth.Limiter
-	handler    http.Handler
-	settings   SettingsController
+	awgRuntime  *amnezia.Runtime
+	restart     func(context.Context) error
+	users       *auth.UserStore
+	sessions    *auth.SessionStore
+	limiter     *auth.Limiter
+	handler     http.Handler
+	settings    SettingsController
 }
 
 func New(c config.Config, mgr Controller, up *update.Updater, restart func(context.Context) error) (*Server, error) {
@@ -82,9 +82,9 @@ func New(c config.Config, mgr Controller, up *update.Updater, restart func(conte
 	s.handler = s.routes()
 	return s, nil
 }
-func (s *Server) Handler() http.Handler { return s.handler }
-func (s *Server) UseAWGProfiles(store *amnezia.ProfileStore) {s.awgProfiles=store}
-func (s *Server) UseAWGRuntime(runtime *amnezia.Runtime) {s.awgRuntime=runtime}
+func (s *Server) Handler() http.Handler                      { return s.handler }
+func (s *Server) UseAWGProfiles(store *amnezia.ProfileStore) { s.awgProfiles = store }
+func (s *Server) UseAWGRuntime(runtime *amnezia.Runtime)     { s.awgRuntime = runtime }
 
 // UseComponents configures the component backend before listeners become reachable.
 func (s *Server) UseComponents(m *components.Manager) { s.components = m }
