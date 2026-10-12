@@ -189,5 +189,15 @@ func atomicPrivateWrite(dir, path string, raw []byte) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	// File.Sync alone does not guarantee that the new directory entry
+	// survives power loss. Persist the rename before any network mutation.
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
