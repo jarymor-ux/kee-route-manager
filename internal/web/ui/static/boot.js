@@ -6,6 +6,7 @@ initializeCharts();
 initializeDialogs();
 initializeSettingsEditor();
 initializePanelEditor();
+initializeComponents();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 session();
