@@ -210,8 +210,8 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	output := f.String("output", configflag.DefaultPath(), "output configuration path")
 	overwrite := f.Bool("overwrite", false, "allow replacing an existing output file")
 	platform := f.String("platform", "", "target platform (keenetic|openwrt|linux-systemd)")
-	uiOutput := f.String("ui-output", "", "create a local HTTPS UI configuration alongside the controller")
-	tlsDir := f.String("tls-dir", "", "new private directory for the local controller TLS identity")
+	uiOutput := f.String("ui-output", "", "create a local HTTP UI configuration alongside the controller")
+	tlsDir := f.String("tls-dir", "", "deprecated compatibility flag (unused for local HTTP UI)")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
