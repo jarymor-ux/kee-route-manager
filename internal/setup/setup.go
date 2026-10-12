@@ -103,7 +103,7 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 
 	cfg.Web.Enabled = false
 	// The controller API is loopback-only, so the split UI talks to it over
-	// local HTTP. HTTPS remains on the browser-facing UI listener.
+	// local HTTP. The wizard also defaults the browser-facing UI to HTTP.
 	cfg.API.TLS = config.TLS{}
 	cfg.UIProxy.Enabled = false
 	cfg.UIProxy.Upstream = "http://127.0.0.1:9443"
@@ -179,9 +179,7 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 		cfg.Web.Listen = opts.Listen
 	}
 	cfg.Web.CredentialsFile = ""
-	cfg.Web.TLS.Enabled = true
-	cfg.Web.TLS.AutoGenerate = true
-	cfg.Web.TLS.Hosts = []string{"localhost"}
+	cfg.Web.TLS = config.TLS{}
 	if opts.Hostname != "" {
 		if !validPanelHostname(opts.Hostname) {
 			return config.Config{}, fmt.Errorf("invalid local panel hostname")
