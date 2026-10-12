@@ -127,6 +127,15 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 	if r.active[id] {
 		return name, address, nil
 	}
+	for otherID := range r.active {
+		otherMark, markErr := tableNumber(otherID)
+		if markErr != nil {
+			return "", "", errors.New("invalid active AWG routing state")
+		}
+		if otherID != id && (otherMark == table || deviceName(otherID) == name) {
+			return "", "", errors.New("AWG routing mark or interface conflicts with active profile")
+		}
+	}
 	safe, err := isolatedConfig(raw)
 	if err != nil {
 		return "", "", err
