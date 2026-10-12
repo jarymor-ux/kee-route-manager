@@ -29,9 +29,9 @@ func createReconcileOrphan(t *testing.T, rt *Runtime, id string) string {
 func emptyReconcileKernel(id string) *kernelProbeRunner {
 	table, _ := tableNumber(id)
 	return &kernelProbeRunner{outputs: map[string]string{
-		"ip -j link show":                  "[]",
+		"ip -j link show":                 "[]",
 		"ip -j route show table " + table: "[]",
-		"ip -j rule show":                  "[]",
+		"ip -j rule show":                 "[]",
 	}}
 }
 
