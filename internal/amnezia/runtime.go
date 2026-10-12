@@ -136,3 +136,15 @@ func (r *Runtime) Stop(ctx context.Context,id string)error{
  delete(r.active,id)
  return nil
 }
+
+func (r *Runtime) StopAll(ctx context.Context)error{
+ r.mu.Lock()
+ ids:=make([]string,0,len(r.active))
+ for id:=range r.active {ids=append(ids,id)}
+ r.mu.Unlock()
+ var failures []error
+ for _,id:=range ids {
+  if err:=r.Stop(ctx,id);err!=nil {failures=append(failures,err)}
+ }
+ return errors.Join(failures...)
+}
