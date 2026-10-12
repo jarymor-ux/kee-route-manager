@@ -48,12 +48,13 @@ func (s *Server) awgDelete(w http.ResponseWriter,r *http.Request,_ auth.Session)
 		if node.ID==q.ID && node.InPool {jsonError(w,http.StatusConflict,"profile is used by the active VPN pool");return}
 	}
  }
+ var deleteErr error
  if s.awgRuntime!=nil {
-	if err:=s.awgRuntime.Stop(r.Context(),q.ID);err!=nil {jsonError(w,http.StatusConflict,"AWG tunnel is still active");return}
+  deleteErr=s.awgRuntime.DeleteProfile(r.Context(),q.ID)
+ }else{
+  deleteErr=s.awgProfiles.Delete(q.ID)
  }
- if err:=s.awgProfiles.Delete(q.ID);err!=nil {
-  jsonError(w,http.StatusConflict,"AWG profile removal rejected");return
- }
+ if deleteErr!=nil {jsonError(w,http.StatusConflict,"AWG profile removal rejected");return}
  if n,ok:=s.mgr.(interface{AWGProfilesChanged()});ok {n.AWGProfilesChanged()}
  writeJSON(w,http.StatusOK,map[string]bool{"ok":true})
 }
