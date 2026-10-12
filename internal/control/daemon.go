@@ -107,6 +107,12 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	if e != nil {
 		return false, fmt.Errorf("AWG runtime: %w", e)
 	}
+	// A reboot clears volatile Linux interfaces and rules but may retain
+	// private runtime configs. Release only verified empty-kernel orphans.
+	// Ambiguous live resources remain blocked without stopping VLESS service.
+	if err := awgRuntime.Reconcile(ctx); err != nil {
+		log.Printf("AWG runtime reconciliation pending: %v", err)
+	}
 	xm := xray.NewManager(c, r, p)
 	xm.UseAWGRuntime(awgRuntime)
 	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
