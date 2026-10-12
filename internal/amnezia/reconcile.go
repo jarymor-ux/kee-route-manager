@@ -29,6 +29,20 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("list AWG recovery profiles: %w", err)
 	}
 	var failures []error
+	configs := make(map[string]bool)
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".conf") {
+			configs[strings.TrimSuffix(entry.Name(), ".conf")] = true
+		}
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".intent.json") {
+			name := strings.TrimSuffix(entry.Name(), ".intent.json")
+			if !configs[name] {
+				failures = append(failures, fmt.Errorf("AWG intent %s has no matching runtime config", name))
+			}
+		}
+	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".conf") {
 			continue
