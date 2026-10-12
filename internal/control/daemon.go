@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"syscall"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
+	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
@@ -100,10 +102,16 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
 	fetcher.UseSourceStore(sourceStore)
 	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
+	componentManager, e := components.NewManager(c.Platform.Kind, c.Components.CheckInterval.Duration, components.NewSystemBackend(c, nil), time.Now)
+	if e != nil { return false, fmt.Errorf("component manager: %w", e) }
+	if e = componentManager.SetCacheFile(filepath.Join(c.Paths.StateDir, "components-status.json")); e != nil {
+		log.Printf("component check cache unavailable: %v", e)
+	}
 	srv, e := web.New(c, mgr, update.NewForConfig(c, version), nil)
 	if e != nil {
 		return false, e
 	}
+	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer mgr.Stop()
@@ -123,6 +131,18 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 		} else {
 			mgr.Start(ctx)
 		}
+		go func() {
+			// Poll the local clock hourly; cached discovery makes remote requests
+			// no more frequent than components.check_interval (default 7d).
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				if _, err := componentManager.Check(ctx, false); err != nil && ctx.Err() == nil {
+					log.Printf("component update check failed: %v", err)
+				}
+				select { case <-ctx.Done(): return; case <-ticker.C: }
+			}
+		}()
 		if candidate != nil {
 			startupError = settings.ready(candidate, mgr.Readiness())
 			if startupError != nil {
