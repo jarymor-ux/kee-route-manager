@@ -2,18 +2,6 @@
 set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-# TEMPORARY: formatting extraction and targeted tests on isolated CI runner.
-gofmt -w cmd internal
-python3 - <<'PY_KRM_FORMAT'
-import subprocess, pathlib, json
-paths=subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).splitlines()
-for path in paths:
-    p=pathlib.Path(path)
-    if p.suffix=='.go' and p.is_file():
-        print('KRMGFMT:'+json.dumps({'path':path,'content':p.read_text()},ensure_ascii=True))
-PY_KRM_FORMAT
-# Finish formatter-only diagnostic here.
-exit 1
 unformatted="$(gofmt -l cmd internal)"
 [[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
 go test ./...
