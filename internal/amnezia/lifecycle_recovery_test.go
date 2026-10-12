@@ -88,7 +88,7 @@ func TestAWGStopRestoresRouteAndRuleAfterDownFailure(t *testing.T) {
 	}
 	last := runner.calls[len(runner.calls)-2:]
 	wantRoute := "ip route add table " + table + " default dev " + deviceName(id)
-	wantRule := "ip rule add fwmark "+table+" lookup "+table
+	wantRule := "ip rule add fwmark " + table + " lookup " + table
 	if last[0] != wantRoute || last[1] != wantRule {
 		t.Fatalf("shutdown failure must restore both route and rule: %v", last)
 	}
