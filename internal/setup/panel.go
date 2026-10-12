@@ -64,7 +64,7 @@ func (w *wizard) askLocalUI(platform Platform) (UIOptions, error) {
 		}
 		fmt.Fprintln(w.out, w.msg.InvalidUIHostname)
 	}
-	return UIOptions{Platform: platform, Listen: net.JoinHostPort(host, strconv.Itoa(port)), Hostname: hostname, Upstream: "https://127.0.0.1:9443", UpstreamCAFile: managedUIUpstreamCAPath(platform)}, nil
+	return UIOptions{Platform: platform, Listen: net.JoinHostPort(host, strconv.Itoa(port)), Hostname: hostname, Upstream: "http://127.0.0.1:9443"}, nil
 }
 func validPanelHostname(name string) bool {
 	if len(name) > 253 || strings.HasSuffix(strings.ToLower(name), ".local") || net.ParseIP(name) != nil {
@@ -91,8 +91,8 @@ func panelURL(listen, hostname string) string {
 	if hostname != "" {
 		host = hostname
 	}
-	if port == "443" {
-		return "https://" + host
+	if port == "80" {
+		return "http://" + host
 	}
-	return "https://" + net.JoinHostPort(host, port)
+	return "http://" + net.JoinHostPort(host, port)
 }

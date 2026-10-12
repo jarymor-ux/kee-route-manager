@@ -78,7 +78,12 @@ func (c Config) validateCommon() []error {
 		if err != nil {
 			es = append(es, fmt.Errorf("web.listen: %w", err))
 		} else if !c.Web.TLS.Enabled && !loopback(host) {
-			es = append(es, fmt.Errorf("TLS-off web listener must be loopback"))
+			// Plain HTTP may bind to an explicitly selected private LAN IP,
+			// never a wildcard, public interface or hostname.
+			ip := net.ParseIP(host)
+			if ip == nil || !ip.IsPrivate() {
+				es = append(es, fmt.Errorf("TLS-off web listener must bind to loopback or a private LAN IP"))
+			}
 		}
 		es = append(es, tlsErrors("web.tls", c.Web.TLS)...)
 	}

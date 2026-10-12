@@ -83,10 +83,12 @@ if "$TASK_DIR/kee-route-managerd" serve --config "$TASK_DIR/alternate.yaml" > "$
 grep -q 'tunnel ownership' "$TASK_DIR/alternate.log"
 # Let startup benchmark finish, then capture persistent mutation and external commands.
 sleep .2
-find "$TASK_DIR/state" "$TASK_DIR/cache" "$TASK_DIR/xray" -type f -exec sha256sum {} \; | sort > "$TASK_DIR/before.sha"
+# Component update discovery writes components-status.json independently of read-only CLI requests.
+# Its initial weekly check may finish during this fixture; do not treat that as a CLI mutation.
+find "$TASK_DIR/state" "$TASK_DIR/cache" "$TASK_DIR/xray" -type f ! -name components-status.json -exec sha256sum {} \; | sort > "$TASK_DIR/before.sha"
 COUNT=$(wc -l < "$TASK_DIR/status-calls")
 for attempt in $(seq 1 30); do : "$attempt"; "$TASK_DIR/kee-route-managerctl" status --config "$TASK_DIR/core.yaml" >/dev/null; "$TASK_DIR/kee-route-managerctl" ready --config "$TASK_DIR/core.yaml" >/dev/null; done
-find "$TASK_DIR/state" "$TASK_DIR/cache" "$TASK_DIR/xray" -type f -exec sha256sum {} \; | sort > "$TASK_DIR/after.sha"
+find "$TASK_DIR/state" "$TASK_DIR/cache" "$TASK_DIR/xray" -type f ! -name components-status.json -exec sha256sum {} \; | sort > "$TASK_DIR/after.sha"
 cmp "$TASK_DIR/before.sha" "$TASK_DIR/after.sha"
 [ "$COUNT" = "$(wc -l < "$TASK_DIR/status-calls")" ]
 "$TASK_DIR/kee-route-managerctl" benchmark --config "$TASK_DIR/core.yaml" | tee "$TASK_DIR/benchmark.json"

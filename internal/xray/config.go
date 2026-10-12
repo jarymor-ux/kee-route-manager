@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
+	"regexp"
 	"strconv"
 
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
@@ -65,7 +68,31 @@ func managedRouting(cfg config.Config) map[string]any {
 	}
 	return map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}
 }
+
+var safeAWGIdentity = regexp.MustCompile("^[a-f0-9]{32}$")
+
 func Outbound(n model.Node, tag string) (map[string]any, error) {
+	if n.Protocol == "amneziawg" {
+		if !safeAWGIdentity.MatchString(n.AWGProfileID) {
+			return nil, fmt.Errorf("invalid AWG identity")
+		}
+		address, err := netip.ParseAddr(n.AWGLocalIPv4)
+		if err != nil || !address.Is4() {
+			return nil, fmt.Errorf("invalid AWG source IPv4")
+		}
+		mark, err := amnezia.RoutingMark(n.AWGProfileID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"tag": tag, "protocol": "freedom", "sendThrough": address.String(),
+			"settings": map[string]any{"domainStrategy": "UseIP"},
+			"streamSettings": map[string]any{"sockopt": map[string]any{
+				"interface": "krmawg" + n.AWGProfileID[:8],
+				"mark":      mark,
+			}},
+		}, nil
+	}
 	if n.Protocol != "vless" {
 		return nil, fmt.Errorf("unsupported protocol %q", n.Protocol)
 	}

@@ -287,7 +287,7 @@ func TestUITrustAndUpdateConfigurationBoundaries(t *testing.T) {
 		}},
 		{"zero request timeout", "ui.request_timeout", func(c *Config) { c.UIProxy.RequestTimeout = Dur(0) }},
 		{"too long request timeout", "ui.request_timeout", func(c *Config) { c.UIProxy.RequestTimeout = Dur(5*time.Minute + time.Nanosecond) }},
-		{"remote plaintext listener", "TLS-off web listener must be loopback", func(c *Config) { c.Web.TLS.Enabled = false; c.Web.Listen = "0.0.0.0:9444" }},
+		{"remote plaintext listener", "TLS-off web listener must bind to loopback or a private LAN IP", func(c *Config) { c.Web.TLS.Enabled = false; c.Web.Listen = "0.0.0.0:9444" }},
 		{"missing TLS cert", "distinct cert_file", func(c *Config) { c.Web.TLS.CertFile = "" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,8 +1,6 @@
 package setup
 
 import (
-	"crypto/x509"
-	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 func installerScript(lang, interval, cache string, localUIAnswers []string) string {
@@ -136,49 +133,25 @@ func TestLocalUIWizardValidatesBindPortAndHostnameInBothLanguages(t *testing.T) 
 			if ui.Web.Listen != "192.168.1.1:443" || core.API.Listen != "127.0.0.1:9443" || core.Benchmark.FullInterval.Duration != 7*time.Minute || core.Subscriptions.CacheEnabled {
 				t.Fatal("UI options modified controller ownership or benchmark settings")
 			}
-			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || !ui.Web.TLS.AutoGenerate || !containsSetupHost(ui.Web.TLS.Hosts, "alice.jopa") {
-				t.Fatal("UI TLS trust or hostname SAN missing")
+			if ui.UIProxy.Upstream != "http://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.Web.TLS.Enabled || core.API.TLS.Enabled {
+				t.Fatal("local HTTP UI unexpectedly requires TLS")
 			}
 			messages := messagesEN
 			if lang == "1" {
 				messages = messagesRU
 			}
-			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, "https://alice.jopa", "alice.jopa → 192.168.1.1"} {
+			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, "http://alice.jopa:443", "alice.jopa → 192.168.1.1"} {
 				if !strings.Contains(out.String(), message) {
 					t.Fatalf("missing prompt/summary %q", message)
 				}
 			}
-			// Generate exactly the configured UI identity in an isolated test directory.
-			uiTLS := ui.Web.TLS
-			uiTLS.CertFile = filepath.Join(dir, "ui.crt")
-			uiTLS.KeyFile = filepath.Join(dir, "ui.key")
-			if err := tlsutil.EnsureTLS(uiTLS, ui.Web.Listen); err != nil {
-				t.Fatal(err)
-			}
-			raw, err := os.ReadFile(uiTLS.CertFile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			block, _ := pem.Decode(raw)
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cert.VerifyHostname("alice.jopa") != nil || cert.VerifyHostname("192.168.1.1") != nil {
-				t.Fatal("generated UI certificate does not cover panel address")
+			if _, err := os.Stat(tlsDir); !os.IsNotExist(err) {
+				t.Fatal("HTTP wizard generated TLS files")
 			}
 		})
 	}
 }
-func containsSetupHost(hosts []string, want string) bool {
-	for _, host := range hosts {
-		if host == want {
-			return true
-		}
-	}
-	return false
-}
-func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
+func TestPanelHostnameValidationAndHTTPDefault(t *testing.T) {
 	for _, name := range []string{"alice.jopa", "alice.home.arpa", "Alice.Example.RU", "xn--e1afmkfd.xn--p1ai"} {
 		if !validPanelHostname(name) {
 			t.Fatalf("valid hostname rejected: %q", name)
@@ -193,7 +166,7 @@ func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ui.Web.Listen != "127.0.0.1:9444" || !containsSetupHost(ui.Web.TLS.Hosts, "alice.jopa") {
+	if ui.Web.Listen != "127.0.0.1:9444" || ui.Web.TLS.Enabled {
 		t.Fatal("unsafe UI defaults")
 	}
 	if _, err = BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Hostname: "https://alice.jopa"}); err == nil {
@@ -222,8 +195,8 @@ func TestLocalUIWizardLeavesNoPairOnCoreWriteFailure(t *testing.T) {
 		}
 	}
 }
-func TestLocalUIWizardDeclineAndTLSFailurePreserveOtherFiles(t *testing.T) {
-	for _, scenario := range []string{"decline", "tls-parent-missing", "ui-parent-missing"} {
+func TestLocalUIWizardDeclineAndIOFailurePreserveOtherFiles(t *testing.T) {
+	for _, scenario := range []string{"decline", "core-parent-missing", "ui-parent-missing"} {
 		t.Run(scenario, func(t *testing.T) {
 			dir := t.TempDir()
 			corePath, uiPath, tlsDir := filepath.Join(dir, "core.yaml"), filepath.Join(dir, "ui.yaml"), filepath.Join(dir, "tls")
@@ -235,8 +208,8 @@ func TestLocalUIWizardDeclineAndTLSFailurePreserveOtherFiles(t *testing.T) {
 			switch scenario {
 			case "decline":
 				script = strings.TrimSuffix(script, "y\n") + "n\n"
-			case "tls-parent-missing":
-				tlsDir = filepath.Join(dir, "missing-parent", "tls")
+			case "core-parent-missing":
+				corePath = filepath.Join(dir, "missing-parent", "core.yaml")
 			case "ui-parent-missing":
 				uiPath = filepath.Join(dir, "missing-parent", "ui.yaml")
 			}

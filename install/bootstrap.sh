@@ -89,7 +89,7 @@ for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui ke
  chmod 0755 "payload/dist/$name"
 done
 # No downloaded program has been executed before signature and digest checks.
-# Ignore inherited internal staging state; only this verified wizard creates it.
+# The configless HTTP install never needs certificate staging.
 unset KRM_GENERATED_TLS_DIR
 if [ "$NEED_CONFIG" = 1 ]; then
  if [ ! -t 0 ]; then
@@ -106,10 +106,8 @@ EOF
  if [ "$MODE" = local-ui ]; then
   [ -z "${KRM_UI_CONFIG_FILE:-}" ] && [ -z "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'configless local-ui generates its own UI config and local trust; use prepared controller/UI configs for custom settings'
   KRM_UI_CONFIG_FILE="$WORK/generated-ui.yaml"
-  KRM_GENERATED_TLS_DIR="$WORK/controller-tls"
-  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" --ui-output "$KRM_UI_CONFIG_FILE" --tls-dir "$KRM_GENERATED_TLS_DIR" || fail 'configuration wizard was cancelled or failed'
-  KRM_UPSTREAM_CA_FILE="$KRM_GENERATED_TLS_DIR/tls.crt"
-  export KRM_UI_CONFIG_FILE KRM_GENERATED_TLS_DIR KRM_UPSTREAM_CA_FILE
+  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" --ui-output "$KRM_UI_CONFIG_FILE" || fail 'configuration wizard was cancelled or failed'
+  export KRM_UI_CONFIG_FILE
  else
   "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
  fi

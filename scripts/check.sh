@@ -3,7 +3,13 @@ set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 unformatted="$(gofmt -l cmd internal)"
-[[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
+if [[ -n "$unformatted" ]]; then
+  printf 'Run gofmt on:\n%s\n' "$unformatted" >&2
+  while IFS= read -r path; do
+    gofmt -d "$path" >&2
+  done <<< "$unformatted"
+  exit 1
+fi
 go test ./...
 go vet ./...
 while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \))
@@ -11,6 +17,8 @@ for script in scripts/*.sh; do bash -n "$script"; done
 for script in internal/web/ui/static/*.js; do node --check "$script"; done
 node --check scripts/test-ui-browser.cjs
 node scripts/test-ui.js
+node scripts/test-components-ui.cjs
+node scripts/test-awg-ui.cjs
 if [[ -n "${PLAYWRIGHT_MODULE_PATH:-}" ]]; then node scripts/test-ui-browser.cjs; fi
 bash scripts/test-architecture.sh
 TMP="$(mktemp -d)"

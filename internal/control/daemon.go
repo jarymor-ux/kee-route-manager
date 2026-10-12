@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/bench"
+	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/daemonlock"
@@ -96,16 +99,49 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 			return false, fmt.Errorf("validate managed subscription sources: %w", err)
 		}
 	}
+	awgProfiles, e := amnezia.NewProfileStore(c.Paths.StateDir)
+	if e != nil {
+		return false, fmt.Errorf("AWG profile storage: %w", e)
+	}
+	awgRuntime, e := amnezia.NewRuntime(awgProfiles, filepath.Join(c.Paths.StateDir, "awg-runtime"), amnezia.SystemRunner{})
+	if e != nil {
+		return false, fmt.Errorf("AWG runtime: %w", e)
+	}
+	// A reboot clears volatile Linux interfaces and rules but may retain
+	// private runtime configs. Release only verified empty-kernel orphans.
+	// Ambiguous live resources remain blocked without stopping VLESS service.
+	if err := awgRuntime.Reconcile(ctx); err != nil {
+		log.Printf("AWG runtime reconciliation pending: %v", err)
+	}
 	xm := xray.NewManager(c, r, p)
+	xm.UseAWGRuntime(awgRuntime)
 	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
 	fetcher.UseSourceStore(sourceStore)
-	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, xray.NewBatchRunner(c)))
+	fetcher.UseAWGProfiles(awgProfiles)
+	batch := xray.NewBatchRunner(c)
+	batch.UseAWGRuntime(awgRuntime)
+	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, batch))
+	componentManager, e := components.NewManager(c.Platform.Kind, c.Components.CheckInterval.Duration, components.NewSystemBackend(c, nil), time.Now)
+	if e != nil {
+		return false, fmt.Errorf("component manager: %w", e)
+	}
+	if e = componentManager.SetCacheFile(filepath.Join(c.Paths.StateDir, "components-status.json")); e != nil {
+		log.Printf("component check cache unavailable: %v", e)
+	}
 	srv, e := web.New(c, mgr, update.NewForConfig(c, version), nil)
 	if e != nil {
 		return false, e
 	}
+	srv.UseAWGProfiles(awgProfiles)
+	srv.UseAWGRuntime(awgRuntime)
+	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	defer func() {
+		if err := awgRuntime.StopAll(context.Background()); err != nil {
+			log.Printf("AWG runtime cleanup failed: %v", err)
+		}
+	}()
 	defer mgr.Stop()
 	gate := &updateGate{manager: mgr, version: version, settings: settings}
 	var activate <-chan struct{}
@@ -123,6 +159,22 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 		} else {
 			mgr.Start(ctx)
 		}
+		go func() {
+			// Poll the local clock hourly; cached discovery makes remote requests
+			// no more frequent than components.check_interval (default 7d).
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				if _, err := componentManager.Check(ctx, false); err != nil && ctx.Err() == nil {
+					log.Printf("component update check failed: %v", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		if candidate != nil {
 			startupError = settings.ready(candidate, mgr.Readiness())
 			if startupError != nil {

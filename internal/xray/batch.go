@@ -13,12 +13,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"github.com/jarymor-ux/kee-route-manager/internal/redact"
 )
 
-type BatchRunner struct{ cfg config.Config }
+type BatchRunner struct {
+	cfg config.Config
+	awg *amnezia.Runtime
+}
 type Batch struct {
 	Proxies map[string]*url.URL
 	cmd     *exec.Cmd
@@ -29,7 +33,8 @@ type Batch struct {
 	once    sync.Once
 }
 
-func NewBatchRunner(c config.Config) *BatchRunner { return &BatchRunner{c} }
+func NewBatchRunner(c config.Config) *BatchRunner        { return &BatchRunner{cfg: c} }
+func (r *BatchRunner) UseAWGRuntime(rt *amnezia.Runtime) { r.awg = rt }
 func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, error) {
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("empty batch")
@@ -48,7 +53,17 @@ func (r *BatchRunner) Start(ctx context.Context, nodes []model.Node) (*Batch, er
 		inTag := fmt.Sprintf("bench-in-%d", i)
 		outTag := fmt.Sprintf("bench-out-%d", i)
 		ins = append(ins, httpInbound(inTag, base+i))
-		out, e := Outbound(n, outTag)
+		var out map[string]any
+		if n.Protocol == "amneziawg" {
+			if r.awg == nil {
+				out = blackholeOutbound(outTag)
+			} else if _, _, runErr := r.awg.Ensure(ctx, n.AWGProfileID); runErr != nil {
+				out = blackholeOutbound(outTag)
+			}
+		}
+		if out == nil {
+			out, e = Outbound(n, outTag)
+		}
 		if e != nil {
 			os.RemoveAll(dir)
 			return nil, e

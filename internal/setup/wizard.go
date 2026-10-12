@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/tlsutil"
 )
 
 var (
@@ -109,7 +108,7 @@ var messagesRU = Messages{
 	SubscriptionCachePrompt:  "Использовать кеш подписок? [д/Н]",
 	UILocalHelp:              "Панель доступна только на выбранном адресе: укажите существующий IPv4-адрес LAN, либо оставьте 127.0.0.1 для SSH-туннеля. Порт должен быть свободен; 443 может занимать админка роутера.",
 	UIBindPrompt:             "IPv4-адрес панели",
-	UIPortPrompt:             "HTTPS-порт панели",
+	UIPortPrompt:             "HTTP-порт панели",
 	UIHostnameHelp:           "Необязательное локальное DNS-имя, например alice.home.arpa или alice.jopa. Не используйте .local: для него нужен mDNS. DNS-запись установщик не создаёт.",
 	UIHostnamePrompt:         "Локальное имя панели (Enter — только IP)",
 	InvalidBenchmarkInterval: "Введите интервал от 1m до 720h, например 5m или 6h.",
@@ -120,7 +119,7 @@ var messagesRU = Messages{
 	SummaryCache:             "Кеш подписок",
 	SummaryUI:                "Адрес панели",
 	UIDNSInstruction:         "В локальном DNS настройте запись A: %s → %s. Для этого имени используйте DNS роутера; установщик не меняет DNS.",
-	UITLSInstruction:         "Для HTTPS импортируйте сертификат панели в доверенные сертификаты браузера/устройства.",
+	UITLSInstruction:         "Панель использует HTTP на выбранном приватном адресе. Не открывайте её в Интернет.",
 
 	PlatformTitle:          "Платформа:",
 	PlatformHelp:           "Выберите платформу, на которой будет работать Kee Route Manager.",
@@ -190,7 +189,7 @@ var messagesEN = Messages{
 	SubscriptionCachePrompt:  "Use subscription cache? [y/N]",
 	UILocalHelp:              "The panel binds only to the chosen address: enter an existing private LAN IPv4 address, or keep 127.0.0.1 for an SSH tunnel. The port must be free; 443 may be used by the router admin panel.",
 	UIBindPrompt:             "Panel IPv4 address",
-	UIPortPrompt:             "Panel HTTPS port",
+	UIPortPrompt:             "Panel HTTP port",
 	UIHostnameHelp:           "Optional local DNS name, for example alice.home.arpa or alice.jopa. Avoid .local: it requires mDNS. The installer does not create DNS records.",
 	UIHostnamePrompt:         "Local panel hostname (Enter for IP only)",
 	InvalidBenchmarkInterval: "Enter an interval from 1m to 720h, for example 5m or 6h.",
@@ -201,7 +200,7 @@ var messagesEN = Messages{
 	SummaryCache:             "Subscription cache",
 	SummaryUI:                "Panel address",
 	UIDNSInstruction:         "Configure a local DNS A record: %s → %s. Use the router DNS for this name; the installer does not change DNS.",
-	UITLSInstruction:         "For HTTPS, trust the panel certificate in your browser/device certificate store.",
+	UITLSInstruction:         "The panel uses HTTP on the selected private address. Never expose it to the Internet.",
 
 	PlatformTitle:          "Platform:",
 	PlatformHelp:           "Choose the platform where Kee Route Manager will run.",
@@ -283,15 +282,15 @@ func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overw
 	return initConfig(in, out, outputPath, overwrite, platform, "", "")
 }
 
-// InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
+// InitLocalUIConfig creates the installer pair without generating certificates.
 func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
 	switch platform {
 	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
-	if uiPath == "" || tlsDir == "" || filepath.Clean(uiPath) == filepath.Clean(outputPath) {
-		return fmt.Errorf("distinct UI output and TLS directory are required")
+	if uiPath == "" || filepath.Clean(uiPath) == filepath.Clean(outputPath) {
+		return fmt.Errorf("distinct UI and controller output paths are required")
 	}
 	if _, err := os.Lstat(uiPath); !os.IsNotExist(err) {
 		return fmt.Errorf("UI output already exists or cannot be inspected")
@@ -299,9 +298,7 @@ func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir s
 	if _, err := os.Lstat(outputPath); !os.IsNotExist(err) {
 		return fmt.Errorf("controller output already exists or cannot be inspected")
 	}
-	if _, err := os.Lstat(tlsDir); !os.IsNotExist(err) {
-		return fmt.Errorf("TLS directory already exists or cannot be inspected")
-	}
+
 	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
 }
 
@@ -324,13 +321,6 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	cfg, err := BuildControllerConfig(opts)
 	if err != nil {
 		return err
-	}
-	if uiPath != "" {
-		prefix := ""
-		if platform == PlatformKeenetic {
-			prefix = "/opt"
-		}
-		cfg.API.TLS = config.TLS{Enabled: true, AutoGenerate: true, CertFile: prefix + "/etc/kee-route-manager/tls.crt", KeyFile: prefix + "/etc/kee-route-manager/tls.key"}
 	}
 	var uiOptions UIOptions
 	if uiPath != "" {
@@ -370,27 +360,14 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		if err != nil {
 			return err
 		}
-		if err := os.Mkdir(tlsDir, 0700); err != nil {
-			return fmt.Errorf("create private TLS directory: %w", err)
-		}
-		tlsIdentity, _ := os.Lstat(tlsDir)
 		var uiIdentity os.FileInfo
 		defer func() {
-			if resultErr == nil {
-				return
-			}
-			if current, err := os.Lstat(uiPath); err == nil && uiIdentity != nil && os.SameFile(current, uiIdentity) {
-				_ = os.Remove(uiPath)
-			}
-			if current, err := os.Lstat(tlsDir); err == nil && tlsIdentity != nil && os.SameFile(current, tlsIdentity) {
-				_ = os.RemoveAll(tlsDir)
+			if resultErr != nil && uiIdentity != nil {
+				if current, err := os.Lstat(uiPath); err == nil && os.SameFile(current, uiIdentity) {
+					_ = os.Remove(uiPath)
+				}
 			}
 		}()
-		stagedTLS := cfg.API.TLS
-		stagedTLS.CertFile, stagedTLS.KeyFile = filepath.Join(tlsDir, "tls.crt"), filepath.Join(tlsDir, "tls.key")
-		if err := tlsutil.EnsureTLS(stagedTLS, cfg.API.Listen); err != nil {
-			return err
-		}
 		if err := writeConfig(uiPath, ui, false); err != nil {
 			return err
 		}

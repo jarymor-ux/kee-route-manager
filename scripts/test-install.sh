@@ -165,8 +165,8 @@ check_ui(){
  # UI config is public and readable by systemd DynamicUser; keys remain private.
  "$bin/kee-route-manager-ui" validate --config "$ui_config" >/dev/null
  "$bin/kee-route-manager-ui" ready --config "$ui_config" >/dev/null
- [[ "$(stat -c %a "$prefix/var/lib/kee-route-manager-ui/tls.key")" = 600 ]]
- curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+ [[ ! -e "$prefix/var/lib/kee-route-manager-ui/tls.key" ]]
+ curl -fsS http://127.0.0.1:9444/assets/app.js >/dev/null
 }
 platform_paths(){
  case "$platform" in
@@ -239,13 +239,11 @@ PYDEFAULTS
   [[ -L "$bin/kee-route-managerd" && -f "$bin/kee-route-manager-launcher" ]]
   if [[ "$mode" = local-ui ]]; then
    check_ui
-   grep -Fq 'https://127.0.0.1:9443' "$ui_config"
+   grep -Fq 'http://127.0.0.1:9443' "$ui_config"
    grep -Fq '127.0.0.1:9444' "$ui_config"
    grep -Fq 'alice.jopa' "$ui_config"
-   grep -Fq "$prefix/etc/kee-route-manager-ui/controller-ca.crt" "$ui_config"
-   [[ -s "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
-   # The UI trusts exactly the local controller certificate, never insecure TLS.
-   cmp "$prefix/etc/kee-route-manager/tls.crt" "$prefix/etc/kee-route-manager-ui/controller-ca.crt"
+   [[ ! -e "$prefix/etc/kee-route-manager-ui/controller-ca.crt" ]]
+   [[ ! -e "$prefix/etc/kee-route-manager/tls.crt" ]]
    if grep -Eq 'insecure_tls["[:space:]]*:[[:space:]]*true' "$ui_config"; then
     echo 'generated UI disabled TLS verification' >&2; exit 1
    fi
@@ -254,7 +252,7 @@ PYDEFAULTS
   fi
   before=$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")
   KRM_MODE=$mode KRM_CONFIG_FILE=$core_config KRM_UI_CONFIG_FILE=$ui_config KRM_PASSWORD_FILE="$WORK/private/password" \
-   KRM_UPSTREAM_CA_FILE="$prefix/etc/kee-route-manager-ui/controller-ca.crt" KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
+   KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
    sh "$WORK/bootstrap-$platform.sh" > "$WORK/reinstall.stdout" 2>&1 && { echo 'generated installation overwrite accepted' >&2; exit 1; }
   grep -Fq 'existing controller installation detected' "$WORK/reinstall.stdout"
   [[ "$before" = "$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")" ]]
@@ -326,7 +324,7 @@ for platform in linux-systemd openwrt keenetic; do
  else
   [[ ! -e "$ui_service" && -L "$bin/kee-route-manager-ui" ]]
  fi
- curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+ curl -fsS http://127.0.0.1:9444/assets/app.js >/dev/null
  before=$(sha256sum "$core_config")
  if sh "install/$platform/install.sh"; then echo 'overwrite accepted' >&2; exit 1; fi
  [[ "$before" == "$(sha256sum "$core_config")" ]]
@@ -340,7 +338,7 @@ for platform in linux-systemd openwrt keenetic; do
  done
  mv "$WORK/ctl" "$bin/kee-route-managerctl"
  "$bin/kee-route-managerctl" ready --config "$core_config"
- curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+ curl -fsS http://127.0.0.1:9444/assets/app.js >/dev/null
  sh "install/$platform/uninstall.sh" --purge
  [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-ui" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" ]]
  printf 'Installer lifecycle passed: %s core, standalone UI and local-ui; overwrite refusal; failed-restore retention; restore/uninstall/purge.\n' "$platform"

@@ -10,6 +10,14 @@ import (
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
 
+// AWGProfilesChanged invalidates stale candidate benchmarks after a profile upload/removal.
+func (m *Manager) AWGProfilesChanged() {
+	m.subscriptionMu.Lock()
+	m.sourcesVersion++
+	m.subscriptionMu.Unlock()
+	m.queueSubscriptionBenchmark()
+}
+
 type managedSourceFetcher interface {
 	Sources() []config.Source
 	ReplaceSources([]config.Source) error

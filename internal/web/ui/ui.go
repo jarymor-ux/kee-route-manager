@@ -111,9 +111,10 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	files := StaticHandler()
 	loginLimiter := auth.NewLimiter(8, 15*time.Minute)
 	proxy.ModifyResponse = func(response *http.Response) error {
-		if c.Web.TLS.Enabled {
-			secureSessionCookie(response)
-		}
+		// The browser-facing transport, not the controller upstream, owns
+		// the Secure attribute of the session cookie. An internal HTTPS
+		// controller may otherwise make HTTP UI logins unusable.
+		matchSessionCookieSecurity(response, c.Web.TLS.Enabled)
 		r := response.Request
 		if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login" && response.StatusCode == http.StatusOK {
 			loginLimiter.Reset(auth.RemoteIP(r))
@@ -151,7 +152,7 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	return httpsec.Security(mux, c.Web.TLS.Enabled), nil
 }
 
-func secureSessionCookie(response *http.Response) {
+func matchSessionCookieSecurity(response *http.Response, secure bool) {
 	values := response.Header.Values("Set-Cookie")
 	if len(values) == 0 {
 		return
@@ -159,10 +160,10 @@ func secureSessionCookie(response *http.Response) {
 	changed := false
 	for i, raw := range values {
 		parsed := (&http.Response{Header: http.Header{"Set-Cookie": []string{raw}}}).Cookies()
-		if len(parsed) != 1 || parsed[0].Name != auth.CookieName || parsed[0].Secure {
+		if len(parsed) != 1 || parsed[0].Name != auth.CookieName || parsed[0].Secure == secure {
 			continue
 		}
-		parsed[0].Secure = true
+		parsed[0].Secure = secure
 		values[i] = parsed[0].String()
 		changed = true
 	}

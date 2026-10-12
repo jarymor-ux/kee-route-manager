@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
+	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
 	"github.com/jarymor-ux/kee-route-manager/internal/event"
@@ -53,15 +55,18 @@ type subscriptionController interface {
 }
 
 type Server struct {
-	cfg      config.Config
-	mgr      Controller
-	updater  *update.Updater
-	restart  func(context.Context) error
-	users    *auth.UserStore
-	sessions *auth.SessionStore
-	limiter  *auth.Limiter
-	handler  http.Handler
-	settings SettingsController
+	cfg         config.Config
+	mgr         Controller
+	updater     *update.Updater
+	components  *components.Manager
+	awgProfiles *amnezia.ProfileStore
+	awgRuntime  *amnezia.Runtime
+	restart     func(context.Context) error
+	users       *auth.UserStore
+	sessions    *auth.SessionStore
+	limiter     *auth.Limiter
+	handler     http.Handler
+	settings    SettingsController
 }
 
 func New(c config.Config, mgr Controller, up *update.Updater, restart func(context.Context) error) (*Server, error) {
@@ -77,7 +82,12 @@ func New(c config.Config, mgr Controller, up *update.Updater, restart func(conte
 	s.handler = s.routes()
 	return s, nil
 }
-func (s *Server) Handler() http.Handler { return s.handler }
+func (s *Server) Handler() http.Handler                      { return s.handler }
+func (s *Server) UseAWGProfiles(store *amnezia.ProfileStore) { s.awgProfiles = store }
+func (s *Server) UseAWGRuntime(runtime *amnezia.Runtime)     { s.awgRuntime = runtime }
+
+// UseComponents configures the component backend before listeners become reachable.
+func (s *Server) UseComponents(m *components.Manager) { s.components = m }
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	srv := &http.Server{Addr: s.cfg.API.Listen, Handler: s.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 5 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	go func() {
@@ -110,6 +120,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/session", s.protect(s.session, false))
 	mux.HandleFunc("/api/v1/status", s.protect(s.status, false))
 	mux.HandleFunc("/api/v1/nodes", s.protect(s.nodes, false))
+	mux.HandleFunc("/api/v1/awg/profiles", s.protect(s.awgList, false))
+	mux.HandleFunc("/api/v1/awg/import", s.protect(s.awgImport, true))
+	mux.HandleFunc("/api/v1/awg/delete", s.protect(s.awgDelete, true))
 	mux.HandleFunc("/api/v1/subscriptions", s.protect(s.subscriptions, false))
 	mux.HandleFunc("/api/v1/subscriptions/save", s.protect(s.saveSubscription, true))
 	mux.HandleFunc("/api/v1/subscriptions/delete", s.protect(s.deleteSubscription, true))
@@ -130,6 +143,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/actions/policy", s.protect(s.policy, true))
 	mux.HandleFunc("/api/v1/actions/switch", s.protect(s.switchSlot, true))
 	mux.HandleFunc("/api/v1/actions/direct", s.protect(s.direct, true))
+	mux.HandleFunc("/api/v1/components/status", s.protect(s.componentStatus, false))
+	mux.HandleFunc("/api/v1/components/check", s.protect(s.componentCheck, true))
+	mux.HandleFunc("/api/v1/components/install", s.protect(s.componentInstall, true))
 	mux.HandleFunc("/api/v1/update/check", s.protect(s.updateCheck, false))
 	mux.HandleFunc("/api/v1/update/status", s.protect(s.updateStatus, false))
 	mux.HandleFunc("/api/v1/update/apply", s.protect(s.updateApply, true))
@@ -178,7 +194,7 @@ func (s *Server) security(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), auditContextKey{}, audit))
 		next.ServeHTTP(aw, r)
 		if r.Method == http.MethodPost && aw.status >= 200 && aw.status < 300 && audit.actor != "" &&
-			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || strings.HasPrefix(r.URL.Path, "/api/v1/panel/") || r.URL.Path == "/api/v1/update/apply" || r.URL.Path == "/api/v1/update/channel" || r.URL.Path == "/api/v1/settings/save") {
+			(strings.HasPrefix(r.URL.Path, "/api/v1/actions/") || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/") || strings.HasPrefix(r.URL.Path, "/api/v1/awg/") || strings.HasPrefix(r.URL.Path, "/api/v1/panel/") || r.URL.Path == "/api/v1/components/check" || r.URL.Path == "/api/v1/components/install" || r.URL.Path == "/api/v1/update/apply" || r.URL.Path == "/api/v1/update/channel" || r.URL.Path == "/api/v1/settings/save") {
 			if manager, ok := s.mgr.(interface{ RecordAudit(event.Event) }); ok {
 				manager.RecordAudit(event.Event{Level: "info", Type: "api.action", Message: "Control action accepted", OperationID: audit.operation, Fields: map[string]any{"actor_id": audit.actor, "request_id": id, "path": r.URL.Path, "status": aw.status, "operation_id": audit.operation}})
 			}
