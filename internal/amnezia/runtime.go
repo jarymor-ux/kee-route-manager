@@ -310,5 +310,20 @@ func (r *Runtime) StopAll(ctx context.Context) error {
 			failures = append(failures, err)
 		}
 	}
+	// A daemon restarted after SIGKILL has no in-memory active IDs. Do
+	// not silently report complete shutdown while orphan configs still
+	// preserve evidence of possibly live interfaces and policy routes.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entries, err := os.ReadDir(r.dir)
+	if err != nil {
+		failures = append(failures, fmt.Errorf("inspect AWG recovery directory: %w", err))
+	} else {
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".conf") {
+				failures = append(failures, fmt.Errorf("AWG runtime recovery pending for %s", entry.Name()))
+			}
+		}
+	}
 	return errors.Join(failures...)
 }
