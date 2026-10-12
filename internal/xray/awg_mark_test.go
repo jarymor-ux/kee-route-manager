@@ -22,7 +22,7 @@ func TestAWGOutboundMarkTracksProfileRoutingTable(t *testing.T) {
 	if sockA["mark"] == nil || sockB["mark"] == nil || sockA["mark"] == sockB["mark"] {
 		t.Fatalf("identical client addresses must not share fwmark: %+v %+v", sockA, sockB)
 	}
-	if sockA["mark"] != 274565 {
+	if sockA["mark"] != uint32(274565) {
 		t.Fatalf("unexpected fwmark for known identity: %+v", sockA)
 	}
 }
