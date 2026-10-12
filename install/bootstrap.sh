@@ -90,7 +90,7 @@ for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui ke
 done
 # No downloaded program has been executed before signature and digest checks.
 # The configless HTTP install never needs certificate staging.
-unset KRM_GENERATED_TLS_DIR KRM_UPSTREAM_CA_FILE
+unset KRM_GENERATED_TLS_DIR
 if [ "$NEED_CONFIG" = 1 ]; then
  if [ ! -t 0 ]; then
   cat >&2 <<'EOF'
