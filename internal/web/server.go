@@ -60,6 +60,7 @@ type Server struct {
 	updater    *update.Updater
 	components *components.Manager
 	awgProfiles *amnezia.ProfileStore
+	awgRuntime *amnezia.Runtime
 	restart    func(context.Context) error
 	users      *auth.UserStore
 	sessions   *auth.SessionStore
@@ -83,6 +84,7 @@ func New(c config.Config, mgr Controller, up *update.Updater, restart func(conte
 }
 func (s *Server) Handler() http.Handler { return s.handler }
 func (s *Server) UseAWGProfiles(store *amnezia.ProfileStore) {s.awgProfiles=store}
+func (s *Server) UseAWGRuntime(runtime *amnezia.Runtime) {s.awgRuntime=runtime}
 
 // UseComponents configures the component backend before listeners become reachable.
 func (s *Server) UseComponents(m *components.Manager) { s.components = m }
