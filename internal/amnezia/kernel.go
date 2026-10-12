@@ -85,6 +85,7 @@ func inspectKernelAvailability(ctx context.Context, runner Runner, iface, table 
 	}
 	var ruleRows []struct {
 		Mark   json.RawMessage `json:"fwmark"`
+		Mask   json.RawMessage `json:"fwmask"`
 		Table  json.RawMessage `json:"table"`
 		Lookup json.RawMessage `json:"lookup"`
 	}
@@ -99,7 +100,7 @@ func inspectKernelAvailability(ctx context.Context, runner Runner, iface, table 
 		if kernelTableMatches(rule.Table, mark) || kernelTableMatches(rule.Lookup, mark) {
 			return fmt.Errorf("AWG routing table %s referenced by existing policy rule", table)
 		}
-		matches, err := kernelMarkMatches(rule.Mark, uint32(mark))
+		matches, err := kernelMarkMatches(rule.Mark, rule.Mask, uint32(mark))
 		if err != nil {
 			return fmt.Errorf("inspect existing policy fwmark: %w", err)
 		}
@@ -125,17 +126,17 @@ func kernelTableMatches(raw json.RawMessage, table uint64) bool {
 
 // A policy rule may select an entire range of marks via /mask or fwmask.
 // Treat overlapping masked values as occupied, not just byte-for-byte matches.
-func kernelMarkMatches(raw json.RawMessage, mark uint32) (bool, error) {
+func kernelMarkMatches(raw, maskRaw json.RawMessage, mark uint32) (bool, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return false, nil
 	}
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
-		var num uint32
+		var num uint64
 		if err := json.Unmarshal(raw, &num); err != nil {
 			return false, err
 		}
-		return num == mark, nil
+		value = strconv.FormatUint(num, 10)
 	}
 	parts := strings.Split(value, "/")
 	if len(parts) > 2 {
@@ -151,6 +152,21 @@ func kernelMarkMatches(raw json.RawMessage, mark uint32) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+	}
+	if len(maskRaw) != 0 && string(maskRaw) != "null" {
+		var text string
+		if err := json.Unmarshal(maskRaw, &text); err != nil {
+			var number uint64
+			if err := json.Unmarshal(maskRaw, &number); err != nil {
+				return false, err
+			}
+			text = strconv.FormatUint(number, 10)
+		}
+		separateMask, err := strconv.ParseUint(text, 0, 32)
+		if err != nil {
+			return false, err
+		}
+		mask &= separateMask
 	}
 	return (n & mask) == (uint64(mark) & mask), nil
 }
