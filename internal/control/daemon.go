@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
+	"github.com/jarymor-ux/kee-route-manager/internal/bench"
 	"github.com/jarymor-ux/kee-route-manager/internal/components"
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/core"
@@ -100,9 +100,13 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 		}
 	}
 	awgProfiles, e := amnezia.NewProfileStore(c.Paths.StateDir)
-	if e != nil { return false, fmt.Errorf("AWG profile storage: %w", e) }
-	awgRuntime, e := amnezia.NewRuntime(awgProfiles, filepath.Join(c.Paths.StateDir,"awg-runtime"), amnezia.SystemRunner{})
-	if e != nil { return false, fmt.Errorf("AWG runtime: %w", e) }
+	if e != nil {
+		return false, fmt.Errorf("AWG profile storage: %w", e)
+	}
+	awgRuntime, e := amnezia.NewRuntime(awgProfiles, filepath.Join(c.Paths.StateDir, "awg-runtime"), amnezia.SystemRunner{})
+	if e != nil {
+		return false, fmt.Errorf("AWG runtime: %w", e)
+	}
 	xm := xray.NewManager(c, r, p)
 	xm.UseAWGRuntime(awgRuntime)
 	fetcher := subscription.New(c.Subscriptions, c.Health.ProviderRetryBackoff, c.Paths.CacheDir)
@@ -110,7 +114,7 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	fetcher.UseAWGProfiles(awgProfiles)
 	batch := xray.NewBatchRunner(c)
 	batch.UseAWGRuntime(awgRuntime)
-	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets},batch))
+	mgr := core.New(c, version, st, ops, p, xm, fetcher, bench.New(bench.RuntimeConfig{Benchmark: c.Benchmark, Health: c.Health, Targets: c.Targets}, batch))
 	componentManager, e := components.NewManager(c.Platform.Kind, c.Components.CheckInterval.Duration, components.NewSystemBackend(c, nil), time.Now)
 	if e != nil {
 		return false, fmt.Errorf("component manager: %w", e)
@@ -127,7 +131,11 @@ func serveRuntime(ctx context.Context, c config.Config, version string, settings
 	srv.UseComponents(componentManager)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer func(){ if err:=awgRuntime.StopAll(context.Background());err!=nil {log.Printf("AWG runtime cleanup failed: %v",err)} }()
+	defer func() {
+		if err := awgRuntime.StopAll(context.Background()); err != nil {
+			log.Printf("AWG runtime cleanup failed: %v", err)
+		}
+	}()
 	defer mgr.Stop()
 	gate := &updateGate{manager: mgr, version: version, settings: settings}
 	var activate <-chan struct{}
