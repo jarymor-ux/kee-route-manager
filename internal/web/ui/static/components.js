@@ -71,8 +71,9 @@ async function loadComponents(manual = false) {
   componentsBusy = true;
   $('#component-check').disabled = true;
   try {
-    const data = await api('/api/v1/components/' + (manual ? 'check' : 'status'),
-      manual ? { method: 'POST' } : undefined);
+    const data = manual
+      ? await api('/api/v1/components/check', { method: 'POST' })
+      : await api('/api/v1/components/status');
     if (generation !== componentsRequestGeneration || !authenticated) return;
     renderComponents(data);
   } catch (error) {
