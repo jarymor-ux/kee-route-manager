@@ -28,6 +28,7 @@ func (s *Server) awgImport(w http.ResponseWriter,r *http.Request,_ auth.Session)
  }
  profile,err:=s.awgProfiles.Import(name,data)
  if err!=nil {jsonError(w,http.StatusBadRequest,"invalid AmneziaWG configuration");return}
+ if n,ok:=s.mgr.(interface{AWGProfilesChanged()});ok {n.AWGProfilesChanged()}
  w.Header().Set("Cache-Control","no-store")
  writeJSON(w,http.StatusCreated,map[string]any{"profile":profile})
 }
@@ -42,8 +43,17 @@ func (s *Server) awgDelete(w http.ResponseWriter,r *http.Request,_ auth.Session)
  if s.awgProfiles==nil {jsonError(w,http.StatusNotImplemented,"AmneziaWG profiles unavailable");return}
  var q struct { ID string `json:"id"` }
  if err:=decodeBody(w,r,&q);err!=nil{return}
+ if s.mgr!=nil {
+	for _,node:=range s.mgr.Nodes() {
+		if node.ID==q.ID && node.InPool {jsonError(w,http.StatusConflict,"profile is used by the active VPN pool");return}
+	}
+ }
+ if s.awgRuntime!=nil {
+	if err:=s.awgRuntime.Stop(r.Context(),q.ID);err!=nil {jsonError(w,http.StatusConflict,"AWG tunnel is still active");return}
+ }
  if err:=s.awgProfiles.Delete(q.ID);err!=nil {
   jsonError(w,http.StatusConflict,"AWG profile removal rejected");return
  }
+ if n,ok:=s.mgr.(interface{AWGProfilesChanged()});ok {n.AWGProfilesChanged()}
  writeJSON(w,http.StatusOK,map[string]bool{"ok":true})
 }
