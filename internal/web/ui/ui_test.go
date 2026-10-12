@@ -81,6 +81,36 @@ func TestProxyMarksSessionCookieSecureAtHTTPSBoundary(t *testing.T) {
 	}
 }
 
+func TestHTTPBrowserLoginKeepsSessionCookieAndOriginWorking(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/auth/login" || r.Header.Get("Origin") != "http://"+r.Host {
+			http.Error(w, "invalid login forwarding", http.StatusForbidden)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "krm_session", Value: "example-session", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	cfg := config.Default()
+	cfg.UIProxy.Upstream = upstream.URL
+	cfg.Web.TLS.Enabled = false
+	h, err := ProxyHandler(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://192.168.1.1:9444/api/v1/auth/login", strings.NewReader("{}"))
+	req.Header.Set("Origin", "http://192.168.1.1:9444")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP login status=%d body=%s", w.Code, w.Body)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "krm_session" || cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("invalid HTTP login cookie: %+v", cookies)
+	}
+}
+
 func TestProxyRejectsForeignOriginBeforeRewrite(t *testing.T) {
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
