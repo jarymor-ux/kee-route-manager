@@ -127,6 +127,15 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 	if r.active[id] {
 		return name, address, nil
 	}
+	// A previous daemon may have been killed after creating its private
+	// runtime config. Never overwrite that evidence or launch a second
+	// interface until the operating-system state has been reconciled.
+	path := filepath.Join(r.dir, name+".conf")
+	if _, err := os.Lstat(path); err == nil {
+		return "", "", fmt.Errorf("AWG interface %s has unreconciled runtime state", name)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", fmt.Errorf("inspect AWG runtime config: %w", err)
+	}
 	for otherID := range r.active {
 		otherMark, markErr := tableNumber(otherID)
 		if markErr != nil {
@@ -140,23 +149,31 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 	if err != nil {
 		return "", "", err
 	}
-	path := filepath.Join(r.dir, name+".conf")
 	if err = atomicPrivateWrite(r.dir, path, safe); err != nil {
 		return "", "", err
 	}
-	rollback := func() { _ = r.runner.Run(context.Background(), "awg-quick", "down", path); _ = os.Remove(path) }
+	// Keep the private config as durable recovery evidence unless all
+	// network cleanup steps succeeded. In particular, a failed down must
+	// never be followed by an unconditional os.Remove.
+	rollback := func(routeInstalled bool) error {
+		var routeErr error
+		if routeInstalled {
+			routeErr = r.runner.Run(context.Background(), "ip", "route", "del", "table", table, "default", "dev", name)
+		}
+		downErr := r.runner.Run(context.Background(), "awg-quick", "down", path)
+		if routeErr != nil || downErr != nil {
+			return errors.Join(routeErr, downErr)
+		}
+		return os.Remove(path)
+	}
 	if err = r.runner.Run(ctx, "awg-quick", "up", path); err != nil {
-		rollback()
-		return "", "", err
+		return "", "", errors.Join(err, rollback(false))
 	}
 	if err = r.runner.Run(ctx, "ip", "route", "add", "table", table, "default", "dev", name); err != nil {
-		rollback()
-		return "", "", err
+		return "", "", errors.Join(err, rollback(false))
 	}
 	if err = r.runner.Run(ctx, "ip", "rule", "add", "fwmark", table, "lookup", table); err != nil {
-		_ = r.runner.Run(context.Background(), "ip", "route", "del", "table", table, "default", "dev", name)
-		rollback()
-		return "", "", err
+		return "", "", errors.Join(err, rollback(true))
 	}
 	r.active[id] = true
 	return name, address, nil
@@ -246,16 +263,23 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 		return err
 	}
 	if err = r.runner.Run(ctx, "ip", "route", "del", "table", table, "default", "dev", name); err != nil {
-		return err
+		// A failed Stop must leave the previously active policy usable.
+		restoreErr := r.runner.Run(context.Background(), "ip", "rule", "add", "fwmark", table, "lookup", table)
+		return errors.Join(err, restoreErr)
 	}
 	path := filepath.Join(r.dir, name+".conf")
 	if err = r.runner.Run(ctx, "awg-quick", "down", path); err != nil {
-		return err
+		// Restore in dependency order: route first, then its lookup rule.
+		routeErr := r.runner.Run(context.Background(), "ip", "route", "add", "table", table, "default", "dev", name)
+		ruleErr := r.runner.Run(context.Background(), "ip", "rule", "add", "fwmark", table, "lookup", table)
+		return errors.Join(err, routeErr, ruleErr)
 	}
+	// The networking is down regardless of whether private file deletion
+	// succeeds. A retained file blocks unsafe Ensure until reconciliation.
+	delete(r.active, id)
 	if err = os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	delete(r.active, id)
 	return nil
 }
 
