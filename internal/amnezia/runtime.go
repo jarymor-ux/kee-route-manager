@@ -136,6 +136,11 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", "", fmt.Errorf("inspect AWG runtime config: %w", err)
 	}
+	if _, err := os.Lstat(r.intentPath(id)); err == nil {
+		return "", "", fmt.Errorf("AWG interface %s has pending lifecycle intent", name)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", fmt.Errorf("inspect AWG lifecycle intent: %w", err)
+	}
 	for otherID := range r.active {
 		otherMark, markErr := tableNumber(otherID)
 		if markErr != nil {
@@ -158,28 +163,40 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 	if err = atomicPrivateWrite(r.dir, path, safe); err != nil {
 		return "", "", err
 	}
-	// Keep the private config as durable recovery evidence unless all
-	// network cleanup steps succeeded. In particular, a failed down must
-	// never be followed by an unconditional os.Remove.
-	rollback := func(routeInstalled bool) error {
-		var routeErr error
+	if err := r.writeIntent(id, "starting"); err != nil {
+		// Retain the private config for fail-closed startup recovery.
+		return "", "", err
+	}
+	// A failed or partially applied command requires rollback. Do not
+	// discard the intent if any cleanup stage fails.
+	rollback := func(routeInstalled, ruleInstalled bool) error {
+		var ruleErr, routeErr error
+		if ruleInstalled {
+			ruleErr = r.runner.Run(context.Background(), "ip", "rule", "del", "fwmark", table, "lookup", table)
+		}
 		if routeInstalled {
 			routeErr = r.runner.Run(context.Background(), "ip", "route", "del", "table", table, "default", "dev", name)
 		}
 		downErr := r.runner.Run(context.Background(), "awg-quick", "down", path)
-		if routeErr != nil || downErr != nil {
-			return errors.Join(routeErr, downErr)
+		if ruleErr != nil || routeErr != nil || downErr != nil {
+			return errors.Join(ruleErr, routeErr, downErr)
+		}
+		if err := r.removeIntent(id); err != nil {
+			return err
 		}
 		return os.Remove(path)
 	}
 	if err = r.runner.Run(ctx, "awg-quick", "up", path); err != nil {
-		return "", "", errors.Join(err, rollback(false))
+		return "", "", errors.Join(err, rollback(false, false))
 	}
 	if err = r.runner.Run(ctx, "ip", "route", "add", "table", table, "default", "dev", name); err != nil {
-		return "", "", errors.Join(err, rollback(false))
+		return "", "", errors.Join(err, rollback(false, false))
 	}
 	if err = r.runner.Run(ctx, "ip", "rule", "add", "fwmark", table, "lookup", table); err != nil {
-		return "", "", errors.Join(err, rollback(true))
+		return "", "", errors.Join(err, rollback(true, false))
+	}
+	if err := r.writeIntent(id, "active"); err != nil {
+		return "", "", errors.Join(err, rollback(true, true))
 	}
 	r.active[id] = true
 	return name, address, nil
@@ -247,6 +264,11 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect AWG runtime config: %w", err)
 		}
+		if _, err := os.Lstat(r.intentPath(id)); err == nil {
+			return fmt.Errorf("AWG interface %s has unresolved lifecycle intent", deviceName(id))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect AWG lifecycle intent: %w", err)
+		}
 		return nil
 	}
 	name := deviceName(id)
@@ -273,6 +295,9 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 	if address == "" {
 		return errors.New("missing AWG local IPv4")
 	}
+	if err := r.writeIntent(id, "stopping"); err != nil {
+		return err
+	}
 	if err = r.runner.Run(ctx, "ip", "rule", "del", "fwmark", table, "lookup", table); err != nil {
 		return err
 	}
@@ -291,6 +316,9 @@ func (r *Runtime) stopLocked(ctx context.Context, id string) error {
 	// The networking is down regardless of whether private file deletion
 	// succeeds. A retained file blocks unsafe Ensure until reconciliation.
 	delete(r.active, id)
+	if err := r.removeIntent(id); err != nil {
+		return err
+	}
 	if err = os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -320,7 +348,7 @@ func (r *Runtime) StopAll(ctx context.Context) error {
 		failures = append(failures, fmt.Errorf("inspect AWG recovery directory: %w", err))
 	} else {
 		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".conf") {
+			if strings.HasSuffix(entry.Name(), ".conf") || strings.HasSuffix(entry.Name(), ".intent.json") {
 				failures = append(failures, fmt.Errorf("AWG runtime recovery pending for %s", entry.Name()))
 			}
 		}
