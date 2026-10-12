@@ -193,7 +193,7 @@ case "${1:-}" in
   printf 'ctl:init-config-platform:%s\\n' "$platform" >> "$KRM_TEST_ORDER"
   [ -n "$output" ] || exit 2
   if [ -n "$ui_output" ]; then
-   printf 'fixture-ui: generated-https\\n' > "$ui_output"
+   printf 'fixture-ui: generated-http\\n' > "$ui_output"
    mkdir "$tls_dir"
    printf 'public certificate\\n' > "$tls_dir/tls.crt"
   fi
@@ -271,7 +271,7 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
     d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';r=self.run_bootstrap_tty(d,e)
     self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n');self.assertEqual((d/'ui-config-used').read_text(),expected)
     order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertIn('installer',order)
- def test_generated_local_ui_cleans_up_pair_and_requires_managed_trust(self):
+ def test_generated_local_ui_cleans_up_pair_and_rejects_custom_inheritance(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui'
   r=self.run_bootstrap_tty(d,e);self.assertEqual(r.returncode,0,r.stderr)
   for name in ('config-path','ui-config-path'):
