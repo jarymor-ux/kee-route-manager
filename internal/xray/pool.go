@@ -17,7 +17,9 @@ import (
 
 func (m *Manager) Bootstrap(ctx context.Context, desired tunnel.DesiredPool) error {
 	slots, nodes, initialTag := desired.Slots, desired.Nodes, desired.Selection.Tag
-	if err:=m.ensureAWGPool(ctx,slots,nodes);err!=nil{return err}
+	if err := m.ensureAWGPool(ctx, slots, nodes); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	managed, e := BuildManaged(m.cfg, slots, nodes)
@@ -74,7 +76,9 @@ func (m *Manager) installManaged(ctx context.Context, managed Managed, initialTa
 }
 func (m *Manager) ApplyPool(ctx context.Context, desired tunnel.DesiredPool) error {
 	oldSlots, newSlots, nodes, active := desired.Previous, desired.Slots, desired.Nodes, desired.ActiveSlot
-	if err:=m.ensureAWGPool(ctx,newSlots,nodes);err!=nil{return err}
+	if err := m.ensureAWGPool(ctx, newSlots, nodes); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	managed, e := BuildManaged(m.cfg, newSlots, nodes)
