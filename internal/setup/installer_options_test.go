@@ -151,14 +151,6 @@ func TestLocalUIWizardValidatesBindPortAndHostnameInBothLanguages(t *testing.T) 
 		})
 	}
 }
-func containsSetupHost(hosts []string, want string) bool {
-	for _, host := range hosts {
-		if host == want {
-			return true
-		}
-	}
-	return false
-}
 func TestPanelHostnameValidationAndHTTPDefault(t *testing.T) {
 	for _, name := range []string{"alice.jopa", "alice.home.arpa", "Alice.Example.RU", "xn--e1afmkfd.xn--p1ai"} {
 		if !validPanelHostname(name) {
