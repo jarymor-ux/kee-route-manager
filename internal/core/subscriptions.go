@@ -17,6 +17,7 @@ func (m *Manager) AWGProfilesChanged() {
 	m.subscriptionMu.Unlock()
 	m.queueSubscriptionBenchmark()
 }
+
 type managedSourceFetcher interface {
 	Sources() []config.Source
 	ReplaceSources([]config.Source) error
