@@ -13,6 +13,7 @@ import (
  "strconv"
  "strings"
  "sync"
+ "time"
 )
 
 type Runner interface {
@@ -21,7 +22,14 @@ type Runner interface {
 type SystemRunner struct{}
 func (SystemRunner) Run(ctx context.Context,name string,args ...string)error {
  if name!="awg-quick" && name!="ip" {return errors.New("unsupported AWG system command")}
- cmd:=exec.CommandContext(ctx,name,args...)
+ commandCtx,cancel:=context.WithTimeout(ctx,20*time.Second)
+ defer cancel()
+ cmd:=exec.CommandContext(commandCtx,name,args...)
+ if name=="awg-quick" {
+  // Avoid reliance on an AWG kernel module. The official userspace backend
+  // is selected without executing arbitrary profile-provided hooks.
+  cmd.Env=append(os.Environ(),"WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go")
+ }
  if err:=cmd.Run();err!=nil {return fmt.Errorf("AWG runtime command %s failed: %w",name,err)}
  return nil
 }
