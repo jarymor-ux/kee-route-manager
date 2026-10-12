@@ -217,6 +217,7 @@ type Update struct {
 	HealthGracePeriod Duration `json:"health_grace_period"`
 	AllowDowngrade    bool     `json:"allow_downgrade"`
 }
+
 // Components controls the independent VPN runtime update-check schedule.
 type Components struct {
 	CheckInterval Duration `json:"check_interval"`
