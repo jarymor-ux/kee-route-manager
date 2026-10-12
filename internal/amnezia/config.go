@@ -96,7 +96,9 @@ func ParseConfig(data []byte) (Profile, error) {
 			return Profile{}, fmt.Errorf("profile directive %q is not allowed", key)
 		}
 		if section == "interface" || section == "device" {
-			if section == "device" && (key=="privatekey" || key=="address" || key=="dns" || key=="mtu") {return Profile{},fmt.Errorf("invalid Device directive %q",key)}
+			if section == "device" && (key == "privatekey" || key == "address" || key == "dns" || key == "mtu") {
+				return Profile{}, fmt.Errorf("invalid Device directive %q", key)
+			}
 			switch key {
 			case "privatekey":
 				p.Interface.PrivateKey = value
@@ -158,7 +160,9 @@ func ParseConfig(data []byte) (Profile, error) {
 					p.Interface.H4 = value
 				}
 			case "randomtrailers", "disablecookies":
-				if value != "true" && value != "false" {return Profile{},fmt.Errorf("invalid AWG3.1 boolean %s",key)}
+				if value != "true" && value != "false" {
+					return Profile{}, fmt.Errorf("invalid AWG3.1 boolean %s", key)
+				}
 				p.Interface.Additional[key] = value
 			case "headerprotectionkey":
 				if !validKey(value) {
