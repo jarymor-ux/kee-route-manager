@@ -107,7 +107,7 @@ func (m *Manager) Check(ctx context.Context, force bool) (Snapshot, error) {
 			item.Error += latestErr.Error()
 		} else {
 			item.LatestVersion = latest
-			item.UpdateAvailable = installed != "" && latest != "" && installed != latest
+			item.UpdateAvailable = installed != "" && installed != "present" && latest != "" && installed != latest
 		}
 		snapshot.Items = append(snapshot.Items, item)
 	}
