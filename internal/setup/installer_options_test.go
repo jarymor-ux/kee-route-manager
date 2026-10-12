@@ -133,7 +133,7 @@ func TestLocalUIWizardValidatesBindPortAndHostnameInBothLanguages(t *testing.T) 
 			if ui.Web.Listen != "192.168.1.1:443" || core.API.Listen != "127.0.0.1:9443" || core.Benchmark.FullInterval.Duration != 7*time.Minute || core.Subscriptions.CacheEnabled {
 				t.Fatal("UI options modified controller ownership or benchmark settings")
 			}
-			if ui.UIProxy.Upstream != "http://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.Web.TLS.Enabled || core.API.TLS.Enabled) {
+			if ui.UIProxy.Upstream != "http://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.Web.TLS.Enabled || core.API.TLS.Enabled {
 				t.Fatal("local HTTP UI unexpectedly requires TLS")
 			}
 			messages := messagesEN
