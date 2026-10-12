@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/amnezia"
+	"github.com/jarymor-ux/kee-route-manager/internal/config"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 )
 
@@ -89,7 +89,7 @@ func Outbound(n model.Node, tag string) (map[string]any, error) {
 			"settings": map[string]any{"domainStrategy": "UseIP"},
 			"streamSettings": map[string]any{"sockopt": map[string]any{
 				"interface": "krmawg" + n.AWGProfileID[:8],
-				"mark": mark,
+				"mark":      mark,
 			}},
 		}, nil
 	}
