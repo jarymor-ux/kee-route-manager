@@ -145,6 +145,12 @@ func (r *Runtime) Ensure(ctx context.Context, id string) (string, string, error)
 			return "", "", errors.New("AWG routing mark or interface conflicts with active profile")
 		}
 	}
+	// A previous process or another network manager may own the same
+	// interface, routing table or fwmark. Probe the live kernel before
+	// writing recovery evidence or executing any network mutation.
+	if err := inspectKernelAvailability(ctx, r.runner, name, table); err != nil {
+		return "", "", err
+	}
 	safe, err := isolatedConfig(raw)
 	if err != nil {
 		return "", "", err
