@@ -133,7 +133,7 @@ func TestServiceWorkerAssets(t *testing.T) {
 		scriptNames = append(scriptNames, script[1])
 		paths = append(paths, "/assets/"+script[1])
 	}
-	want := "app.js,workspace.js,charts.js,dialogs.js,settings.js,panel.js,boot.js"
+	want := "app.js,workspace.js,charts.js,dialogs.js,settings.js,panel.js,components.js,boot.js"
 	if strings.Join(scriptNames, ",") != want {
 		t.Fatalf("workspace initialization order: %v", scriptNames)
 	}
