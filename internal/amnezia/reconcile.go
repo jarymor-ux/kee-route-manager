@@ -77,6 +77,10 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			failures = append(failures, fmt.Errorf("AWG recovery config %s differs from current managed profile", name))
 			continue
 		}
+		if err := r.validateIntent(id); err != nil {
+			failures = append(failures, fmt.Errorf("AWG recovery %s has invalid lifecycle intent: %w", name, err))
+			continue
+		}
 		table, err := tableNumber(id)
 		if err == nil {
 			err = inspectKernelAvailability(ctx, r.runner, name, table)
@@ -87,6 +91,10 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		}
 		// No interface, route or policy rule exists for this identity. This
 		// path does not mutate live networking and is safe after reboot.
+		if err := r.removeIntent(id); err != nil {
+			failures = append(failures, fmt.Errorf("release AWG recovery intent %s: %w", name, err))
+			continue
+		}
 		if err := os.Remove(path); err != nil {
 			failures = append(failures, fmt.Errorf("release stale AWG recovery %s: %w", name, err))
 		}
