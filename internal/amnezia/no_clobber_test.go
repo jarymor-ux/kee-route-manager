@@ -18,6 +18,6 @@ func TestAWGNeverReplacesForeignRoutingTable(t *testing.T) {
  if err!=nil {t.Fatal(err)}
  if _,_,err=rt.Ensure(context.Background(),item.ID);err!=nil{t.Fatal(err)}
  for _,cmd:=range runner.calls {
-  if strings.Contains(cmd,"route replace") {t.Fatalf("overwrite of foreign route allowed: %s",cmd)}
+  if strings.Contains(cmd,"route replace") || strings.Contains(cmd,"route flush") {t.Fatalf("AWG must not mutate foreign route entries: %s",cmd)}
  }
 }
