@@ -64,6 +64,8 @@ func ParseConfig(data []byte) (Profile, error) {
 			switch strings.ToLower(line) {
 			case "[interface]":
 				section = "interface"
+			case "[device]":
+				section = "device"
 			case "[peer]":
 				section = "peer"
 			default:
@@ -93,7 +95,8 @@ func ParseConfig(data []byte) (Profile, error) {
 		case "postup", "postdown", "preup", "predown", "saveconfig", "table":
 			return Profile{}, fmt.Errorf("profile directive %q is not allowed", key)
 		}
-		if section == "interface" {
+		if section == "interface" || section == "device" {
+			if section == "device" && (key=="privatekey" || key=="address" || key=="dns" || key=="mtu") {return Profile{},fmt.Errorf("invalid Device directive %q",key)}
 			switch key {
 			case "privatekey":
 				p.Interface.PrivateKey = value
