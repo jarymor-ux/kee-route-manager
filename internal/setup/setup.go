@@ -173,6 +173,7 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	cfg.ApplyPlatformDefaults()
 
 	cfg.API.Enabled = false
+	cfg.API.TLS = config.TLS{}
 	cfg.Web.Enabled = true
 	cfg.Web.Listen = "127.0.0.1:9444"
 	if opts.Listen != "" {
