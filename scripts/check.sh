@@ -3,7 +3,13 @@ set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 unformatted="$(gofmt -l cmd internal)"
-[[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
+if [[ -n "$unformatted" ]]; then
+  printf 'Run gofmt on:\n%s\n' "$unformatted" >&2
+  while IFS= read -r path; do
+    gofmt -d "$path" >&2
+  done <<< "$unformatted"
+  exit 1
+fi
 go test ./...
 go vet ./...
 while IFS= read -r script; do sh -n "$script"; done < <(find install -type f \( -name '*.sh' -o -name '*.init' -o -name 'S9*' \))
