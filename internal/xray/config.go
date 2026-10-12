@@ -67,84 +67,19 @@ func managedRouting(cfg config.Config) map[string]any {
 	}
 	return map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}
 }
-var safeAWGIdentity=regexp.MustCompile(`^[a-f0-9]{32}package xray
-
-import (
-	"encoding/json"
-	"fmt"
-	"net"
-	"net/netip"
-	"regexp"
-	"strconv"
-
-	"github.com/jarymor-ux/kee-route-manager/internal/config"
-	"github.com/jarymor-ux/kee-route-manager/internal/model"
-)
-
-const selectionTag = config.XraySelectionTag
-
-type Managed struct{ API, Inbounds, Outbounds, Routing []byte }
-
-func BuildManaged(cfg config.Config, slots []model.Slot, nodes map[string]model.Node) (Managed, error) {
-	host, portText, e := net.SplitHostPort(cfg.Xray.APIAddress)
-	if e != nil {
-		return Managed{}, e
-	}
-	port, e := strconv.Atoi(portText)
-	if e != nil {
-		return Managed{}, e
-	}
-	api := map[string]any{"api": map[string]any{"tag": cfg.Xray.APITag, "services": []string{"HandlerService", "RoutingService", "StatsService"}}, "inbounds": []any{map[string]any{"tag": cfg.Xray.APITag, "listen": host, "port": port, "protocol": "dokodemo-door", "settings": map[string]any{"address": host}}}}
-	ins := []any{httpInbound("krm-health", cfg.Xray.HealthProxyPort)}
-	outs := []any{map[string]any{"tag": cfg.Xray.ManagedDirectTag, "protocol": "freedom", "settings": map[string]any{}}}
-	byIndex := map[int]model.Slot{}
-	for _, s := range slots {
-		byIndex[s.Index] = s
-	}
-	for i := 0; i < cfg.Pool.Size; i++ {
-		ins = append(ins, httpInbound(fmt.Sprintf("krm-probe-%d", i), cfg.Xray.ProbePortStart+i))
-		tag := fmt.Sprintf("%s%d", cfg.Xray.SlotTagPrefix, i)
-		slot := byIndex[i]
-		if n, ok := nodes[slot.NodeID]; ok {
-			v, e := Outbound(n, tag)
-			if e != nil {
-				return Managed{}, e
-			}
-			outs = append(outs, v)
-		} else {
-			outs = append(outs, blackholeOutbound(tag))
-		}
-	}
-	outs = append(outs, blackholeOutbound(selectionTag))
-	// Xray replaces routing wholesale when loading another configuration file.
-	// With adoption, the base file owns the complete section. Retain the empty
-	// managed fragment's filename for existing snapshot/replay identities.
-	routing := map[string]any{}
-	if cfg.Xray.BaseRoutingFile == "" {
-		routing["routing"] = managedRouting(cfg)
-	}
-	return Managed{pretty(api), pretty(map[string]any{"inbounds": ins}), pretty(map[string]any{"outbounds": outs}), pretty(routing)}, nil
-}
-
-func managedRouting(cfg config.Config) map[string]any {
-	rules := []any{
-		map[string]any{"type": "field", "inboundTag": []string{cfg.Xray.APITag}, "outboundTag": cfg.Xray.APITag},
-		map[string]any{"type": "field", "inboundTag": []string{"krm-health"}, "balancerTag": cfg.Xray.BalancerTag},
-	}
-	for i := 0; i < cfg.Pool.Size; i++ {
-		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{fmt.Sprintf("krm-probe-%d", i)}, "outboundTag": fmt.Sprintf("%s%d", cfg.Xray.SlotTagPrefix, i)})
-	}
-	return map[string]any{"balancers": []any{map[string]any{"tag": cfg.Xray.BalancerTag, "selector": []string{selectionTag}, "strategy": map[string]any{"type": "random"}}}, "rules": rules}
-}
-)
+var safeAWGIdentity = regexp.MustCompile("^[a-f0-9]{32}$")
 func Outbound(n model.Node, tag string) (map[string]any, error) {
-	if n.Protocol=="amneziawg" {
-		if !safeAWGIdentity.MatchString(n.AWGProfileID) {return nil,fmt.Errorf("invalid AWG identity")}
-		address,err:=netip.ParseAddr(n.AWGLocalIPv4)
-		if err!=nil||!address.Is4() {return nil,fmt.Errorf("invalid AWG source IPv4")}
-		return map[string]any{"tag":tag,"protocol":"freedom","sendThrough":address.String(),"settings":map[string]any{"domainStrategy":"UseIP"},"streamSettings":map[string]any{"sockopt":map[string]any{"interface":"krmawg"+n.AWGProfileID[:8]}}},nil
-	}
-	if n.Protocol != "vless" {
+ if n.Protocol == "amneziawg" {
+  if !safeAWGIdentity.MatchString(n.AWGProfileID) {return nil,fmt.Errorf("invalid AWG identity")}
+  address,err := netip.ParseAddr(n.AWGLocalIPv4)
+  if err != nil || !address.Is4() {return nil,fmt.Errorf("invalid AWG source IPv4")}
+  return map[string]any{
+    "tag":tag, "protocol":"freedom", "sendThrough":address.String(),
+    "settings":map[string]any{"domainStrategy":"UseIP"},
+    "streamSettings":map[string]any{"sockopt":map[string]any{"interface":"krmawg"+n.AWGProfileID[:8]}},
+  },nil
+ }
+ if n.Protocol != "vless" {
 		return nil, fmt.Errorf("unsupported protocol %q", n.Protocol)
 	}
 	user := map[string]any{"id": n.UUID, "encryption": defaultString(n.Encryption, "none"), "level": 0}
