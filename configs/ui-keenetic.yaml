@@ -12,13 +12,13 @@ api:
   enabled: false
 web:
   enabled: true
-  listen: "0.0.0.0:9444"
+  listen: "127.0.0.1:9444"
+  # Bind an explicit private LAN IP here if remote LAN access is desired.
   tls:
-    enabled: true
-    auto_generate: true
-    cert_file: /opt/var/lib/kee-route-manager-ui/tls.crt
-    key_file: /opt/var/lib/kee-route-manager-ui/tls.key
-    hosts: [localhost]
+    enabled: false
+    auto_generate: false
+    cert_file: ""
+    key_file: ""
 ui:
   enabled: true
   upstream: "http://127.0.0.1:9443"
