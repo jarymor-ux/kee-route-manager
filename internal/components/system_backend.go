@@ -51,14 +51,18 @@ func (b *SystemBackend) binary(id ID) string {
 	}
 }
 
-func awgToolsAvailable(lookup func(string)(string,error))bool{
- for _,binary:=range []string{"amneziawg-go","awg","awg-quick","ip","bash"}{
-  if _,err:=lookup(binary);err!=nil{return false}
- }
- return true
+func awgToolsAvailable(lookup func(string) (string, error)) bool {
+	for _, binary := range []string{"amneziawg-go", "awg", "awg-quick", "ip", "bash"} {
+		if _, err := lookup(binary); err != nil {
+			return false
+		}
+	}
+	return true
 }
 func (b *SystemBackend) Installed(ctx context.Context, id ID) (string, error) {
-	if id == AmneziaWG && !awgToolsAvailable(exec.LookPath) {return "",nil}
+	if id == AmneziaWG && !awgToolsAvailable(exec.LookPath) {
+		return "", nil
+	}
 	binary := b.binary(id)
 	if binary == "" || !filepath.IsAbs(binary) {
 		return "", errors.New("unknown runtime executable")
