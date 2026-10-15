@@ -381,7 +381,45 @@ function parseSubscriptionHeaders() {
       || Object.values(headers).some((value) => typeof value !== 'string')) {
     throw new Error('Headers должны быть JSON-объектом со строковыми значениями');
   }
+  const names = Object.keys(headers).map((key) => key.toLowerCase());
+  if (new Set(names).size !== names.length) {
+    throw new Error('Имена заголовков не должны повторяться, в том числе с другим регистром');
+  }
   return headers;
+}
+
+function addSubscriptionHWID() {
+  if (!can('subscriptions.manage')) return;
+  $('#subscription-error').textContent = '';
+  try {
+    const headers = parseSubscriptionHeaders();
+    const keyFor = (name) => {
+      const keys = Object.keys(headers).filter((key) => key.toLowerCase() === name.toLowerCase());
+      if (keys.length > 1) throw new Error(`Уберите повторяющийся заголовок ${name}`);
+      return keys[0];
+    };
+    const hwidKey = keyFor('X-HWID');
+    const userAgentKey = keyFor('User-Agent');
+    const osKey = keyFor('X-Device-OS');
+    const modelKey = keyFor('X-Device-Model');
+    if (hwidKey) {
+      if (!/^[a-zA-Z0-9=-]{10,64}$/.test(headers[hwidKey])) {
+        throw new Error('Исправьте существующий X-HWID: от 10 до 64 букв, цифр, знаков = или -');
+      }
+    } else {
+      if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+        throw new Error('Браузер не поддерживает безопасное создание HWID');
+      }
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      headers['X-HWID'] = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+    if (!userAgentKey) headers['User-Agent'] = 'Happ/4.11.0';
+    if (!osKey) headers['X-Device-OS'] = 'Linux';
+    if (!modelKey) headers['X-Device-Model'] = 'Kee Route Manager';
+    $('#subscription-headers').value = JSON.stringify(headers, null, 2);
+  } catch (error) {
+    $('#subscription-error').textContent = error.message;
+  }
 }
 
 async function saveSubscription(event) {
@@ -673,6 +711,7 @@ if (window.addEventListener) window.addEventListener('hashchange', () => navigat
 
 $('#add-subscription').onclick = () => openSubscriptionEditor();
 $('#subscription-cancel').onclick = clearSubscriptionEditor;
+$('#subscription-hwid').onclick = addSubscriptionHWID;
 $('#subscription-form').addEventListener('submit', saveSubscription);
 $('#test-start').onclick = () => action('/api/v1/actions/benchmark', {}, 'Тестирование запущено');
 $('#benchmark-cancel').onclick = () => action('/api/v1/actions/benchmark/cancel', {}, 'Отмена теста запрошена');

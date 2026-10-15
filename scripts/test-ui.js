@@ -194,6 +194,55 @@ async function versionReloadChecks() {
   }
 }
 
+async function subscriptionHWIDChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('authenticated = true; permissions = new Set(allPermissions)');
+  let randomCalls = 0;
+  h.context.crypto = { getRandomValues(bytes) { randomCalls++; bytes.fill(0xab); return bytes; } };
+  h.select('#subscription-headers').value = JSON.stringify({ Authorization: 'synthetic-private' });
+  h.select('#subscription-hwid').onclick();
+  const first = JSON.parse(h.select('#subscription-headers').value);
+  assert.equal(first['X-HWID'], 'ab'.repeat(16));
+  assert.equal(first['User-Agent'], 'Happ/4.11.0');
+  assert.equal(first['X-Device-OS'], 'Linux');
+  assert.equal(first.Authorization, 'synthetic-private');
+  h.select('#subscription-hwid').onclick();
+  assert.equal(randomCalls, 1, 'repeated preset application must preserve the device identity');
+  assert.deepEqual(JSON.parse(h.select('#subscription-headers').value), first);
+
+  h.select('#subscription-id').value = 'primary';
+  h.select('#subscription-name').value = 'Primary';
+  h.select('#subscription-url').value = 'https://provider.example/subscription';
+  h.select('#subscription-enabled').checked = true;
+  h.respond({ status: 200, ok: true, data: { ok: true } });
+  await h.run('saveSubscription({ preventDefault() {} })');
+  const saved = JSON.parse(h.requests.find((r) => r.url.endsWith('/subscriptions/save')).options.body);
+  assert.deepEqual(saved.headers, first, 'the identity must be included in the existing private source save');
+  h.context.saved = saved;
+  h.run('subscriptionData = [saved]; openSubscriptionEditor("primary")');
+  h.context.crypto = undefined;
+  h.select('#subscription-hwid').onclick();
+  assert.equal(JSON.parse(h.select('#subscription-headers').value)['X-HWID'], first['X-HWID']);
+
+  const custom = { 'x-hwid': 'existing-device-12345', 'user-agent': 'Custom/2', 'x-device-os': 'Linux', 'X-Device-Model': 'custom' };
+  h.select('#subscription-headers').value = JSON.stringify(custom);
+  h.select('#subscription-hwid').onclick();
+  assert.deepEqual(JSON.parse(h.select('#subscription-headers').value), custom, 'case-insensitive existing headers must retain their values');
+  for (const raw of ['{', '{"X-HWID":"bad"}', '{"X-HWID":"existing-device-12345","x-hwid":"another-device-12345"}', '{}']) {
+    h.select('#subscription-headers').value = raw;
+    h.select('#subscription-hwid').onclick();
+    assert.equal(h.select('#subscription-headers').value, raw, 'invalid input or missing secure randomness must not partially replace headers');
+    assert(h.select('#subscription-error').textContent);
+  }
+  const requests = h.requests.length;
+  h.run('permissions = new Set(["subscriptions.view"])');
+  h.select('#subscription-headers').value = '{}';
+  h.select('#subscription-hwid').onclick();
+  assert.equal(h.select('#subscription-headers').value, '{}');
+  assert.equal(h.requests.length, requests, 'the preset must not contact any provider or register a device');
+}
+
 async function appChecks() {
   const h = appHarness();
   await new Promise(setImmediate);
@@ -1157,6 +1206,7 @@ async function main() {
   await userManagementChecks();
   await appChecks();
   await versionReloadChecks();
+  await subscriptionHWIDChecks();
   await updateChecks();
   await updateTrialReconnectChecks();
   await updateFailureAfterReconnectChecks();

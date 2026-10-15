@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.3.3 / 1.3.3-rc.1 — 2026-10-16
+
+- Import supported VLESS Reality TCP and WebSocket/TLS nodes from strict Xray JSON configurations and arrays, including base64 responses. Keep provider routing, DNS and inbounds outside the managed configuration; refuse unsupported outbound dependencies and TLS behavior.
+- Add an opt-in subscription-editor preset that prepares a persistent random HWID and compatible Happ headers in the existing private source store. Preserve existing identities and custom headers; reject case-insensitive duplicate header names so downloads cannot alternate device IDs.
+- Diagnose explicit provider HWID requirements, exhausted device limits and dummy `App not supported` nodes without exposing private subscription content. No automatic device registration before Save, scheduler/cache changes, new dependencies or launcher-protocol changes.
+
 ## 1.3.2 / 1.3.2-rc.1 — 2026-10-09
 
 - Wait for coherent Keenetic configuration checksums after client policy and local DNS writes, retaining exact target, whole-file ownership and clean saved-baseline checks. Verify complete saved configuration content instead of treating matching metadata alone as successful persistence.

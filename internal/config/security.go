@@ -261,10 +261,22 @@ func (c Config) validateController() []error {
 				add(fmt.Errorf("subscription %q URL invalid", s.ID))
 			}
 		}
+		seenHeaders := make(map[string]bool, len(s.Headers))
+		duplicateHeaders := false
 		for k, v := range s.Headers {
 			if !ValidSubscriptionHeader(k, v) {
 				add(fmt.Errorf("subscription %q header invalid", s.ID))
 			}
+			name := strings.ToLower(k)
+			if seenHeaders[name] {
+				duplicateHeaders = true
+			}
+			seenHeaders[name] = true
+		}
+		if duplicateHeaders {
+			// Header.Set canonicalizes names, so map iteration would otherwise
+			// randomly select which private identity/value reaches the provider.
+			add(fmt.Errorf("subscription %q contains duplicate header names (case-insensitive)", s.ID))
 		}
 	}
 	if c.Benchmark.Speed.MinSampleBytes < 1 || c.Benchmark.Speed.MaxSampleBytes < c.Benchmark.Speed.MinSampleBytes || c.Benchmark.Speed.MaxSampleBytes > 1<<30 || c.Benchmark.Speed.WarmupBytes < 0 || c.Benchmark.Speed.WarmupBytes > 1<<30 {

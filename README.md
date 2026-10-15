@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.3.2` and Release Candidate `v1.3.2-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.3.3` and Release Candidate `v1.3.3-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -15,7 +15,7 @@ Runtime components:
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 - `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/OpenWrt local installations, UI; verifies signed release slots and applies updates on explicit request.
 
-Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists (Reality TCP and WebSocket TLS). Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
+Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
 
 Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. Linux/OpenWrt managed nftables can bypass interception independently of Xray. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every platform remains experimental pending hardware checks.
 

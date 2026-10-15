@@ -286,10 +286,32 @@ func (f *Fetcher) download(ctx context.Context, s config.Source) ([]byte, error)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Some providers return HTTP 200 and a dummy configuration when device
+	// identification fails. Diagnose only their explicit rejection flags;
+	// X-Hwid-Limit alone advertises a feature, not an exhausted quota.
+	if subscriptionHeaderEnabled(resp.Header, "X-Hwid-Max-Devices-Reached") {
+		return nil, errors.New("subscription provider device limit reached; remove an existing device or contact the provider")
+	}
+	if subscriptionHeaderEnabled(resp.Header, "X-Hwid-Not-Supported") {
+		return nil, errors.New("subscription provider requires HWID support; configure a stable X-HWID header")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return limited(ctx, resp.Body, int64(f.cfg.MaxResponseBytes))
+}
+
+func subscriptionHeaderEnabled(headers http.Header, name string) bool {
+	for _, value := range headers.Values(name) {
+		value = strings.TrimSpace(value)
+		if value == "1" || strings.EqualFold(value, "true") {
+			return true
+		}
+	}
+	return false
 }
 
 type contextReader struct {

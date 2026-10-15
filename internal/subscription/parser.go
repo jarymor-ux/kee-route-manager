@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
 	"net"
@@ -14,6 +15,9 @@ import (
 	"strings"
 	"unicode/utf8"
 )
+
+var ErrNoSupportedNodes = errors.New("no supported VLESS Reality TCP or VLESS WS/TLS nodes")
+var ErrProviderAppUnsupported = errors.New("provider requires a supported client or device identity; configure subscription headers")
 
 func ParsePayload(data []byte, source string) ([]model.Node, error) {
 	if len(data) == 0 {
@@ -33,14 +37,33 @@ func ParsePayload(data []byte, source string) ([]model.Node, error) {
 		}
 	}
 	var best []model.Node
+	var parseErr error
+	dummy := false
 	for _, c := range candidates {
-		xs := parseLines(c, source)
+		trimmed := strings.TrimSpace(c)
+		var xs []model.Node
+		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+			var err error
+			xs, err = parseXrayJSON(trimmed, source)
+			if err != nil {
+				parseErr = err
+			}
+		} else {
+			xs = parseLines(c, source)
+			dummy = dummy || providerDummy(c)
+		}
 		if len(xs) > len(best) {
 			best = xs
 		}
 	}
 	if len(best) == 0 {
-		return nil, fmt.Errorf("no supported VLESS Reality TCP or VLESS WS/TLS nodes")
+		if dummy {
+			return nil, ErrProviderAppUnsupported
+		}
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		return nil, ErrNoSupportedNodes
 	}
 	return best, nil
 }
@@ -94,7 +117,7 @@ func ParseVLESS(raw, source string) (model.Node, error) {
 	if u.User != nil {
 		id = u.User.Username()
 	}
-	if !uuidOK(id) {
+	if !uuidOK(id) || id == "00000000-0000-0000-0000-000000000000" {
 		return model.Node{}, fmt.Errorf("invalid UUID")
 	}
 	host := u.Hostname()
@@ -224,4 +247,18 @@ func uniq(xs []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func providerDummy(text string) bool {
+	for _, field := range strings.Fields(text) {
+		u, err := url.Parse(field)
+		if err != nil || !strings.EqualFold(u.Scheme, "vless") || u.User == nil {
+			continue
+		}
+		ip := net.ParseIP(u.Hostname())
+		if u.User.Username() == "00000000-0000-0000-0000-000000000000" && ip != nil && (ip.IsUnspecified() || ip.IsLoopback()) && strings.EqualFold(strings.TrimSpace(u.Fragment), "App not supported") {
+			return true
+		}
+	}
+	return false
 }

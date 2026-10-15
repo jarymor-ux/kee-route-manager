@@ -106,8 +106,18 @@ async function main() {
       await page.locator('#subscription-modal button[type="submit"]').focus();await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-id');
       await page.keyboard.press('Escape');assert(await page.locator('#subscription-modal').evaluate(el=>el.classList.contains('hidden')));assert.equal(await page.evaluate(()=>document.activeElement.id),'add-subscription');
       const editSource=page.locator('.subscription-edit[data-id="primary"]');await editSource.focus();await editSource.click();
+      await page.locator('#subscription-hwid').click();
+      const hwidHeaders=JSON.parse(await page.locator('#subscription-headers').inputValue());
+      assert(/^[a-f0-9]{32}$/.test(hwidHeaders['X-HWID']));
+      await page.locator('#subscription-hwid').click();
+      assert.equal(JSON.parse(await page.locator('#subscription-headers').inputValue())['X-HWID'],hwidHeaders['X-HWID']);
+      await noOverflow(page,`${width}/${scheme} subscription HWID editor`);
       await page.locator('#subscription-name').fill('Primary renamed');await page.locator('#subscription-form button[type="submit"]').click();
       await page.waitForFunction(()=>document.querySelector('#subscriptions-body').textContent.includes('Primary renamed'),{},{timeout:1000});
+      assert.equal(state.sources.find(item=>item.id==='primary').headers['X-HWID'],hwidHeaders['X-HWID']);
+      await page.locator('.subscription-edit[data-id="primary"]').click();
+      assert.equal(JSON.parse(await page.locator('#subscription-headers').inputValue())['X-HWID'],hwidHeaders['X-HWID']);
+      await page.keyboard.press('Escape');
       assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'primary','subscription save lost keyboard row focus');
       const sourceButton=page.locator('.subscription-edit[data-id="primary"]');await sourceButton.evaluate(el=>window.fixtureSourceElement=el);await page.evaluate(()=>loadSubscriptions());
       assert(await sourceButton.evaluate(el=>el===window.fixtureSourceElement),'background subscription refresh replaced focused control');

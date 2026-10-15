@@ -144,6 +144,8 @@
     <label>URL<input id="subscription-url" required spellcheck="false" placeholder="https://provider.example/subscription"></label>
     <label class="checkbox-label"><input id="subscription-enabled" type="checkbox" checked> Включена</label>
     <label>Headers (JSON)<textarea id="subscription-headers" spellcheck="false" placeholder="{}"></textarea></label>
+    <button id="subscription-hwid" type="button" class="ghost compact">Добавить заголовки Happ / HWID</button>
+    <p class="muted">HWID создаётся один раз для этой подписки и сохраняется с заголовками. Существующий HWID сохраняется. После сохранения провайдер может зарегистрировать новое устройство и занять место в лимите подписки.</p>
     <div id="subscription-error" class="error" role="alert"></div>
     <div class="dialog-actions">
       <button id="subscription-cancel" type="button" class="ghost">Отмена</button>

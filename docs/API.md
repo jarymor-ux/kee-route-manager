@@ -39,6 +39,8 @@ Panel sessions with `subscriptions.manage` can manage subscription sources at ru
 
 Mutation endpoints require the normal session, CSRF token and same-origin check. They run the same configuration validation as startup, so invalid IDs/URLs/headers, the source limit and deletion of the last configured source are rejected. Successful changes are persisted before becoming live and schedule a benchmark; errors returned to the browser never include upstream URLs, headers or persistence details.
 
+The optional browser HWID preset uses the existing `headers` object and source-store schema. It sends nothing until Save and retains an existing device identity. Request-header names are unique without regard to case. Clients must persist and reuse their chosen `X-HWID`; fetching never creates or rotates it. A provider rejection is reflected in the source's sanitized `last_error`, including explicit missing-HWID and device-limit diagnostics.
+
 ## Users and permissions
 
 Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `permissions`, `updated_at`), top-level `username`, `permissions`, `csrf` and `expires_at`. User IDs remain stable across edits. Each network API request checks the current user and permissions; hiding a panel control is not authorization. Permission edits take effect for existing sessions on their next request. Password changes, rename, blocking and deletion revoke existing sessions. Already accepted operations can finish; revocation does not reverse routing effects.
