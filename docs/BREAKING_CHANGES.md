@@ -1,6 +1,10 @@
 # Breaking changes
 
-## Current: v1.3.2 / v1.3.2-rc.1
+## Current: v1.3.3 / v1.3.3-rc.1
+
+The current application adds a persistent subscription HWID/header preset and bounded Xray JSON node extraction. These do not make an arbitrary Xray JSON configuration or VPN engine importable. Saving an enabled source may register a provider device. Back up its private subscription sidecars before downgrading; see [configuration details](CONFIGURATION.md#subscription-formats-and-device-identity). No AmneziaWG runtime is part of these releases.
+
+The following launcher, state and platform migration constraints continue to apply:
 
 1. A separately installed stable launcher supervises the daemon and, on Keenetic/OpenWrt local-ui installations, the UI. It imports a signed protocol-1 daemon/UI/CLI bundle into private release slots. The launcher, service scripts and configuration schema upgrades require separate maintenance.
 2. The shipped templates use `update.enabled: true` and `check_interval: 30m` to check for new versions automatically every 30 minutes. Applying one requires an explicit UI action or `kee-route-managerctl update-apply`; `auto_apply` must remain false. Discovery and downloads verify the pinned signing key, channel, platform, version and asset hashes.

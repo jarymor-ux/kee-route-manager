@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-KRM 管理 Xray 节点池、订阅与故障切换。**Release `v1.3.3` 与 Release Candidate `v1.3.3-rc.1` 使用独立发布渠道。平台支持在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
+KRM 管理 Xray 节点池、订阅与故障切换。目前仅支持 Xray，不支持 AmneziaWG 或其他 VPN 内核。**Release `v1.3.3` 与 Release Candidate `v1.3.3-rc.1` 使用独立发布渠道。平台支持在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
 面板现在分为路由器和 VPN 两个菜单，提供指标仪表板、有限历史记录和由服务端验证权限的多用户管理。基准测试期间可以执行兼容的路由器操作和手动切换路由；重启操作先取消测试并等待清理。参见[凭据迁移和回滚限制](docs/API.md#credential-migration-and-recovery)。
 

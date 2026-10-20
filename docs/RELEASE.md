@@ -23,20 +23,20 @@ Enable [GitHub release immutability](https://docs.github.com/en/code-security/ho
 3. Create and push a new tag for the tested commit in the appropriate branch. Never move an existing release tag. The workflow validates the tag, then builds and verifies signed artifacts.
 4. The workflow creates a draft with the version-derived prerelease flag, uploads the complete artifact set, downloads it again and verifies signatures, channel binding, sizes and digests before publishing with that same flag and `latest=false`, using the [GitHub CLI release options](https://cli.github.com/manual/gh_release_create). With immutability enabled, publication locks the assets and tag. A failed upload or verification leaves an unpublished draft for inspection; the workflow never replaces assets on retry.
 
-A manual run uses the same gates and requires an existing tag:
+A manual run uses the same gates and requires an existing, exact tag at the intended commit. Replace the placeholder below with a newly prepared tag; rerunning an already published tag does not overwrite its immutable release:
 
 ```sh
-gh workflow run ci.yml --ref v1.1.0-rc.7 --repo jarymor-ux/kee-route-manager
+gh workflow run ci.yml --ref vX.Y.Z-rc.N --repo jarymor-ux/kee-route-manager
 ```
 
 Artifact signing and immutable tags are separate controls. The workflow signs release content with Ed25519; it does not generate or validate an additional GPG/SSH Git-tag signature.
 
 ## Artifact contract
 
-For a local signed build from the intended source commit:
+For a local signed build from the intended source commit (replace the version placeholder with an exact, existing tag that resolves to HEAD):
 
 ```sh
-KRM_RELEASE_TAG=v1.2.1-rc.1 KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
+KRM_RELEASE_TAG=vX.Y.Z-rc.N KRM_RELEASE_PRIVATE_KEY=/secure/external/release.private.key ./scripts/build-release.sh
 python3 scripts/verify-release.py release/dist
 
 # KRM_RELEASE_PUBLIC_KEY is reserved for isolated build/test fixtures.
@@ -73,9 +73,9 @@ The runtime editor can be delivered in an ordinary signed application update. Lo
 
 Upgrade the launcher before writing additional SNI identities: earlier binaries reject the new optional UI TLS field. Keep the original UI YAML/certificates for a coordinated maintenance rollback; the older UI cannot parse additional certificates. Restoring an older binary does not restore newer permission vocabulary, users or controller state. Never overwrite post-commit state from a backup.
 
-Fresh wizard settings: benchmark interval defaults to6h, new interactive subscription caching defaults off, UI binds loopback unless a private IPv4 is explicitly chosen; HTTPS9444 and optional local DNS certificate name are prompted. A hostname SAN does not register DNS. Prepared configs bypass these prompts and preserve their own cadence/cache/listen values.
+Fresh wizard settings: benchmark interval defaults to 6h, new interactive subscription caching defaults off, UI binds loopback unless a private IPv4 is explicitly chosen; HTTPS port 9444 and optional local DNS certificate name are prompted. A hostname SAN does not register DNS. Prepared configs bypass these prompts and preserve their own cadence/cache/listen values.
 
-For firmware with loopback `/ci/` export denied, use v1.2.1+ application binaries. Configuration reads fall back to bounded validated local NDMC `more` commands after HTTP403/404; saved/running checksum and whole-config ownership checks remain mandatory. Existing v1.2.0 release files remain immutable.
+For firmware with loopback `/ci/` export denied, use v1.2.1+ application binaries. Configuration reads fall back to bounded validated local NDMC `more` commands after HTTP 403/404; saved/running checksum and whole-config ownership checks remain mandatory. Existing v1.2.0 release files remain immutable.
 
 ## v1.3.1 workspace UI
 

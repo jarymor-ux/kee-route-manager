@@ -1,11 +1,41 @@
 # Installation
 
-The complete deployment guide is [AGENT_INSTALL.md](AGENT_INSTALL.md). It is written for an agent starting with only the repository link and covers authenticated SSH, router inventory/backups, private configuration, signed bootstrap and verification.
+**Current releases:** [v1.3.3 (stable)](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v1.3.3) and [v1.3.3-rc.1 (release candidate)](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v1.3.3-rc.1). Choose a single immutable release and use its matching artifacts. Do not install from the mutable `main` branch or `/releases/latest`.
 
-Modes: `KRM_MODE=core`, `local-ui` (requires two private config files), `ui` (requires upstream public CA and authenticated SSH tunnel for remote controller). Each platform installer refuses to overwrite an existing installation. Installation expects existing valid strict-JSON Xray confdir and matching routing/inbound tags; it does not install Xray/Entware/XKeen itself.
+This is a short entry point. The authoritative step-by-step runbook, including backups, trust verification, migration and recovery, is [AGENT_INSTALL.md](AGENT_INSTALL.md).
 
-Artifacts pin `v1.1.0-rc.7`; bootstrap authenticates manifests/checksums and complete install payload before executing downloaded programs. Native OpenSSL Ed25519 verification and curl with trusted CAs are mandatory. No downloads from mutable `main`.
+## Prerequisites
 
-Restore occurs through the live daemon before service shutdown. On drift/restore failure keep the installation for diagnosis. Reinstall requires backing up/moving retained private config or intentional purge. A fresh core installation includes the stable launcher. On Keenetic/OpenWrt local-ui installations it supervises both core and UI; systemd keeps the UI in its separate unprivileged service. Checks run automatically, installation is manual through the panel/CLI, and failed read-only trials return to the previous signed release. Existing installations need a private backup and controlled launcher migration; do not run the clean installer over them. See [update format](UPDATE_FORMAT.md).
+- A working Xray installation with valid **strict-JSON** configuration, known inbound/routing tags and access to its actual files. KRM does **not** install or configure Xray, XKeen or Entware for you.
+- Authorized SSH/root access, an out-of-band recovery path and a private backup of router/Xray configuration. Hardware support on Keenetic, OpenWrt and Linux remains experimental; read [known limitations](KNOWN_LIMITATIONS.md).
+- Independent health targets and your own supported VLESS subscription(s). Do not commit subscription URLs, provider headers, credentials or device identifiers to Git.
 
-All platforms are experimental. Keenetic automatic platform bypass is not supported; Linux/OpenWrt bypass requires managed interception. Hardware acceptance remains pending; see [known limitations](KNOWN_LIMITATIONS.md).
+## Fresh interactive installation
+
+1. Select the signed `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` **asset** from the same fixed release. Verify the source, release inventory and signing-key trust as described in the runbook.
+2. Download that specific platform asset to the target host, **without piping the download into a shell**:
+
+   ```sh
+   curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
+   sh /tmp/krm-bootstrap.sh
+   ```
+
+   Replace `RELEASE_URL` with the HTTPS URL of the chosen release's matching bootstrap asset. The bootstrap verifies the signed manifest and package hashes before executing downloaded binaries. Its own initial download is still dependent on your trusted GitHub/TLS path.
+3. With a terminal and no `KRM_CONFIG_FILE`, the signed RU/EN wizard builds the validated private controller configuration. Default mode is `local-ui`; set `KRM_MODE=core` to install the controller only. Do not guess routing tags. Use a verified `kee-route-managerctl route-candidates --file PATH` to inspect existing Xray rules.
+4. Verify daemon readiness, Xray selection, panel login if enabled, and the actual client route. HTTP 200 alone does not establish VPN health. Preserve configuration/state backups and recovery access.
+
+For generated local UI, the controller API uses TLS on loopback and the UI trusts its installed public certificate. The browser-facing panel also uses HTTPS. A new local wizard installation generates **both** YAML configurations; no second handwritten UI file is needed.
+
+## Prepared / noninteractive configuration
+
+To skip the wizard, prepare a private controller YAML from `configs/keenetic.yaml`, `configs/openwrt.yaml` or `configs/linux-systemd.yaml`, validate the Xray paths/tags and run:
+
+```sh
+KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
+```
+
+For prepared `KRM_MODE=local-ui`, supply **both** `KRM_CONFIG_FILE` and `KRM_UI_CONFIG_FILE`, with matching controller API and UI upstream TLS settings. Unlike wizard-generated files, the tracked controller templates use an HTTP **loopback-only** API and the tracked UI templates use `http://127.0.0.1:9443` upstream. Do not change either loopback upstream address to a LAN/WAN listener. The supplied UI templates bind `0.0.0.0:9444` with browser-facing TLS: review or restrict that listener to the trusted private interface before installing.
+
+Standalone `KRM_MODE=ui` needs a prepared UI YAML, `KRM_UPSTREAM_CA_FILE` and an authenticated SSH tunnel to the controller; no unchecked upstream certificates. Existing installations are **never overwritten** by the clean installer. Use the runbook's dedicated migration/restore/uninstall process, not the fresh bootstrap over a running installation.
+
+Signed update **checks** can be automatic, but applying a release requires an explicit UI/CLI action. The launcher is maintained separately; on Linux/OpenWrt `firewall_mode: managed`, update staging/application is disabled. See [release details](RELEASE.md), [configuration](CONFIGURATION.md) and [limitations](KNOWN_LIMITATIONS.md).

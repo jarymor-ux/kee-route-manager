@@ -1,4 +1,4 @@
-# Kee Route Manager 1.1.0-rc.7 — Keenetic/Entware/XKeen
+# Example controller configuration — Keenetic/Entware/XKeen (not a version-pinned installer)
 # Replace every *.example.invalid URL before installation.
 schema_version: 1
 instance:

@@ -15,7 +15,7 @@ Runtime components:
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 - `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/OpenWrt local installations, UI; verifies signed release slots and applies updates on explicit request.
 
-Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Xray is the first TunnelCore adapter. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
+Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Only the Xray backend is implemented; AmneziaWG and other tunnel engines are not supported. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
 
 Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. Linux/OpenWrt managed nftables can bypass interception independently of Xray. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every platform remains experimental pending hardware checks.
 
@@ -25,7 +25,7 @@ Router → System offers Release Candidate (`rc`) and Release (`stable`) update 
 
 For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-For a fresh installation, download the bootstrap for your platform from **one immutable signed release containing the interactive installer**, then run it without a config:
+For a fresh installation, download the bootstrap for your platform from **one immutable signed release containing the interactive installer** (currently `v1.3.3` stable or `v1.3.3-rc.1` RC), then run it without a config:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
