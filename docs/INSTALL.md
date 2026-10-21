@@ -1,12 +1,12 @@
 # Installation
 
-**Version 2.0.0 security:** built with Go 1.27.3, with the fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). Legacy immutable v1.3.3 uses affected Go 1.27.2; its signatures do not patch that toolchain. Follow [offline migration](BREAKING_CHANGES.md#200-keeneticnetcraze-only-router-targets) before upgrading an older generated Keenetic YAML. No asset or historical tag is rewritten.
+**Version 2.0.1 security:** built with Go 1.27.3, with the fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). Legacy immutable v1.3.3 uses affected Go 1.27.2; its signatures do not patch that toolchain. Follow [offline migration](BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets) before upgrading an older generated Keenetic YAML. No asset or historical tag is rewritten.
 
-**Release selection:** this runbook accompanies [v2.0.0](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v2.0.0). Verify that its complete signed asset set is actually published before starting; if missing, stop. Choose one immutable release and matching artifacts. Never install from mutable `main` or `/releases/latest`, and do not substitute the older vulnerable v1.3.3.
+**Release selection:** this runbook accompanies [v2.0.1](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v2.0.1). Verify that its complete signed asset set is actually published before starting; if missing, stop. Choose one immutable release and matching artifacts. Never install from mutable `main` or `/releases/latest`, and do not substitute the older vulnerable v1.3.3.
 
 This is a short entry point. The authoritative step-by-step runbook, including backups, trust verification, migration and recovery, is [AGENT_INSTALL.md](AGENT_INSTALL.md).
 
-**Scope:** only Keenetic/Netcraze stock firmware and working Entware/Xray. See [hardware catalogue and KN-2410 steps](HARDWARE.md). Version 2.0.0 adds signed MIPS BE binaries; KN-2410/2510 remain experimental and require actual hardware acceptance. A separate PC can run the management UI manually, never KRM Core as a router.
+**Scope:** only Keenetic/Netcraze stock firmware and working Entware/Xray. See [hardware catalogue and KN-2410 steps](HARDWARE.md). Version 2.0.1 adds signed MIPS BE binaries; KN-2410/2510 remain experimental and require actual hardware acceptance. A separate PC can run the management UI manually, never KRM Core as a router.
 
 ## Prerequisites
 
