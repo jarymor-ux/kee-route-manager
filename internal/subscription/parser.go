@@ -34,6 +34,11 @@ func ParsePayload(data []byte, source string) ([]model.Node, error) {
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 		if b, err := enc.DecodeString(compact); err == nil && utf8.Valid(b) {
 			candidates = append(candidates, string(b))
+			// The alphabets differ only in +/ versus -_, and the Raw variants
+			// differ only in padding. Multiple successful decodings therefore
+			// produce identical bytes; parsing them again duplicates whole
+			// payloads and node allocations. Keep the raw-text candidate too.
+			break
 		}
 	}
 	var best []model.Node
