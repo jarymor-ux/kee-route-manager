@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 — 2026-10-22
 
 - Restrict router deployments to Keenetic/Netcraze on compatible stock KeeneticOS/NDMS and Entware. Remove retired router adapters, installers, service templates and current configuration examples; keep shared Linux/Go tooling and management-only remote UI. Historical releases and changelog entries are unchanged. Older generated Keenetic YAML requires explicit offline removal of retired platform subsections before strict validation.
 - Add MIPS Big Endian soft-float builds and signed-release/installer architecture handling, with separate BE/LE detection and immutable legacy inventory verification. These assets are not retroactively added to published v1.3.3.

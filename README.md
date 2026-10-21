@@ -2,9 +2,9 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-**Security:** published v1.3.3 uses Go 1.27.2 and is affected by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509`). Source now builds with Go 1.27.3; a fixed signed KRM release is still required. Prefer waiting for it before a new deployment. Immutable published assets are unchanged.
+**Version 2.0.0:** builds with Go 1.27.3, including the `crypto/x509` fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Use only the complete signature-verified `v2.0.0` release; if it is not published yet, stop rather than installing from a mutable branch. Legacy v1.3.3 uses affected Go 1.27.2 and remains immutable. [Offline configuration migration](docs/BREAKING_CHANGES.md#200-keeneticnetcraze-only-router-targets) is mandatory for older generated Keenetic YAML containing retired platform subsections.
 
-Kee Route Manager (KRM) is an open panel for Xray, VPN subscriptions, route health and node failover on **Keenetic and Netcraze routers**. [Hardware requirements and compatibility](docs/HARDWARE.md) define the supported scope. **Release `v1.3.3` and Release Candidate `v1.3.3-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) is an open panel for Xray, VPN subscriptions, route health and node failover on **Keenetic and Netcraze routers**. [Hardware requirements and compatibility](docs/HARDWARE.md) define the supported scope. **Version `v2.0.0` targets the stable channel; signed release and candidate channels remain separate.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -17,7 +17,7 @@ Runtime components:
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
 - `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/Netcraze local installations, UI; verifies signed release slots and applies updates on explicit request.
 
-Builds: Linux amd64 (development/tools and management UI), arm64, armv7, mipsle and MIPS BE `mips` (unreleased) for all four runtime components and release tooling. Only the Xray backend is implemented; AmneziaWG and other tunnel engines are not supported. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
+Builds: Linux amd64 (development/tools and management UI), arm64, armv7, mipsle and MIPS BE `mips` for all four runtime components and release tooling. Only the Xray backend is implemented; AmneziaWG and other tunnel engines are not supported. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
 
 Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every router model remains experimental pending hardware checks; independent automatic bypass is also unavailable on Netcraze.
 
@@ -27,7 +27,7 @@ Router → System offers Release Candidate (`rc`) and Release (`stable`) update 
 
 For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-For a fresh installation on a compatible Keenetic/Netcraze, download `bootstrap-keenetic.sh` from **one immutable signed release containing the interactive installer** (currently `v1.3.3` stable or `v1.3.3-rc.1` RC), then run it without a config. These released versions do not contain MIPS BE binaries: KN-2410/2510 require a future signed release, not an LE substitute:
+For a fresh installation on a compatible Keenetic/Netcraze, select the **complete immutable signed `v2.0.0` release**, including `bootstrap-keenetic.sh` and the matching native binary. Version 2.0.0 adds MIPS BE `linux-mips`; KN-2410/2510 remain experimental pending physical-device acceptance. Verify that the release and every signed asset actually exist before proceeding; absence is a stop, not permission to fall back to v1.3.3 or a development build:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL

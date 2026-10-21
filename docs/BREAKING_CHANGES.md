@@ -1,8 +1,8 @@
 # Breaking changes
 
-## Unreleased: Keenetic/Netcraze-only router targets
+## 2.0.0: Keenetic/Netcraze-only router targets
 
-Current source targets only Keenetic and Netcraze running compatible stock KeeneticOS/NDMS with Entware and Xray. The shared platform is `keenetic`; interception remains owned by the operator/XKeen. OpenWrt and standalone Linux/systemd router adapters, services, templates and installers are discontinued for future releases. Linux/Go build infrastructure, amd64 development tools and a manually maintained remote management UI remain. Published releases and their signed inventory remain immutable and verifiable. See [the hardware and ABI catalogue](HARDWARE.md); MIPS BE `mips` is new source functionality, **not an asset in v1.3.3**.
+Current source targets only Keenetic and Netcraze running compatible stock KeeneticOS/NDMS with Entware and Xray. The shared platform is `keenetic`; interception remains owned by the operator/XKeen. OpenWrt and standalone Linux/systemd router adapters, services, templates and installers are discontinued starting with 2.0.0. Linux/Go build infrastructure, amd64 development tools and a manually maintained remote management UI remain. Published releases and their signed inventory remain immutable and verifiable. See [the hardware and ABI catalogue](HARDWARE.md); MIPS BE `mips` is included in 2.0.0, **not an asset in v1.3.3**.
 
 Older wizard-generated **Keenetic** YAML may contain unused `platform.openwrt` and `platform.linux` default subsections. New strict config decoding rejects those retired fields; an unmodified configuration will fail validation and an update trial will refuse/roll back before activation. Do not enable unknown-field parsing or remove the entire platform block.
 
