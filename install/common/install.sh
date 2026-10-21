@@ -7,35 +7,25 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 PLATFORM=${KRM_PLATFORM:?platform wrapper is required}
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
-case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; armv7l|armv7*) ARCH=armv7;; mipsel|mipsle) ARCH=mipsle;; mips)
-  endian=$(od -An -t u1 -j5 -N1 /bin/sh | tr -d '[:space:]')
-  [ "$endian" = 1 ] || fail 'only little-endian MIPS is supported'
-  ARCH=mipsle;; *) fail 'unsupported architecture';; esac
+. "$ROOT/install/common/architecture.sh"
+ARCH=$(krm_detect_arch) || fail "unsupported native CPU/ABI"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/krm-install.XXXXXX")
 TTY_HIDDEN=0
 cleanup(){ [ "$TTY_HIDDEN" = 0 ] || stty echo < /dev/tty 2>/dev/null || true; rm -rf "$STAGE"; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-case "$PLATFORM" in
- keenetic) PREFIX=/opt; BIN=/opt/bin; RUN=/opt/var/run/kee-route-manager; [ -d /opt ] || fail 'Entware /opt is not mounted';;
- openwrt) PREFIX=; BIN=/usr/bin; RUN=/var/run/kee-route-manager;;
- linux-systemd) PREFIX=; BIN=/usr/local/bin; RUN=/run/kee-route-manager;;
- *) fail 'unsupported platform';;
-esac
-case "$PLATFORM" in
- linux-systemd) command -v systemctl >/dev/null 2>&1 || fail 'systemd is required';;
- openwrt) [ -f /etc/rc.common ] || fail 'OpenWrt rc.common/procd is required';;
-esac
+[ "$PLATFORM" = keenetic ] || fail 'only Keenetic/Netcraze installations are supported'
+PREFIX=/opt; BIN=/opt/bin; RUN=/opt/var/run/kee-route-manager
+[ -d /opt ] || fail 'Entware /opt is not mounted'
 CONFIG_DIR=$PREFIX/etc/kee-route-manager
 UI_DIR=$PREFIX/etc/kee-route-manager-ui
 CONFIG=$CONFIG_DIR/config.yaml
 UI_CONFIG=$UI_DIR/config.yaml
-# Linux UI keeps its DynamicUser service; only router platforms already running
-# the UI as root combine it with the launcher-owned controller process tree.
+# Local UI shares the controller launcher; standalone UI remains separate.
 MANAGED_UI=0
 if [ "$MODE" = local-ui ]; then
- case "$PLATFORM" in keenetic|openwrt) MANAGED_UI=1;; esac
+ MANAGED_UI=1
 fi
 INPUT=${KRM_CONFIG_FILE:-}
 [ -n "$INPUT" ] && [ -f "$INPUT" ] || fail 'KRM_CONFIG_FILE must point to a prepared, private YAML configuration'
@@ -115,7 +105,7 @@ fi
 if [ "$MODE" != ui ]; then [ ! -e "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'; fi
 if [ "$MODE" != core ]; then [ ! -e "$UI_CONFIG" ] && [ ! -e "$BIN/kee-route-manager-ui" ] || fail 'existing UI installation detected'; fi
 if [ "$MANAGED_UI" = 1 ]; then
- case "$PLATFORM" in keenetic) UI_SERVICE=/opt/etc/init.d/S98kee-route-manager-ui;; openwrt) UI_SERVICE=/etc/init.d/kee-route-manager-ui;; esac
+ UI_SERVICE=/opt/etc/init.d/S98kee-route-manager-ui
  [ ! -e "$UI_SERVICE" ] || fail 'existing standalone UI service detected; stop and uninstall it before a launcher-managed local-ui installation'
 fi
 mkdir -p "$BIN"
@@ -154,21 +144,9 @@ if [ "$MODE" != ui ]; then
   "$BIN/kee-route-manager-launcher" install --config "$CONFIG" --release-dir "$ROOT/dist"
  fi
 fi
-case "$PLATFORM" in
- linux-systemd)
-  if [ "$MODE" != ui ]; then cp "$ROOT/install/linux-systemd/kee-route-manager.service" /etc/systemd/system/; fi
-  if [ "$MODE" != core ]; then cp "$ROOT/install/linux-systemd/kee-route-manager-ui.service" /etc/systemd/system/; fi
-  systemctl daemon-reload
-  [ "$MODE" = ui ] || systemctl enable --now kee-route-manager
-  [ "$MODE" = core ] || systemctl enable --now kee-route-manager-ui;;
- openwrt)
-  [ "$MODE" = ui ] || { cp "$ROOT/install/openwrt/kee-route-manager.init" /etc/init.d/kee-route-manager; chmod 0755 /etc/init.d/kee-route-manager; /etc/init.d/kee-route-manager enable; /etc/init.d/kee-route-manager start; }
-  [ "$MODE" != ui ] || { cp "$ROOT/install/openwrt/kee-route-manager-ui.init" /etc/init.d/kee-route-manager-ui; chmod 0755 /etc/init.d/kee-route-manager-ui; /etc/init.d/kee-route-manager-ui enable; /etc/init.d/kee-route-manager-ui start; };;
- keenetic)
-  mkdir -p /opt/etc/init.d
-  [ "$MODE" = ui ] || { cp "$ROOT/install/keenetic/S99kee-route-manager" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S99kee-route-manager; /opt/etc/init.d/S99kee-route-manager start; }
-  [ "$MODE" != ui ] || { cp "$ROOT/install/keenetic/S98kee-route-manager-ui" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S98kee-route-manager-ui; /opt/etc/init.d/S98kee-route-manager-ui start; };;
-esac
+mkdir -p /opt/etc/init.d
+[ "$MODE" = ui ] || { cp "$ROOT/install/keenetic/S99kee-route-manager" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S99kee-route-manager; /opt/etc/init.d/S99kee-route-manager start; }
+[ "$MODE" != ui ] || { cp "$ROOT/install/keenetic/S98kee-route-manager-ui" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S98kee-route-manager-ui; /opt/etc/init.d/S98kee-route-manager-ui start; }
 if [ "$MODE" != ui ]; then
  ready=0
  for attempt in 1 2 3 4 5 6 7 8 9 10; do

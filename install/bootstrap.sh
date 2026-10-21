@@ -21,19 +21,15 @@ if [ -n "${KRM_CONFIG_FILE:-}" ]; then
 else
  NEED_CONFIG=1
 fi
-case "$(uname -m)" in
- x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; armv7l|armv7*) ARCH=armv7;; mipsel|mipsle) ARCH=mipsle;; mips)
-  endian=$(od -An -t u1 -j5 -N1 /bin/sh | tr -d '[:space:]')
-  [ "$endian" = 1 ] || fail 'only little-endian MIPS is supported'
-  ARCH=mipsle;; *) fail 'unsupported CPU architecture';;
-esac
+@ARCH_DETECTION@
+ARCH=$(krm_detect_arch) || fail "unsupported native CPU/ABI"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/krm-bootstrap.XXXXXX")
 cd "$WORK"
 WORK=$(pwd -P)
 cat > trusted-public.pem <<'KEY'
 @PUBLIC_PEM@
 KEY
-fetch(){ curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 --connect-timeout 20 --max-time 600 --max-filesize 134217728 -o "$2" "$BASE/$1"; }
+fetch(){ curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 --connect-timeout 20 --max-time 600 --max-filesize 134217728 -o "$2" "$BASE/$1" || fail "download failed: $1; check trusted HTTPS connectivity and staging free space"; }
 verify_signature(){
  openssl base64 -d -A -in "$2" -out signature.bin
  openssl pkeyutl -verify -pubin -inkey trusted-public.pem -rawin -in "$1" -sigfile signature.bin >/dev/null 2>&1 || fail "invalid signature for $1 (or unsupported OpenSSL)"
@@ -57,6 +53,17 @@ verify_file(){
 }
 verify_file "$MANIFEST"
 verify_file "$MANIFEST.sig"
+manifest_size(){
+ size=$(awk -v n="$1" -F '"' '$2 == "name" {selected=($4==n)} $2 == "size" && selected {v=$3;gsub(/[^0-9]/,"",v);print v}' "$MANIFEST")
+ case "$size" in ''|*[!0-9]*) fail "invalid/missing manifest size: $1";; esac
+ [ "$size" -gt 0 ] && [ "$size" -le 209715200 ] || fail "unsupported manifest size: $1"
+ printf '%s\n' "$size"
+}
+require_staging_space(){
+ available=$(df -Pk "$WORK" | awk 'END {print $4}')
+ case "$available" in ''|*[!0-9]*) fail 'cannot determine staging free space';; esac
+ [ "$available" -ge "$((($1 + 1023) / 1024))" ] || fail 'not enough staging free space; select TMPDIR on mounted Entware storage and retry'
+}
 # Parse only the exact top-level fields emitted by the signed release builder.
 version=$(awk -F '"' '/^  "version": / {print $4}' "$MANIFEST")
 channel=$(awk -F '"' '/^  "channel": / {print $4}' "$MANIFEST")
@@ -68,20 +75,36 @@ case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or 
 if [ "$NEED_CONFIG" = 1 ] && [ "$MODE" = ui ]; then
  fail 'KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config; init-config generates controller configuration only'
 fi
+# The signed manifest supplies sizes before any large download. Keep room for
+# both downloaded binaries and their verified payload copies; never count RAM
+# as if it were all available to a tmpfs staging directory.
+components='kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher'
+[ "$MODE" != ui ] || components="kee-route-manager-ui kee-route-managerctl"
+binary_bytes=0
+for component in $components; do
+ bytes=$(manifest_size "$component-linux-$ARCH") || exit 1
+ binary_bytes=$((binary_bytes + bytes))
+done
+archive_bytes=$(manifest_size release-files.tar.gz) || exit 1
+require_staging_space "$((archive_bytes + 2 * binary_bytes + 4194304))"
 fetch release-files.tar.gz release-files.tar.gz
 verify_file release-files.tar.gz
 mkdir payload
 # Even trusted publisher mistakes must not write outside the temporary payload directory.
-if tar -tzf release-files.tar.gz | awk 'BEGIN {bad=0} /^\// || /(^|\/)\.\.(\/|$)/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive paths'; fi
+tar -tzf release-files.tar.gz > archive.names || fail 'cannot list verified archive'
+if awk 'BEGIN {bad=0} /^\// || /(^|\/)\.\.(\/|$)/ {bad=1} END {exit bad}' archive.names; then :; else fail 'unsafe archive paths'; fi
 # Symlinks/hardlinks and special files can escape extraction despite safe names.
-if tar -tvzf release-files.tar.gz | awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}'; then :; else fail 'unsafe archive entry types'; fi
+tar -tvzf release-files.tar.gz > archive.entries || fail 'cannot list verified archive entries'
+if awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}' archive.entries; then :; else fail 'unsafe archive entry types'; fi
+extracted_bytes=$(awk '/^-/ {if ($3 !~ /^[0-9]+$/) exit 1; total+=$3} END {printf "%.0f\n",total}' archive.entries) || fail 'cannot determine payload extraction size'
+[ "$extracted_bytes" -le 209715200 ] || fail 'verified install payload expands beyond the supported limit'
+require_staging_space "$((extracted_bytes + 2 * binary_bytes + 4194304))"
 tar -xzf release-files.tar.gz -C payload
 mkdir -p payload/dist
 cp "$MANIFEST" "$MANIFEST.sig" SHA256SUMS SHA256SUMS.sig payload/dist/
 # The launcher verifies and installs a complete daemon/UI/ctl slot, including
 # the dormant UI binary in core-only mode. The launcher itself remains stable.
-for component in kee-route-managerd kee-route-managerctl kee-route-manager-ui kee-route-manager-launcher; do
- case "$MODE:$component" in ui:kee-route-managerd|ui:kee-route-managerctl|ui:kee-route-manager-launcher) continue;; esac
+for component in $components; do
  name=$component-linux-$ARCH
  fetch "$name" "$name"
  verify_file "$name"

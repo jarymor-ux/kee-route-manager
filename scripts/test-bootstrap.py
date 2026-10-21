@@ -4,7 +4,7 @@ import base64,hashlib,io,json,os,pathlib,pty,subprocess,sys,tarfile,tempfile,uni
 sys.dont_write_bytecode = True
 from release_channel import channel_for_version
 ROOT=pathlib.Path(__file__).resolve().parent.parent
-PLATFORMS=('keenetic','openwrt','linux-systemd')
+PLATFORMS=('keenetic',)
 class BootstrapTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
@@ -13,20 +13,61 @@ class BootstrapTests(unittest.TestCase):
   subprocess.run([str(cls.tool),'keygen','--public',str(cls.root/'public'),'--private',str(cls.root/'private')],check=True)
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()
+ def test_mips_elf_architecture_and_abi(self):
+  # Test the exact helper embedded in the signed bootstrap as well as installer.
+  helper=ROOT/'install/common/architecture.sh'
+  for machine,endian,elfclass,flags,want in [
+   ('mips',2,1,0x70001007,'mips'),('mips',1,1,0x70001007,'mipsle'),
+   ('mipsel',1,1,0x70001007,'mipsle'),('mipsle',2,1,0x70001007,None),
+   ('mips',2,2,0x80000007,None),('mips',2,1,0x70000027,None),
+   ('mips',2,1,0x70002007,None),('unknown',2,1,0,None),
+  ]:
+   with self.subTest(machine=machine,endian=endian,elfclass=elfclass,flags=flags):
+    elf=self.root/'native-shell';body=bytearray(52);body[:4]=b'\x7fELF';body[4]=elfclass;body[5]=endian
+    body[18:20]=(8).to_bytes(2,'little' if endian==1 else 'big')
+    body[36:40]=flags.to_bytes(4,'little' if endian==1 else 'big');elf.write_bytes(body)
+    r=subprocess.run(['sh','-c','. "$1"; krm_detect_arch "$2" "$3"','fixture',str(helper),machine,str(elf)],capture_output=True,text=True)
+    if want:self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),want)
+    else:self.assertNotEqual(r.returncode,0)
+ def test_signed_mips_bootstrap_selects_byte_order_and_refuses_abi_before_download(self):
+  for endian,flags,arch in [(2,0x70001007,'mips'),(1,0x70001007,'mipsle'),(2,0x70000027,None)]:
+   with self.subTest(endian=endian,flags=flags):
+    d,a,m,e=self.fixture(arch=arch or 'mips')
+    (d/'fake/uname').write_text('#!/bin/sh\necho mips\n')
+    header=bytearray(40);header[:4]=b'\x7fELF';header[4]=1;header[5]=endian
+    header[18:20]=(8).to_bytes(2,'little' if endian==1 else 'big');header[36:40]=flags.to_bytes(4,'little' if endian==1 else 'big')
+    fake=d/'fake/od';fake.write_text('#!/bin/sh\necho "'+' '.join(str(b) for b in header)+'"\n');fake.chmod(0o755)
+    result=self.run_bootstrap(d,e)
+    if arch:
+     self.assertEqual(result.returncode,0,result.stderr);self.assertTrue(m.exists())
+     self.assertIn('fetch:kee-route-managerd-linux-'+arch,(d/'order.log').read_text())
+    else:
+     self.assertNotEqual(result.returncode,0);self.assertFalse(m.exists());self.assertFalse((d/'order.log').exists())
+ def test_bootstrap_low_staging_space_refuses_before_large_downloads(self):
+  d,a,m,e=self.fixture();fake=d/'fake/df'
+  fake.write_text('#!/bin/sh\nprintf "Filesystem 1024-blocks Used Available Capacity Mounted on\nfixture 8192 8191 1 99%% /tmp\n"\n');fake.chmod(0o755)
+  result=self.run_bootstrap(d,e)
+  self.assertNotEqual(result.returncode,0);self.assertIn('not enough staging free space',result.stderr);self.assertFalse(m.exists())
+  order=(d/'order.log').read_text();self.assertNotIn('fetch:release-files.tar.gz',order);self.assertNotIn('fetch:kee-route-managerd',order)
+ def test_future_release_source_has_only_keenetic_install_target(self):
+  self.assertFalse((ROOT/'install/openwrt').exists())
+  self.assertFalse((ROOT/'install/linux-systemd').exists())
+  self.assertIn('mips', (ROOT/'scripts/cross-build.sh').read_text().split('for target in ')[1].split(';')[0].split())
+  self.assertEqual(subprocess.run(['sh','-c','. "$1"; krm_detect_arch unknown /bin/sh','fixture',str(ROOT/'install/common/architecture.sh')],capture_output=True).returncode,1)
  def test_standalone_ui_rejects_missing_trust_before_effects(self):
   for case in ('no-ca-path','no-ca-file'):
    with self.subTest(case=case):
     d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
     (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
-    for name,body in (('id','echo 0'),('uname','echo x86_64'),('systemctl','exit 0')):
+    (d/'install/common/architecture.sh').write_bytes((ROOT/'install/common/architecture.sh').read_bytes())
+    for name,body in (('id','echo 0'),('uname','echo x86_64')):
      f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
     ui=d/'dist/kee-route-manager-ui-linux-amd64'
     ui.write_text('#!/bin/sh\nif [ "$1" = upstream-ca-path ]; then printf "%s" "$KRM_TEST_CA_PATH"; fi\n');ui.chmod(0o755)
     config=d/'ui.yaml';config.write_text('fixture')
-    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='linux-systemd',KRM_MODE='ui',KRM_CONFIG_FILE=str(config),KRM_TEST_CA_PATH='' if case=='no-ca-path' else '/etc/kee-route-manager-ui/controller-ca.crt')
+    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='keenetic',KRM_MODE='ui',KRM_CONFIG_FILE=str(config),KRM_TEST_CA_PATH='' if case=='no-ca-path' else '/opt/etc/kee-route-manager-ui/controller-ca.crt')
     env.pop('KRM_UPSTREAM_CA_FILE',None);env.pop('KRM_GENERATED_TLS_DIR',None)
-    # Linux preflight avoids router paths; platform-specific CA paths are
-    # independently exercised by the disposable Docker installer matrix.
+    # Validation must refuse bad trust before any installed files are changed.
     result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
     self.assertNotEqual(result.returncode,0);self.assertIn('standalone UI requires HTTPS with trusted upstream CA',result.stderr)
  def test_controller_installer_accepts_one_channel_seed_before_config_validation(self):
@@ -34,7 +75,8 @@ class BootstrapTests(unittest.TestCase):
    with self.subTest(channels=channels):
     d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
     (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
-    for name,body in (('id','echo 0'),('uname','echo x86_64'),('systemctl','exit 0')):
+    (d/'install/common/architecture.sh').write_bytes((ROOT/'install/common/architecture.sh').read_bytes())
+    for name,body in (('id','echo 0'),('uname','echo x86_64')):
      f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
     for component in ('kee-route-managerd','kee-route-managerctl','kee-route-manager-launcher'):
      f=d/('dist/'+component+'-linux-amd64');f.write_text('#!/bin/sh\n[ "$1" != validate ] || exit 42\nexit 0\n');f.chmod(0o755)
@@ -43,7 +85,7 @@ class BootstrapTests(unittest.TestCase):
      (d/('dist/manifest-'+channel+'.json')).write_text('{}')
      (d/('dist/manifest-'+channel+'.json.sig')).write_text('fixture signature')
     config=d/'core.yaml';config.write_text('private configuration fixture')
-    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='linux-systemd',KRM_MODE='core',KRM_CONFIG_FILE=str(config));env.pop('KRM_GENERATED_TLS_DIR',None)
+    env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_PLATFORM='keenetic',KRM_MODE='core',KRM_CONFIG_FILE=str(config));env.pop('KRM_GENERATED_TLS_DIR',None)
     # Fake validation exits before configuration, credentials, service or routing effects.
     result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
     self.assertEqual(result.returncode,want,result.stderr)
@@ -65,14 +107,14 @@ class BootstrapTests(unittest.TestCase):
   (out/'fixture-binary').write_bytes(b'release payload')
   env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit';env['KRM_RELEASE_PUBLIC_KEY']=str(self.root/'public');env.pop('KRM_RELEASE_CHANNEL',None)
   subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.0.0-rc.2'],cwd=d,env=env,check=True)
-  for name,platform in (('keenetic','keenetic'),('openwrt','openwrt'),('linux','linux-systemd')):
+  for name,platform in (('keenetic','keenetic'),):
    body=(out/f'bootstrap-{name}.sh').read_text()
    self.assertIn('TAG=v1.0.0-rc.2',body);self.assertIn('PLATFORM='+platform,body)
-   self.assertIn('-----BEGIN PUBLIC KEY-----',body);self.assertNotIn('@VERSION@',body);self.assertNotIn('@PUBLIC_PEM@',body);self.assertIn('CHANNEL=rc',body);self.assertNotIn('@CHANNEL@',body)
+   self.assertIn('-----BEGIN PUBLIC KEY-----',body);self.assertNotIn('@VERSION@',body);self.assertNotIn('@PUBLIC_PEM@',body);self.assertIn('CHANNEL=rc',body);self.assertNotIn('@CHANNEL@',body);self.assertNotIn('@ARCH_DETECTION@',body)
   inventory=json.loads((out/'SBOM.spdx.json').read_text())
   self.assertTrue(inventory['documentNamespace'].endswith('/1.0.0-rc.2/fixture-commit'))
   self.assertEqual(inventory['packages'][0]['licenseDeclared'],'Apache-2.0')
-  self.assertEqual({f['fileName'] for f in inventory['files']},{'./fixture-binary','./bootstrap-keenetic.sh','./bootstrap-openwrt.sh','./bootstrap-linux.sh'})
+  self.assertEqual({f['fileName'] for f in inventory['files']},{'./fixture-binary','./bootstrap-keenetic.sh'})
   for entry in inventory['files']:
    self.assertEqual(entry['checksums'][0]['checksumValue'],hashlib.sha256((out/entry['fileName']).read_bytes()).hexdigest())
   modules=[pkg for pkg in inventory['packages'] if pkg['name']=='go.yaml.in/yaml/v3']
@@ -91,7 +133,7 @@ class BootstrapTests(unittest.TestCase):
   (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
   env=os.environ.copy();env.update(KRM_SOURCE_COMMIT='fixture-commit',KRM_RELEASE_PUBLIC_KEY=str(self.root/'public'));env.pop('KRM_RELEASE_CHANNEL',None)
   subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.2.3'],cwd=d,env=env,check=True)
-  for platform in ('keenetic','openwrt','linux'):
+  for platform in ('keenetic',):
    body=(out/('bootstrap-'+platform+'.sh')).read_text()
    self.assertIn('TAG=v1.2.3',body);self.assertIn('CHANNEL=stable',body);self.assertNotIn('@CHANNEL@',body)
   env['KRM_RELEASE_CHANNEL']='rc'
@@ -114,7 +156,7 @@ class BootstrapTests(unittest.TestCase):
    with self.subTest(channel=channel):
     d=pathlib.Path(tempfile.mkdtemp(dir=self.root))
     for component in ('kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','kee-route-manager-launcher','krm-release-tool'):
-     for arch in ('amd64','arm64','armv7','mipsle'):(d/(component+'-linux-'+arch)).write_bytes(b'harmless signed release fixture')
+     for arch in ('amd64','arm64','armv7','mipsle','mips'):(d/(component+'-linux-'+arch)).write_bytes(b'harmless signed release fixture')
     (d/'release-files.tar.gz').write_bytes(b'harmless archive inventory fixture')
     env=os.environ.copy();env.update(KRM_SOURCE_COMMIT='fixture-commit',KRM_RELEASE_PUBLIC_KEY=str(self.root/'public'));env.pop('KRM_RELEASE_CHANNEL',None)
     subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(d),version],cwd=ROOT,env=env,check=True)
@@ -129,13 +171,23 @@ class BootstrapTests(unittest.TestCase):
     manifest.write_bytes(original)
     subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(manifest),'--out',str(manifest)+'.sig'],check=True)
     self.sign_checksums(d)
-    sums=d/'SHA256SUMS';sums.write_text('\n'.join(line for line in sums.read_text().splitlines() if not line.endswith('  bootstrap-linux.sh'))+'\n')
+    sums=d/'SHA256SUMS';sums.write_text('\n'.join(line for line in sums.read_text().splitlines() if not line.endswith('  bootstrap-keenetic.sh'))+'\n')
     subprocess.run([str(self.tool),'sign','--private',str(self.root/'private'),'--input',str(sums),'--out',str(sums)+'.sig'],check=True)
     result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('checksum inventory',result.stderr)
     self.sign_checksums(d)
     other=d/('manifest-'+('stable' if channel=='rc' else 'rc')+'.json');other.write_bytes(original)
     result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('exactly one',result.stderr)
- def fixture(self,version="1.0.0-rc.2",platform='keenetic',unsafe=None,channel=None,pinned_version='1.0.0-rc.2',pinned_channel='rc'):
+    other.unlink()
+    # A separately signed legacy inventory must remain valid without BE assets.
+    for binary in d.glob('*-linux-mips'):binary.unlink()
+    for retired in ('bootstrap-openwrt.sh','bootstrap-linux.sh'):(d/retired).write_bytes(b'#!/bin/sh\nexit 0\n')
+    subprocess.run([str(self.tool),'manifest','--version',version,'--channel',channel,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v'+version,'--dist',str(d),'--out',str(manifest),'--private',str(self.root/'private')],check=True)
+    self.sign_checksums(d);result=verify();self.assertEqual(result.returncode,0,result.stderr)
+    result=subprocess.run([sys.executable,str(ROOT/'scripts/verify-release.py'),str(d),'--current'],cwd=ROOT,env=env,capture_output=True,text=True)
+    self.assertNotEqual(result.returncode,0);self.assertIn('retired installation targets',result.stderr)
+    old=d/'kee-route-managerd-linux-mipsle';old.write_bytes(old.read_bytes()+b'tampered')
+    result=verify();self.assertNotEqual(result.returncode,0);self.assertIn('manifest mismatch',result.stderr)
+ def fixture(self,version="1.0.0-rc.2",platform='keenetic',unsafe=None,channel=None,pinned_version='1.0.0-rc.2',pinned_channel='rc',arch='amd64'):
   channel=channel or channel_for_version(version)
   manifest_name='manifest-'+channel+'.json'
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));assets=d/'assets';assets.mkdir();fake=d/'fake';fake.mkdir()
@@ -162,9 +214,9 @@ printf '%s\n' "$KRM_CONFIG_FILE" > "$KRM_TEST_CONFIG_PATH"
 cp "$KRM_CONFIG_FILE" "$KRM_TEST_CONFIG_USED"
 printf verified > "$KRM_TEST_MARKER"
 '''
-   content=content.replace(b'manifest-rc.json',manifest_name.encode())
+   content=content.replace(b'manifest-rc.json',manifest_name.encode()).replace(b'-linux-amd64',('-linux-'+arch).encode())
    info=tarfile.TarInfo('install/'+platform+'/install.sh');info.size=len(content);info.mode=0o755;tf.addfile(info,io.BytesIO(content))
-   for path,body in (('configs/ui-keenetic.yaml',b'fixture-ui: keenetic\n'),('configs/ui-linux-openwrt.yaml',b'fixture-ui: linux-openwrt\n')):
+   for path,body in (('configs/ui-keenetic.yaml',b'fixture-ui: keenetic\n'),):
     info=tarfile.TarInfo(path);info.size=len(body);info.mode=0o600;tf.addfile(info,io.BytesIO(body))
    if unsafe:
     info=tarfile.TarInfo('../escape' if unsafe=='path' else 'link')
@@ -211,14 +263,14 @@ exit 0
 '''
   for component in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']:
    body=ctl if component=='kee-route-managerctl' else '#!/bin/sh\nexit 0\n'
-   (assets/(component+'-linux-amd64')).write_text(body)
+   (assets/(component+'-linux-'+arch)).write_text(body)
   subprocess.run([str(self.tool),'manifest','--version',version,'--channel',channel,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v'+version,'--dist',str(assets),'--out',str(assets/manifest_name),'--private',str(self.root/'private')],check=True)
   manifest=json.loads((assets/manifest_name).read_text())
   self.assertEqual(manifest['update_protocol'],1)
-  self.assertEqual({a['name'] for a in manifest['assets']},{'release-files.tar.gz'}|{c+'-linux-amd64' for c in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']})
+  self.assertEqual({a['name'] for a in manifest['assets']},{'release-files.tar.gz'}|{c+'-linux-'+arch for c in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']})
   self.sign_checksums(assets)
   pub=base64.b64decode((self.root/'public').read_text().strip()+'===');pem=base64.b64encode(bytes.fromhex('302a300506032b6570032100')+pub).decode()
-  bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@',pinned_version).replace('@CHANNEL@',pinned_channel).replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
+  bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@',pinned_version).replace('@CHANNEL@',pinned_channel).replace('@PLATFORM@',platform).replace('@ARCH_DETECTION@',(ROOT/'install/common/architecture.sh').read_text()).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
   (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture');(d/'ui.yaml').write_text('private ui fixture')
   scripts={'id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
 while [ "$#" -gt 0 ]; do
@@ -266,7 +318,7 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
     self.assertEqual(r.returncode,0,r.stderr)
     self.assertIn(f'ctl:init-config-platform:{platform}',(d/'order.log').read_text().splitlines())
  def test_missing_config_local_ui_generates_pair(self):
-  for platform,expected in (('keenetic','fixture-ui: generated-https\n'),('openwrt','fixture-ui: generated-https\n'),('linux-systemd','fixture-ui: generated-https\n')):
+  for platform,expected in (('keenetic','fixture-ui: generated-https\n'),):
    with self.subTest(platform=platform):
     d,a,m,e=self.fixture(platform=platform);e.pop('KRM_CONFIG_FILE');e.pop('KRM_UI_CONFIG_FILE');e['KRM_MODE']='local-ui';r=self.run_bootstrap_tty(d,e)
     self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n');self.assertEqual((d/'ui-config-used').read_text(),expected)

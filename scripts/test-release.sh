@@ -46,9 +46,10 @@ assert manifest['version']==version and manifest['channel']==channel
 inventory=json.loads((output/'SBOM.spdx.json').read_text())
 assert inventory['packages'][0]['versionInfo']==version
 assert inventory['documentNamespace'].endswith('/'+version+'/'+commit)
-for platform in ('keenetic','openwrt','linux'):
+for platform in ('keenetic',):
  body=(output/('bootstrap-'+platform+'.sh')).read_text().splitlines()
  assert 'TAG=v'+version in body and 'CHANNEL='+channel in body
+assert not (output/'bootstrap-openwrt.sh').exists() and not (output/'bootstrap-linux.sh').exists()
 for asset in output.iterdir():
  if '-linux-' not in asset.name: continue
  metadata=subprocess.check_output(['go','version','-m',str(asset)],text=True)
@@ -58,7 +59,7 @@ for asset in output.iterdir():
 # Check application identity by executing only the explicit read-only version command.
 for component in ('kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','kee-route-manager-launcher'):
  if sys.platform.startswith('linux'):
-  arch={'x86_64':'amd64','amd64':'amd64','aarch64':'arm64','arm64':'arm64','armv7l':'armv7','mipsle':'mipsle','mipsel':'mipsle'}.get(host_platform.machine())
+  arch={'x86_64':'amd64','amd64':'amd64','aarch64':'arm64','arm64':'arm64','armv7l':'armv7','mipsle':'mipsle','mipsel':'mipsle','mips':'mips' if sys.byteorder=='big' else 'mipsle'}.get(host_platform.machine())
   if not arch: raise SystemExit('unsupported native fixture architecture')
   command=[str(output/(component+'-linux-'+arch)),'version']
  else:

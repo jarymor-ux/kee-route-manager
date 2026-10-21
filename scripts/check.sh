@@ -13,10 +13,12 @@ node --check scripts/test-ui-browser.cjs
 node scripts/test-ui.js
 if [[ -n "${PLAYWRIGHT_MODULE_PATH:-}" ]]; then node scripts/test-ui-browser.cjs; fi
 bash scripts/test-architecture.sh
+bash scripts/test-preflight.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TMP/ctl" ./cmd/kee-route-managerctl
 for cfg in configs/*.yaml; do "$TMP/ctl" validate --config "$cfg" >/dev/null; done
 python3 scripts/test-bootstrap.py
 python3 scripts/test-build-version.py
+python3 scripts/test-docs-scope.py
 printf 'Source, tests, syntax, embedded assets, templates and adversarial bootstrap checks passed.\n'

@@ -55,7 +55,18 @@ for line in (p / 'SHA256SUMS').read_text().splitlines():
     checksummed.add(filename)
     if hashlib.sha256(f.read_bytes()).hexdigest() != digest:
         raise SystemExit('checksum mismatch ' + filename)
-required = {f'{component}-linux-{arch}' for component in ('kee-route-managerd', 'kee-route-manager-ui', 'kee-route-managerctl', 'kee-route-manager-launcher', 'krm-release-tool') for arch in ('amd64', 'arm64', 'armv7', 'mipsle')} | {'bootstrap-keenetic.sh', 'bootstrap-openwrt.sh', 'bootstrap-linux.sh', 'release-files.tar.gz', 'SBOM.spdx.json'}
+components = ('kee-route-managerd', 'kee-route-manager-ui', 'kee-route-managerctl', 'kee-route-manager-launcher', 'krm-release-tool')
+required = {f'{component}-linux-{arch}' for component in components for arch in ('amd64', 'arm64', 'armv7', 'mipsle')} | {'bootstrap-keenetic.sh', 'release-files.tar.gz', 'SBOM.spdx.json'}
+# Signed legacy inventory is immutable: old releases contain the retired
+# bootstraps and no BE binaries. Current builders explicitly require new scope.
+legacy = {'bootstrap-openwrt.sh', 'bootstrap-linux.sh'}
+current = '--current' in sys.argv[2:] or any(f'{component}-linux-mips' in seen for component in components)
+if current:
+    required |= {f'{component}-linux-mips' for component in components}
+    if legacy & seen:
+        raise SystemExit('retired installation targets in current release')
+else:
+    required |= legacy
 if not required <= seen:
     raise SystemExit('missing required assets ' + str(required - seen))
 expected = seen | {name, name + '.sig'}

@@ -13,8 +13,8 @@ if len(pub)!=32: raise SystemExit('invalid release public key')
 der=bytes.fromhex('302a300506032b6570032100')+pub
 b64=base64.b64encode(der).decode()
 pem='-----BEGIN PUBLIC KEY-----\n'+'\n'.join(b64[i:i+64] for i in range(0,len(b64),64))+'\n-----END PUBLIC KEY-----'
-template=pathlib.Path('install/bootstrap.sh').read_text()
-for platform,name in [('keenetic','keenetic'),('openwrt','openwrt'),('linux-systemd','linux')]:
+template=pathlib.Path('install/bootstrap.sh').read_text().replace('@ARCH_DETECTION@',(source/'install/common/architecture.sh').read_text())
+for platform,name in [('keenetic','keenetic')]:
  s=template.replace('@VERSION@',version).replace('@CHANNEL@',channel).replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@',pem)
  (out/f'bootstrap-{name}.sh').write_text(s)
  (out/f'bootstrap-{name}.sh').chmod(0o755)
@@ -28,8 +28,8 @@ commit=(os.environ.get('KRM_SOURCE_COMMIT') or subprocess.check_output(['git','r
 sbom={'spdxVersion':'SPDX-2.3','dataLicense':'CC0-1.0','SPDXID':'SPDXRef-DOCUMENT','name':'kee-route-manager-'+version,'documentNamespace':f'https://github.com/jarymor-ux/kee-route-manager/sbom/{version}/{commit}', 'creationInfo':{'creators':['Tool: krm-release-builder','Organization: Kee Route Manager'],'created':datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')},'packages':[{'SPDXID':pkgid,'name':'kee-route-manager','versionInfo':version,'downloadLocation':f'https://github.com/jarymor-ux/kee-route-manager/tree/v{version}','filesAnalyzed':False,'licenseConcluded':'Apache-2.0','licenseDeclared':'Apache-2.0','copyrightText':'2026 Kee Route Manager contributors','comment':'Built with '+go_version+'; runtime modules are inventoried below. This inventory records distributable files, not a transitive stdlib file SBOM.'}], 'files':files,'relationships':[{'spdxElementId':'SPDXRef-DOCUMENT','relationshipType':'DESCRIBES','relatedSpdxElement':pkgid}]+[{'spdxElementId':pkgid,'relationshipType':'CONTAINS','relatedSpdxElement':f['SPDXID']} for f in files]}
 # Include only modules reached by production commands, not test-only dependencies.
 runtime=set()
-for arch in ('amd64','arm64','arm','mipsle'):
- build_env=os.environ.copy();build_env.update(CGO_ENABLED='0',GOOS='linux',GOARCH=arch,GOARM='7' if arch=='arm' else '',GOMIPS='softfloat' if arch=='mipsle' else '')
+for arch in ('amd64','arm64','arm','mipsle','mips'):
+ build_env=os.environ.copy();build_env.update(CGO_ENABLED='0',GOOS='linux',GOARCH=arch,GOARM='7' if arch=='arm' else '',GOMIPS='softfloat' if arch in ('mipsle','mips') else '')
  runtime.update(subprocess.check_output(['go','list','-deps','-f','{{if .Module}}{{.Module.Path}}{{end}}','./cmd/...'],cwd=source,env=build_env,text=True).split())
 module_json=subprocess.check_output(['go','list','-m','-json','all'],cwd=source,text=True)
 decoder=json.JSONDecoder()

@@ -66,8 +66,8 @@ raw=base64.b64decode((work/'public').read_text().strip()+'===')
 der=bytes.fromhex('302a300506032b6570032100')+raw
 pem='-----BEGIN PUBLIC KEY-----\n'+base64.b64encode(der).decode()+'\n-----END PUBLIC KEY-----'
 template=pathlib.Path('install/bootstrap.sh').read_text()
-for platform in ('linux-systemd','openwrt','keenetic'):
- (work/('bootstrap-'+platform+'.sh')).write_text(template.replace('@VERSION@',version).replace('@CHANNEL@','rc' if '-rc.' in version else 'stable').replace('@PLATFORM@',platform).replace('@PUBLIC_PEM@',pem))
+for platform in ('keenetic',):
+ (work/('bootstrap-'+platform+'.sh')).write_text(template.replace('@VERSION@',version).replace('@CHANNEL@','rc' if '-rc.' in version else 'stable').replace('@PLATFORM@',platform).replace('@ARCH_DETECTION@',pathlib.Path('install/common/architecture.sh').read_text()).replace('@PUBLIC_PEM@',pem))
 PYBOOTSTRAP
 # Disposable service-manager adapters execute the installed service commands.
 # Keenetic uses the actual checked-in supervisor; no real host service is used.
@@ -86,51 +86,26 @@ if [ -s "$file" ]; then
  rm -f "$file"
 fi
 STOP
-cat > "$WORK/fake/systemctl" <<'MANAGER'
+mkdir -p /opt/etc/init.d /opt/etc/xray/configs /opt/share/xray /opt/sbin /opt/bin
+# Router prerequisites are explicit harmless executables inside this container.
+cat > /opt/sbin/xray <<'XRAY_FIXTURE'
 #!/bin/sh
-set -eu
-case "$1" in
- daemon-reload) exit 0;;
- enable)
-  name=$3
-  if [ "$name" = kee-route-manager ]; then binary=/usr/local/bin/kee-route-manager-launcher; config=/etc/kee-route-manager/config.yaml; else binary=/usr/local/bin/kee-route-manager-ui; config=/etc/kee-route-manager-ui/config.yaml; fi
-  grep -Fxq "ExecStart=$binary serve --config $config" "/etc/systemd/system/$name.service"
-  "$binary" serve --config "$config" </dev/null > "/tmp/$name.stdout" 2>&1 &
-  echo "$!" > "/tmp/krm-test-service-$name.pid";;
- disable) krm-test-stop "$3";;
- *) echo 'unexpected service command' >&2; exit 1;;
-esac
-MANAGER
-mkdir -p /etc/init.d /etc/systemd/system /opt/etc/init.d
-cat > /etc/rc.common <<'PROCD'
-#!/bin/sh
-set -eu
-init=$1; action=$2; name=${init##*/}
-procd_open_instance(){ :; }
-procd_close_instance(){ :; }
-procd_set_param(){
- if [ "$1" = command ]; then
-  shift
-  "$@" </dev/null > "/tmp/$name.stdout" 2>&1 &
-  echo "$!" > "/tmp/krm-test-service-$name.pid"
- fi
-}
-. "$init"
-case "$action" in
- start) start_service;;
- stop) krm-test-stop "$name";;
- enable|disable) :;;
- *) exit 1;;
-esac
-PROCD
-chmod 0755 "$WORK/fake/"* /etc/rc.common
+[ "$*" = 'run -test -confdir /opt/etc/xray/configs' ] || exit 1
+exit 0
+XRAY_FIXTURE
+printf '#!/bin/sh\nexit 0\n' > /opt/sbin/xkeen
+printf '#!/bin/sh\nexit 0\n' > "$WORK/fake/ndmc"
+printf '#!/bin/sh\nexit 0\n' > /opt/bin/opkg
+printf '%s\n' '{"inbounds":[{"tag":"redirect"},{"tag":"tproxy"}],"outbounds":[{"tag":"proxy-main"},{"tag":"REPLACE_WITH_SELECTED_OUTBOUND"}],"routing":{"rules":[{"inboundTag":["redirect","tproxy"],"outboundTag":"proxy-main"},{"inboundTag":["redirect","tproxy"],"outboundTag":"REPLACE_WITH_SELECTED_OUTBOUND"}]}}' > /opt/etc/xray/configs/05_routing.json
+chmod 0755 /opt/sbin/xray /opt/sbin/xkeen /opt/bin/opkg
+chmod 0755 "$WORK/fake/"*
 export PATH="$WORK/fake:$PATH"
 # Every test keeps Xray unconfigured, subscriptions disabled and firewall mode
 # existing. This exercises real config/auth/TLS/process/file boundaries only.
 python3 - "$WORK" <<'PYCONFIG'
 import pathlib,re,sys
 w=pathlib.Path(sys.argv[1]);key=(w/'public').read_text().strip()
-for platform in ('linux-systemd','openwrt','keenetic'):
+for platform in ('keenetic',):
  s=pathlib.Path('configs/'+platform+'.yaml').read_text().replace('enabled: true\n      headers:', 'enabled: false\n      headers:')
  s=re.sub(r'^  public_key:.*$', '  public_key: "'+key+'"', s, flags=re.M)
  (w/('private/'+platform+'.yaml')).write_text(s)
@@ -139,9 +114,7 @@ for platform in ('linux-systemd','openwrt','keenetic'):
   '    enabled: true\n    auto_generate: true\n    cert_file: '+prefix+'/etc/kee-route-manager/tls.crt\n    key_file: '+prefix+'/etc/kee-route-manager/tls.key\n    hosts: [localhost]',1)
  assert tls != s, 'controller API TLS fixture was not enabled'
  (w/('private/'+platform+'-tls.yaml')).write_text(tls)
- ui=pathlib.Path('configs/ui-linux-openwrt.yaml').read_text()
- if platform=='keenetic':
-  ui=ui.replace('/var/', '/opt/var/').replace('/run/', '/opt/var/run/').replace('/etc/kee-route-manager-ui/', '/opt/etc/kee-route-manager-ui/')
+ ui=pathlib.Path('configs/ui-keenetic.yaml').read_text()
  (w/('private/'+platform+'-ui.yaml')).write_text(ui)
  managed_ca=('/opt' if platform=='keenetic' else '')+'/etc/kee-route-manager-ui/controller-ca.crt'
  custom=ui.replace('  upstream: "http://127.0.0.1:9443"\n', '  upstream: "https://127.0.0.1:9443"\n  upstream_ca_file: '+managed_ca+'\n')
@@ -162,7 +135,7 @@ check_core(){
 }
 check_ui(){
  [[ -f "$ui_config" && "$(stat -c %a "$ui_config")" = 644 ]]
- # UI config is public and readable by systemd DynamicUser; keys remain private.
+ # UI config contains no credentials; TLS private keys remain private.
  "$bin/kee-route-manager-ui" validate --config "$ui_config" >/dev/null
  "$bin/kee-route-manager-ui" ready --config "$ui_config" >/dev/null
  [[ "$(stat -c %a "$prefix/var/lib/kee-route-manager-ui/tls.key")" = 600 ]]
@@ -171,15 +144,13 @@ check_ui(){
 platform_paths(){
  case "$platform" in
   keenetic) prefix=/opt; bin=/opt/bin;;
-  openwrt) prefix=; bin=/usr/bin;;
-  linux-systemd) prefix=; bin=/usr/local/bin;;
  esac
  core_config=$prefix/etc/kee-route-manager/config.yaml
  ui_config=$prefix/etc/kee-route-manager-ui/config.yaml
 }
 # Run the actual signed bootstrap, ctl wizard, installer and launcher for every
 # platform/mode combination. Only service managers and downloads are fixtures.
-for platform in linux-systemd openwrt keenetic; do
+platform=keenetic
  platform_paths
  for mode in core local-ui; do
   python3 - "$WORK" "$platform" "$mode" <<'PYBOOTRUN'
@@ -262,16 +233,13 @@ PYDEFAULTS
   [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" && ! -e "$ui_config" ]]
   printf 'Real configless bootstrap -> RU/EN wizard -> validated installer lifecycle passed: %s %s.\n' "$platform" "$mode"
  done
-done
 prepared_bootstrap(){
  KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
   sh "$WORK/bootstrap-$platform.sh" </dev/null
 }
-for platform in linux-systemd openwrt keenetic; do
+platform=keenetic
  case "$platform" in
   keenetic) prefix=/opt; bin=/opt/bin; core_service=/opt/etc/init.d/S99kee-route-manager; ui_service=/opt/etc/init.d/S98kee-route-manager-ui;;
-  openwrt) prefix=; bin=/usr/bin; core_service=/etc/init.d/kee-route-manager; ui_service=/etc/init.d/kee-route-manager-ui;;
-  linux-systemd) prefix=; bin=/usr/local/bin; core_service=/etc/systemd/system/kee-route-manager.service; ui_service=/etc/systemd/system/kee-route-manager-ui.service;;
  esac
  core_config=$prefix/etc/kee-route-manager/config.yaml
  ui_config=$prefix/etc/kee-route-manager-ui/config.yaml
@@ -308,24 +276,17 @@ for platform in linux-systemd openwrt keenetic; do
  export KRM_MODE=core
  sh "install/$platform/uninstall.sh" --purge
  [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" ]]
- # Local UI is supervised only once: routers by launcher, Linux by DynamicUser.
+ # Local UI is supervised only once, by the stable launcher.
  export KRM_MODE=local-ui KRM_CONFIG_FILE="$WORK/private/$platform.yaml"
  unset KRM_UPSTREAM_CA_FILE
- if [[ "$platform" != linux-systemd ]]; then
   printf '#!/bin/sh\nexit 0\n' > "$ui_service"
   if sh "install/$platform/install.sh"; then echo 'concurrent UI service accepted' >&2; exit 1; fi
   [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" ]]
   rm "$ui_service"
- fi
  prepared_bootstrap
  check_core
  check_ui
- if [[ "$platform" == linux-systemd ]]; then
-  [[ -f "$ui_service" && ! -L "$bin/kee-route-manager-ui" ]]
-  grep -Fxq 'DynamicUser=true' "$ui_service"
- else
-  [[ ! -e "$ui_service" && -L "$bin/kee-route-manager-ui" ]]
- fi
+ [[ ! -e "$ui_service" && -L "$bin/kee-route-manager-ui" ]]
  curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
  before=$(sha256sum "$core_config")
  if sh "install/$platform/install.sh"; then echo 'overwrite accepted' >&2; exit 1; fi
@@ -344,7 +305,6 @@ for platform in linux-systemd openwrt keenetic; do
  sh "install/$platform/uninstall.sh" --purge
  [[ ! -e "$bin/kee-route-managerd" && ! -e "$bin/kee-route-manager-ui" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_config" ]]
  printf 'Installer lifecycle passed: %s core, standalone UI and local-ui; overwrite refusal; failed-restore retention; restore/uninstall/purge.\n' "$platform"
-done
 # A slow but bounded launcher drain must finish before its init wrapper returns.
 # This fixture deliberately exceeds the former 30-second wrapper budget.
 mkdir -p /opt/bin /opt/etc/kee-route-manager /opt/etc/init.d /opt/var/run/kee-route-manager
@@ -372,4 +332,4 @@ done
 [[ ! -e /opt/var/run/kee-route-manager/supervisor.pid && ! -e /opt/var/run/kee-route-manager/service-child.pid ]]
 rm -f /opt/bin/kee-route-manager-launcher /opt/etc/kee-route-manager/config.yaml /opt/etc/init.d/S99kee-route-manager /tmp/krm-test-drain-ready /tmp/krm-test-drained
 printf 'Keenetic init waited for complete delayed launcher drain.\n'
-printf 'Service managers are container fixtures; systemd/procd and router hardware acceptance remain separate.\n'
+printf 'Keenetic userspace is a container fixture; router hardware acceptance remains separate.\n'
