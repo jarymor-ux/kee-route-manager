@@ -131,6 +131,8 @@
     <div class="container section-grid">
       <div><div class="eyebrow">03 / <span data-i18n="getStarted">Get started</span></div><h2 data-i18n="installTitle">Start with a signed release.</h2></div>
       <div>
+        <p class="note" data-i18n="releaseSecurity">Published v1.3.3 was built with Go 1.27.2 and is affected by GO-2026-6809 in crypto/x509. Source now uses Go 1.27.3, but no fixed KRM release is published yet. Prefer waiting for a new signed release before a new deployment; existing assets remain immutable.</p>
+        <p><a href="https://pkg.go.dev/vuln/GO-2026-6809" data-i18n="releaseAdvisory">Go security advisory ↗</a></p>
         <p data-i18n="installText">First prepare compatible stock firmware, Entware, storage and a working XKeen/Xray setup on the router. KRM does not install these prerequisites. Review the runbook and keep private backups plus an independent recovery connection.</p>
         <div class="installbox"><pre><code>curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh \
   https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.3.3/bootstrap-keenetic.sh</code></pre></div>
@@ -187,6 +189,8 @@
     cli:"Локальное администрирование и проверка конфигурации.",
     launcher:"Подписанные версии и управление запуском.",archLink:"Документация по архитектуре ↗",
     getStarted:"Начало работы",installTitle:"Устанавливайте из подписанного релиза.",
+    releaseSecurity:"Опубликованный v1.3.3 собран Go 1.27.2 и затронут GO-2026-6809 в crypto/x509. Source уже использует Go 1.27.3, но исправленный релиз KRM пока не опубликован. Для новой установки лучше дождаться нового подписанного релиза; старые assets неизменяемы.",
+    releaseAdvisory:"Описание уязвимости Go ↗",
     installText:"Сначала подготовьте совместимую стоковую прошивку, хранилище, Entware и работающий XKeen/Xray на роутере. KRM не устанавливает эти компоненты. Изучите инструкцию, сохраните приватные резервные копии и независимый канал восстановления.",
     installNote:"Пример для Keenetic/Netcraze закреплён на опубликованном v1.3.3. Bootstrap проверяет Ed25519 и SHA-256 до исполнения скачанных программ; проверьте доверие и к самому bootstrap. В этом релизе нет MIPS Big Endian: KN-2410/2510 требуют нового подписанного релиза.",
     verifyBootstrap:"До запуска: получите SHA256SUMS и SHA256SUMS.sig версии v1.3.3, проверьте Ed25519-подпись независимо подтверждённым release public key, затем сравните digest этого файла с подписанной записью bootstrap-keenetic.sh. При отсутствии файла, несовпадении или неизвестном ключе остановитесь. Следуйте процедуре доверия по ссылке ниже; ключ рядом с подписью сам по себе не устанавливает доверие.",
