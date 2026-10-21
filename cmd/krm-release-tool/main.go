@@ -169,8 +169,8 @@ func parseName(n string) (string, string, bool) {
 		return "arm64", "", true
 	case "armv7":
 		return "arm", "7", true
-	case "mipsle":
-		return "mipsle", "", true
+	case "mipsle", "mips":
+		return s, "", true
 	}
 	return "", "", false
 }

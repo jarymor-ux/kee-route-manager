@@ -44,7 +44,7 @@ func configFile(t *testing.T, socket string) string {
 	body := `instance:
   role: controller
 platform:
-  kind: linux-systemd
+  kind: keenetic
 paths:
   state_dir: untouched-state
   cache_dir: untouched-cache
@@ -338,20 +338,20 @@ func TestInitConfigCommandPinsPlatformWithoutPrompt(t *testing.T) {
 		"", "n", "n", "n", "y",
 	}, "\n") + "\n"
 	var out strings.Builder
-	if err := runWithIO(context.Background(), []string{"init-config", "--platform", "openwrt", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
+	if err := runWithIO(context.Background(), []string{"init-config", "--platform", "keenetic", "--output", path}, "test", "commit", "build", strings.NewReader(input), &out); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Platform.Kind != "openwrt" {
-		t.Fatalf("platform=%q, want openwrt", cfg.Platform.Kind)
+	if cfg.Platform.Kind != "keenetic" {
+		t.Fatalf("platform=%q, want keenetic", cfg.Platform.Kind)
 	}
 }
 
 func TestInitConfigLocalUIPair(t *testing.T) {
-	for _, platform := range []string{"keenetic", "openwrt", "linux-systemd"} {
+	for _, platform := range []string{"keenetic"} {
 		t.Run(platform, func(t *testing.T) {
 			dir := t.TempDir()
 			corePath, uiPath := filepath.Join(dir, "core.yaml"), filepath.Join(dir, "ui.yaml")
@@ -394,7 +394,7 @@ func TestInitConfigLocalUIRefusesInvalidOrExistingOutputs(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			dir := t.TempDir()
 			core, ui, tls := filepath.Join(dir, "core"), filepath.Join(dir, "ui"), filepath.Join(dir, "tls")
-			args := []string{"init-config", "--platform", "openwrt", "--output", core, "--ui-output", ui, "--tls-dir", tls}
+			args := []string{"init-config", "--platform", "keenetic", "--output", core, "--ui-output", ui, "--tls-dir", tls}
 			switch scenario {
 			case "missing-platform":
 				args[2] = ""

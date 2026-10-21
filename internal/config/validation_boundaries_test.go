@@ -112,60 +112,6 @@ func TestControllerRejectsUnsafePathsListenersAndRouteTags(t *testing.T) {
 	}
 }
 
-func TestManagedFirewallConfigBoundary(t *testing.T) {
-	for _, kind := range []string{"linux-systemd", "openwrt"} {
-		t.Run(kind, func(t *testing.T) {
-			for _, tc := range []struct {
-				name, want string
-				change     func(*Linux)
-			}{
-				{"unknown mode", "firewall_mode", func(f *Linux) { f.FirewallMode = "automatic" }},
-				{"no LAN interfaces", "lan_interfaces", func(f *Linux) { f.LANInterfaces = nil }},
-				{"interface syntax", "invalid interface", func(f *Linux) { f.LANInterfaces = []string{"br0;flush"} }},
-				{"long interface", "invalid interface", func(f *Linux) { f.LANInterfaces = []string{strings.Repeat("x", 16)} }},
-				{"duplicate interface", "duplicate", func(f *Linux) { f.LANInterfaces = []string{"br0", "br0"} }},
-				{"TCP port zero", "tcp_redirect_port", func(f *Linux) { f.TCPRedirectPort = 0 }},
-				{"UDP port oversized", "udp_tproxy_port", func(f *Linux) { f.UDPTProxyPort = 65536 }},
-				{"zero mark", ".mark", func(f *Linux) { f.Mark = 0 }},
-				{"large mark", ".mark", func(f *Linux) { f.Mark = 1<<30 + 1 }},
-				{"zero route table", ".route_table", func(f *Linux) { f.RouteTable = 0 }},
-				{"large route table", ".route_table", func(f *Linux) { f.RouteTable = 1<<30 + 1 }},
-				{"reserved default table", ".route_table", func(f *Linux) { f.RouteTable = 253 }},
-				{"reserved main table", ".route_table", func(f *Linux) { f.RouteTable = 254 }},
-				{"reserved local table", ".route_table", func(f *Linux) { f.RouteTable = 255 }},
-				{"empty bypasses", "bypass_cidrs", func(f *Linux) { f.BypassCIDRs = nil }},
-				{"IPv6 bypass", "invalid IPv4 CIDR", func(f *Linux) { f.BypassCIDRs = []string{"::/0"} }},
-				{"invalid bypass", "invalid IPv4 CIDR", func(f *Linux) { f.BypassCIDRs = []string{"10.0.0.0/33"} }},
-				{"TCP health collision", "overlaps xray.health_proxy_port", func(f *Linux) { f.TCPRedirectPort = 18999 }},
-				{"UDP health collision", "overlaps xray.health_proxy_port", func(f *Linux) { f.UDPTProxyPort = 18999 }},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					c := validConfig(t)
-					c.Platform.Kind = kind
-					f := c.Platform.Linux
-					f.FirewallMode = "managed"
-					tc.change(&f)
-					c.Platform.Linux = f
-					c.Platform.OpenWrt = OpenWrt(f)
-					err := c.Validate()
-					if err == nil || !strings.Contains(err.Error(), tc.want) {
-						t.Fatalf("want %q, got %v", tc.want, err)
-					}
-				})
-			}
-			for _, table := range []int{1, 252, 256, 1 << 30} {
-				c := validConfig(t)
-				c.Platform.Kind = kind
-				c.Platform.Linux.FirewallMode, c.Platform.Linux.RouteTable, c.Platform.Linux.Mark = "managed", table, 1<<30
-				c.Platform.OpenWrt = OpenWrt(c.Platform.Linux)
-				if err := c.Validate(); err != nil {
-					t.Fatalf("valid table/mark boundary rejected: %v", err)
-				}
-			}
-		})
-	}
-}
-
 func TestMonitoringAndBenchmarkResourceBounds(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

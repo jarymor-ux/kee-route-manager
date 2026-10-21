@@ -6,19 +6,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/config"
 )
 
 func TestAdaptersHonorConfiguredServicesAndCapabilityBoundaries(t *testing.T) {
-	for _, kind := range []string{"linux-systemd", "openwrt", "keenetic"} {
+	for _, kind := range []string{"keenetic"} {
 		t.Run(kind, func(t *testing.T) {
 			c := config.Default()
 			c.Platform.Kind = kind
-			c.Platform.Linux.FirewallMode, c.Platform.OpenWrt.FirewallMode = "existing", "existing"
-			c.Platform.Linux.AllowReboot, c.Platform.OpenWrt.AllowReboot, c.Platform.Keenetic.AllowReboot = false, false, false
+			c.Platform.Keenetic.AllowReboot = false
 			c.Platform.Keenetic.AllowPolicyChange = false
 			c.Platform.XrayRestartCommand = []string{"/bin/sh", "-c", "exit 0"}
 			c.Platform.KRMRestartCommand = []string{"/bin/sh", "-c", "exit 7"}
@@ -42,14 +40,6 @@ func TestAdaptersHonorConfiguredServicesAndCapabilityBoundaries(t *testing.T) {
 			}
 			if err = p.SetClientPolicy(ctx, "00:11:22:33:44:55", "default"); err == nil {
 				t.Fatal("disabled client policy accepted")
-			}
-			if kind != "keenetic" {
-				if _, err = p.Clients(ctx); err == nil {
-					t.Fatal("unsupported clients reported success")
-				}
-				if err = p.Wake(ctx, "00:11:22:33:44:55"); err == nil {
-					t.Fatal("unsupported wake reported success")
-				}
 			}
 			for _, lines := range []int{0, 1001} {
 				if _, err = p.SystemLogs(ctx, lines); err == nil {
@@ -117,23 +107,5 @@ func TestKeeneticClientsMergeRegistrationAndInheritedPolicies(t *testing.T) {
 	data, err := os.ReadFile(log)
 	if err != nil || string(data) != "ip hotspot wake aa:bb:cc:dd:ee:01\n" {
 		t.Fatalf("incorrect wake command %q: %v", data, err)
-	}
-}
-
-func TestGenericSystemLogsFallsBackAfterJournalFailure(t *testing.T) {
-	dir := t.TempDir()
-	for name, script := range map[string]string{
-		"journalctl": "#!/bin/sh\nexit 1\n",
-		"logread":    "#!/bin/sh\n[ \"$1\" = -l ] && [ \"$2\" = 12 ] || exit 2\nprintf 'router-log-line\\n'\n",
-	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("PATH", dir)
-	g := newGeneric(config.Default(), Runner{}, "openwrt", false, false)
-	logs, err := g.SystemLogs(context.Background(), 12)
-	if err != nil || !strings.Contains(logs, "router-log-line") {
-		t.Fatalf("log fallback failed: %q %v", logs, err)
 	}
 }

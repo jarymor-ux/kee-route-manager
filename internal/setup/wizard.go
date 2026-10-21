@@ -276,7 +276,7 @@ func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) 
 
 func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
 	switch platform {
-	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	case PlatformKeenetic:
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
@@ -286,7 +286,7 @@ func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overw
 // InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
 func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
 	switch platform {
-	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	case PlatformKeenetic:
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
@@ -606,9 +606,7 @@ func (w *wizard) askPlatform() (Platform, error) {
 	for {
 		fmt.Fprintln(w.out, w.msg.PlatformHelp)
 		fmt.Fprintln(w.out, w.msg.PlatformTitle)
-		fmt.Fprintln(w.out, "1. Keenetic")
-		fmt.Fprintln(w.out, "2. OpenWrt")
-		fmt.Fprintln(w.out, "3. Linux/systemd")
+		fmt.Fprintln(w.out, "1. Keenetic / Netcraze")
 		answer, err := w.read()
 		if err != nil {
 			return "", err
@@ -616,35 +614,16 @@ func (w *wizard) askPlatform() (Platform, error) {
 		switch answer {
 		case "1":
 			return PlatformKeenetic, nil
-		case "2":
-			return PlatformOpenWrt, nil
-		case "3":
-			return PlatformLinuxSystemd, nil
 		default:
 			fmt.Fprintln(w.out, w.msg.InvalidChoice)
 		}
 	}
 }
 
-func platformDefaults(p Platform) (string, string, string) {
-	switch p {
-	case PlatformKeenetic:
-		return "/opt/sbin/xray", "/opt/etc/xray/configs", "/opt/etc/xray/configs/05_routing.json"
-	default:
-		return "/usr/bin/xray", "/etc/xray/configs", "/etc/xray/configs/05_routing.json"
-	}
+func platformDefaults(_ Platform) (string, string, string) {
+	return "/opt/sbin/xray", "/opt/etc/xray/configs", "/opt/etc/xray/configs/05_routing.json"
 }
-
-func platformName(p Platform) string {
-	switch p {
-	case PlatformKeenetic:
-		return "Keenetic"
-	case PlatformOpenWrt:
-		return "OpenWrt"
-	default:
-		return "Linux/systemd"
-	}
-}
+func platformName(_ Platform) string { return "Keenetic / Netcraze" }
 
 func (w *wizard) askSubscriptions() ([]config.Source, error) {
 	var out []config.Source

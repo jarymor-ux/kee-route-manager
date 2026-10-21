@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Restrict router deployments to Keenetic/Netcraze on compatible stock KeeneticOS/NDMS and Entware. Remove retired router adapters, installers, service templates and current configuration examples; keep shared Linux/Go tooling and management-only remote UI. Historical releases and changelog entries are unchanged. Older generated Keenetic YAML requires explicit offline removal of retired platform subsections before strict validation.
+- Add MIPS Big Endian soft-float builds and signed-release/installer architecture handling, with separate BE/LE detection and immutable legacy inventory verification. These assets are not retroactively added to published v1.3.3.
+- Add read-only dependency, routing, resource and ABI preflight, conservative opt-in resource guidance and maintained model/firmware documentation. No model is newly hardware-qualified and no 256 MB capacity or automatic Xray-outage bypass is promised.
+- Build with Go 1.27.3 to include the crypto/x509 security fix for GO-2026-6809; published release toolchains remain unchanged.
+
 ## 1.3.3 / 1.3.3-rc.1 — 2026-10-16
 
 - Import supported VLESS Reality TCP and WebSocket/TLS nodes from strict Xray JSON configurations and arrays, including base64 responses. Keep provider routing, DNS and inbounds outside the managed configuration; refuse unsupported outbound dependencies and TLS behavior.

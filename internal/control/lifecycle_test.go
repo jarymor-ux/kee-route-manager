@@ -42,8 +42,7 @@ func isolatedDaemonConfig(t *testing.T) config.Config {
 	c.Xray.ConfigDir, c.Xray.ManagedDir = filepath.Join(dir, "xray"), filepath.Join(dir, "xray")
 	// Every process invocation is an inert fixture; existing mode never changes
 	// host firewall state. A paused store prevents startup routing/benchmarks.
-	c.Platform.Kind = "linux-systemd"
-	c.Platform.Linux.FirewallMode = "existing"
+	c.Platform.Kind = "keenetic"
 	c.Platform.XrayStatusCommand = []string{"/bin/true"}
 	c.Platform.XrayRestartCommand = []string{"/bin/false"}
 	c.Xray.Binary = "/bin/false"

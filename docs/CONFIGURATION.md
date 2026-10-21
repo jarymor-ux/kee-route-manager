@@ -2,13 +2,46 @@
 
 Templates in `configs/` use strict YAML subset decoded with unknown-field rejection. Keep real subscriptions and node keys in private files outside the repository.
 
-Fresh bootstrap without `KRM_CONFIG_FILE` runs the signed RU/EN configuration wizard after release verification on Keenetic, OpenWrt and Linux/systemd. It collects Xray paths, explicitly selected routing tags, subscriptions/headers, score and health targets, pool size, optional speed tests and update discovery. The resulting controller YAML is validated and installed privately. `KRM_MODE=local-ui` also generates a separate UI YAML; no manual second config is required. With `KRM_CONFIG_FILE`, the wizard is skipped; prepared local-ui still requires `KRM_UI_CONFIG_FILE`. Standalone UI uses a prepared UI config in `KRM_CONFIG_FILE` and trusted upstream CA in `KRM_UPSTREAM_CA_FILE`; see [the runbook](AGENT_INSTALL.md).
+Only Keenetic/Netcraze routers are deployment targets: `platform.kind: keenetic`; existing interception remains owned by the operator/XKeen, without a new firewall-mode selector. See [hardware/firmware/ABI requirements](HARDWARE.md). Before upgrading an older generated Keenetic configuration, follow [offline removal of retired platform subsections](BREAKING_CHANGES.md#unreleased-keeneticnetcraze-only-router-targets); unknown keys remain errors.
+
+## Resource-limited installations
+
+There is no second hidden Low Memory mode and no silent rewrite of existing defaults. Existing parameters bound the work. For a first experimental 256 MB trial, merge these **provisional operator-selected limits** into a complete private controller configuration (not a standalone valid YAML):
+
+```yaml
+subscriptions:
+  max_sources: 2
+  max_nodes: 50
+  max_nodes_per_source: 50
+  max_response_bytes: 512KiB
+pool:
+  size: 2
+benchmark:
+  batch_size: 2
+  latency_workers: 2
+  finalists: 2
+  speed:
+    enabled: false
+```
+
+These numbers are starting limits, not a measured guarantee that KeeneticOS + Entware + Xray + KRM fit into 256 MB. Record real free RAM and subscription/probe/update peaks; do not count physical RAM as available KRM budget. Core-only omits the local UI process; a separate management UI still uses verified TLS and a trusted tunnel. Keep health quorum, normal Xray and recovery monitoring enabled. Runtime telemetry stays bounded and does not write periodic graph history to flash. See the [resource methodology and device acceptance](HARDWARE.md#resource-planning-on-128256-mb-routers).
+
+The new read-only diagnostic command emits JSON and returns nonzero on a failed gate:
+
+```sh
+kee-route-managerctl preflight --config /PRIVATE/config.yaml --mode core
+kee-route-managerctl preflight --config /PRIVATE/config.yaml --mode local-ui --release-dir /PRIVATE/verified-release
+```
+
+Use a signature-verified CLI and complete matching extracted release bundle. Preflight checks actual dependencies, config/routing tags, RCI reads, RAM and disk; it does not install prerequisites, change routing or certify hardware. The installer invokes it before application changes. Staging can require more free bytes than the final installation; choose a private `TMPDIR` on suitable Entware storage when `/tmp` is RAM-backed. Keep current and previous signed slots for rollback. Do not disable signature checks or delete the working slot to force an update through low space.
+
+Fresh bootstrap without `KRM_CONFIG_FILE` runs the signed RU/EN configuration wizard after release verification on Keenetic/Netcraze. It collects Xray paths, explicitly selected routing tags, subscriptions/headers, score and health targets, pool size, optional speed tests and update discovery. The resulting controller YAML is validated and installed privately. `KRM_MODE=local-ui` also generates a separate UI YAML; no manual second config is required. With `KRM_CONFIG_FILE`, the wizard is skipped; prepared local-ui still requires `KRM_UI_CONFIG_FILE`. Standalone UI uses a prepared UI config in `KRM_CONFIG_FILE` and trusted upstream CA in `KRM_UPSTREAM_CA_FILE`; see [the runbook](AGENT_INSTALL.md).
 
 Controller: `instance.role: controller`, `api.enabled`, `api.listen` loopback-only, `api.unix_socket` within private run_dir; credentials under `web.credentials_file`, session TTL under `web.session_ttl`. Generated local-ui controller configs enable TLS on `127.0.0.1:9443`. `web.enabled` controls UI runtime only; controller never embeds it. Prepared configs retain their explicitly configured settings.
 
-UI: `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`. Browser-facing `web` keeps TLS enabled. Generated local UI uses `ui.upstream: https://127.0.0.1:9443`, `insecure_tls: false` and `upstream_ca_file` pointing to the controller's public certificate installed as `controller-ca.crt` in the UI config directory. Controller private keys are not copied to UI. Linux DynamicUser UI has a readable public trust file and separate writable TLS/log paths. Remote UI through an authenticated SSH tunnel uses HTTPS on the forwarded loopback port and an explicitly trusted controller CA supplied through `KRM_UPSTREAM_CA_FILE`; SSH encryption does not remove the upstream verification requirement. `upstream_spki_sha256` may add a pin. Do not set `insecure_tls: true` to bypass trust failures. Note that the **prepared** UI templates bind the browser-facing `web.listen` to `0.0.0.0:9444` with HTTPS, while the signed interactive wizard defaults to loopback unless a private LAN IPv4 is explicitly selected. Restrict a prepared template to the intended trusted interface/network; never expose the panel or controller API on WAN.
+UI: `instance.role: ui`, `ui.enabled: true`, `web.enabled: true`. Browser-facing `web` keeps TLS enabled. Generated local UI uses `ui.upstream: https://127.0.0.1:9443`, `insecure_tls: false` and `upstream_ca_file` pointing to the controller's public certificate installed as `controller-ca.crt` in the UI config directory. Controller private keys are not copied to UI. A separate management UI host needs readable public trust and its own writable TLS/log paths. Remote UI through an authenticated SSH tunnel uses HTTPS on the forwarded loopback port and an explicitly trusted controller CA supplied through `KRM_UPSTREAM_CA_FILE`; SSH encryption does not remove the upstream verification requirement. `upstream_spki_sha256` may add a pin. Do not set `insecure_tls: true` to bypass trust failures. Note that the **prepared** UI templates bind the browser-facing `web.listen` to `0.0.0.0:9444` with HTTPS, while the signed interactive wizard defaults to loopback unless a private LAN IPv4 is explicitly selected. Restrict a prepared template to the intended trusted interface/network; never expose the panel or controller API on WAN.
 
-Wizard defaults keep existing firewall management, API on loopback, speed testing disabled and `auto_apply: false`; update discovery is optional and never authorizes application. It does not guess routing tags or install Xray. Controller config/credential files are private (0600, containing directories 0700). The UI config contains no controller secrets and is installed as 0644 in a 0755 directory so the systemd DynamicUser can read it; the public UI trust certificate is also readable by the UI service. Treat subscription URLs, headers and credentials as secrets, including terminal recordings and logs.
+Wizard defaults keep existing firewall management, API on loopback, speed testing disabled and `auto_apply: false`; update discovery is optional and never authorizes application. It does not guess routing tags or install Xray. Controller config/credential files are private (0600, containing directories 0700). The UI config contains no controller secrets and is installed as 0644 in a 0755 directory so the independently running UI can read it; the public UI trust certificate is also readable by the UI service. Treat subscription URLs, headers and credentials as secrets, including terminal recordings and logs.
 
 Failover: `detection_interval: 5s`, `failure_threshold: 2`, `probe_timeout: 2s`, `overall_deadline: 5s`, `quorum: 2`. Independent health hosts are compared across VPN and WAN. Fewer independent targets yield inconclusive monitoring and preserve routing. `health.hot_pool_freshness` guards fallback freshness. Health recovery threshold, target policy/body limit and benchmark stability/improvement/cooldown remain independent.
 
@@ -16,9 +49,9 @@ All benchmark modes, including a manual/forced run, first measure response laten
 
 `benchmark.speed.enabled` defaults to false and requires a real HTTPS `url_template` containing `{bytes}`. When enabled, `benchmark.speed.workers` controls simultaneous node downloads: default `2`, accepted range `1..16`, capped by the finalist count. Set `workers: 6` to test all six default finalists together or `workers: 1` for isolated speed measurements. Each node still performs its own warmup and adaptive repetitions sequentially. Parallel downloads share WAN bandwidth and CPU; their Mbps values describe throughput under concurrent load rather than isolated per-node capacity, and a saturated link can limit the time saved.
 
-`paths.log_file` is bounded to 1MiB plus three backups; private log permissions. Runtime directories/state/cache hold sensitive data. For systemd UI, writable TLS/log files belong in `/var/lib/kee-route-manager-ui`, not root-private core config.
+`paths.log_file` is bounded to 1MiB plus three backups; private log permissions. Runtime directories/state/cache hold sensitive data. For remote management UI, writable TLS/log files belong to its dedicated unprivileged account, never the router’s private core config.
 
-Xray `managed_dir` must resolve to the same directory as absolute `config_dir`; `base_routing_file`, when set, must be a JSON file directly in that directory. Nested paths are rejected because Xray's `-confdir` loading is not recursive. Equivalent directory symlink aliases also work for restore, rollback and pending journal replay; unexpected/duplicate targets and changed file identities remain rejected. API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique and cannot begin with the reserved `krm-persisted-selection` prefix. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. Firewall `existing` never claims independent bypass; `managed` requires own table/mark/policy-route ownership and correct redirect/TProxy inbounds.
+Xray `managed_dir` must resolve to the same directory as absolute `config_dir`; `base_routing_file`, when set, must be a JSON file directly in that directory. Nested paths are rejected because Xray's `-confdir` loading is not recursive. Equivalent directory symlink aliases also work for restore, rollback and pending journal replay; unexpected/duplicate targets and changed file identities remain rejected. API/probe/health/benchmark/web ports cannot overlap. Managed tags must be unique and cannot begin with the reserved `krm-persisted-selection` prefix. Choose `route.inbound_tags`/`replace_outbound_tags` from strict-JSON `route-candidates`, not a hardcoded outbound. The Keenetic/Netcraze target requires firewall `existing` and never claims independent bypass. Existing interception remains operator-owned.
 
 After changing generated Xray API, probe or health configuration and restarting the daemon, the next benchmark refreshes the full managed configuration. This requires an Xray restart and may interrupt existing connections; unchanged configurations continue to use the configured pool-update mechanism.
 
@@ -44,13 +77,13 @@ Update: `enabled: true` enables scheduled signed release checks when the launche
 
 Validate offline with `kee-route-managerctl validate --config PATH`. Validation does not prove Xray/network/hardware readiness; follow [installation](AGENT_INSTALL.md).
 
-Router telemetry is sampled by the daemon every 5 seconds; clients every 20 seconds. The metrics API serves cached data and marks old or failed observations stale. Dashboard history keeps at most 720 successful chronological samples in daemon memory (about an hour with normal polling), without periodic flash writes; a daemon restart clears it, and missing observations leave gaps. CPU load on Linux/OpenWrt is computed between `/proc/stat` observations; the first observation, unavailable counters and counter resets have no CPU measurement. RAM, uptime and temperature remain available according to the host. WAN/interface selection and client discovery are not inferred on those platforms.
+Router telemetry is sampled by the daemon every 5 seconds; clients every 20 seconds. The metrics API serves cached data and marks old or failed observations stale. Dashboard history keeps at most 720 successful chronological samples in daemon memory, without periodic flash writes; restart clears it, and missing observations leave gaps. Availability is determined by actual KeeneticOS/NDMS RCI capabilities, not a model-name assumption.
 
 Keenetic supplies WAN counters and instantaneous speeds through RCI. `traffic_available` distinguishes supported idle traffic (zero Mbps) from unavailable data. WAN traffic covers the selected WAN interface, including traffic outside VPN; benchmark throughput is a separate measurement under test load. Temperature and other device-specific metrics may be absent. Dashboard readers do not run speed tests or additional RCI polls; neither live readings nor in-memory history imply hardware acceptance for a particular router model or firmware.
 
 Local `file://` subscription sources must be regular files. The fetcher opens without blocking on FIFO producers, validates the opened descriptor and checks cancellation during bounded reads. Manual refresh still honors source retry backoff even when no cache exists.
 
-Managed Linux/OpenWrt policy rules use explicit priority `10000`, an exact mark with full mask, and unrestricted source/destination selectors. KRM refuses conflicting priorities, selector drift and duplicate rules before reconciliation or cleanup. Legacy ownership records without a verified priority do not authorize adopting or deleting an existing rule; inspect and reconcile those resources explicitly before migrating.
+Removed router targets and their managed nftables policy rules are not part of the current installation path. See [migration constraints](BREAKING_CHANGES.md#unreleased-keeneticnetcraze-only-router-targets) before upgrading an older configuration.
 
 Update channel selection: `update.channel: rc` searches only Release Candidate releases; `stable` searches only Release releases. With enabled GitHub discovery and a compatible launcher, Router → System can save the choice in the private `update.install_dir/update-channel.json` sidecar; that choice takes precedence on launcher restart without rewriting YAML. Switching changes discovery only: installation remains explicit, `auto_apply` remains false, and `allow_downgrade` is never enabled by the panel. A signed bootstrap seed is verified using its own channel, independently of future discovery. Installed RC and previous slots remain verifiable after selecting Release.
 

@@ -64,8 +64,8 @@ func Install(configFile, uiConfig, releaseDir, binDir string) error {
 		if err != nil {
 			return err
 		}
-		if ui.Instance.Role != "ui" || c.Platform.Kind != "keenetic" && c.Platform.Kind != "openwrt" {
-			return errors.New("joint local UI supervision supports Keenetic/OpenWrt; keep Linux UI in its unprivileged service")
+		if ui.Instance.Role != "ui" || c.Platform.Kind != "keenetic" {
+			return errors.New("joint local UI supervision requires Keenetic/Netcraze")
 		}
 		// Hold the configured port through bootstrap, both proving the prior UI
 		// stopped and preventing a competing supervisor from binding mid-install.
