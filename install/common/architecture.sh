@@ -29,7 +29,12 @@ krm_detect_arch(){
   mipsel:mips|mipsle:mips) echo 'ERROR: uname and native ELF byte order disagree' >&2; return 1;;
  esac
  shift 18
- if [ "$krm_endian" = 1 ]; then krm_flags_low=$1; krm_flags_abi=$2; else krm_flags_low=$4; krm_flags_abi=$3; fi
+ if [ "$krm_endian" = 1 ]; then krm_flags_low=$1; krm_flags_abi=$2; krm_flags_arch=$4; else krm_flags_low=$4; krm_flags_abi=$3; krm_flags_arch=$1; fi
+ # r6 removes instructions used by Go's classic MIPS32 target. Do not try
+ # executing that target on r6-only or unknown future native ISA encodings.
+ if [ "$((krm_flags_arch & 240))" -ge 144 ]; then
+  echo 'ERROR: unsupported native MIPS ISA; classic MIPS32 is required' >&2; return 1
+ fi
  # Reject N32 (EF_MIPS_ABI2), EABI, O64 and other non-O32 encodings.
  # Historical O32 ELF can omit the ABI mask entirely.
  if [ "$((krm_flags_low & 32))" != 0 ] || { [ "$((krm_flags_abi & 240))" != 0 ] && [ "$((krm_flags_abi & 240))" != 16 ]; }; then

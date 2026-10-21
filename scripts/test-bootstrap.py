@@ -21,6 +21,8 @@ class BootstrapTests(unittest.TestCase):
    ('mipsel',1,1,0x70001007,'mipsle'),('mipsle',2,1,0x70001007,None),
    ('mips',2,2,0x80000007,None),('mips',2,1,0x70000027,None),
    ('mips',2,1,0x70002007,None),('unknown',2,1,0,None),
+   ('mips',2,1,0x90001007,None),('mipsel',1,1,0x90001007,None),
+   ('mips',2,1,0xa0001007,None),('mips',1,1,0xb0001007,None),
   ]:
    with self.subTest(machine=machine,endian=endian,elfclass=elfclass,flags=flags):
     elf=self.root/'native-shell';body=bytearray(52);body[:4]=b'\x7fELF';body[4]=elfclass;body[5]=endian
@@ -30,7 +32,7 @@ class BootstrapTests(unittest.TestCase):
     if want:self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),want)
     else:self.assertNotEqual(r.returncode,0)
  def test_signed_mips_bootstrap_selects_byte_order_and_refuses_abi_before_download(self):
-  for endian,flags,arch in [(2,0x70001007,'mips'),(1,0x70001007,'mipsle'),(2,0x70000027,None)]:
+  for endian,flags,arch in [(2,0x70001007,'mips'),(1,0x70001007,'mipsle'),(2,0x70000027,None),(2,0x90001007,None),(1,0x90001007,None)]:
    with self.subTest(endian=endian,flags=flags):
     d,a,m,e=self.fixture(arch=arch or 'mips')
     (d/'fake/uname').write_text('#!/bin/sh\necho mips\n')
