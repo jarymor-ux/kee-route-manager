@@ -1,6 +1,8 @@
 # Changelog
 
-## 2.0.0 — 2026-10-22
+## 2.0.1 — 2026-10-22
+
+- First 2.0 release target: the public `v2.0.0` tag failed CI and produced no release assets; that tag is retained without moving it. Correct the Linux process-lifecycle test to treat ESRCH (PID already gone) as successful process exit, with a regression. This fixes a false test failure, not application runtime behavior.
 
 - Restrict router deployments to Keenetic/Netcraze on compatible stock KeeneticOS/NDMS and Entware. Remove retired router adapters, installers, service templates and current configuration examples; keep shared Linux/Go tooling and management-only remote UI. Historical releases and changelog entries are unchanged. Older generated Keenetic YAML requires explicit offline removal of retired platform subsections before strict validation.
 - Add MIPS Big Endian soft-float builds and signed-release/installer architecture handling, with separate BE/LE detection and immutable legacy inventory verification. These assets are not retroactively added to published v1.3.3.

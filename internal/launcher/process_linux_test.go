@@ -5,6 +5,7 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,37 @@ import (
 type linuxProcessIdentity struct {
 	PID   int    `json:"pid"`
 	Start string `json:"start"`
+}
+
+func linuxProcessAbsent(err error) bool {
+	// procfs may return ESRCH when a process exits between open and read.
+	// Only actual absence proves death; permission/I/O/stat errors must fail.
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ESRCH)
+}
+
+func TestLinuxProcessAbsentErrorClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		absent bool
+	}{
+		{"alive", nil, false},
+		{"ENOENT", syscall.ENOENT, true},
+		{"wrapped missing proc", fmt.Errorf("observe proc: %w", &os.PathError{Op: "open", Path: "/proc/123/stat", Err: syscall.ENOENT}), true},
+		{"ESRCH", syscall.ESRCH, true},
+		{"read vanished proc", &os.PathError{Op: "read", Path: "/proc/123/stat", Err: syscall.ESRCH}, true},
+		{"wrapped vanished proc", fmt.Errorf("observe proc: %w", &os.PathError{Op: "read", Path: "/proc/123/stat", Err: syscall.ESRCH}), true},
+		{"permission denied", &os.PathError{Op: "open", Path: "/proc/123/stat", Err: syscall.EACCES}, false},
+		{"I/O failure", &os.PathError{Op: "read", Path: "/proc/123/stat", Err: syscall.EIO}, false},
+		{"invalid stat", fmt.Errorf("short process stat"), false},
+		{"message without errno", fmt.Errorf("read /proc/123/stat: no such process"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := linuxProcessAbsent(tc.err); got != tc.absent {
+				t.Fatalf("absent=%v want=%v err=%v", got, tc.absent, tc.err)
+			}
+		})
+	}
 }
 
 func linuxProcessState(pid int) (linuxProcessIdentity, string, error) {
@@ -173,7 +205,7 @@ func TestLinuxParentDeathStopsDaemonAndPreservesIndependentProcess(t *testing.T)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		identity, state, err := linuxProcessState(daemonID.PID)
-		if os.IsNotExist(err) || err == nil && (identity != daemonID || state == "Z") {
+		if linuxProcessAbsent(err) || err == nil && (identity != daemonID || state == "Z") {
 			break
 		}
 		if err != nil || time.Now().After(deadline) {
