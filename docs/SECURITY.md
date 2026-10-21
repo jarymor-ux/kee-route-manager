@@ -1,6 +1,6 @@
 # Security boundaries
 
-**Published release security note:** immutable v1.3.3 was built with Go 1.27.2 and is affected by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) in `crypto/x509` (distrust of compromised intermediates). Current source/tooling uses Go 1.27.3, but that does not patch published binaries. Prefer waiting for a new verified signed release for a new installation; do not replace immutable assets or install unverified development builds. Signature validity does not mean the toolchain has no known vulnerabilities.
+**Toolchain security:** version 2.0.0 builds with Go 1.27.3 and includes [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). The immutable legacy v1.3.3 release uses affected Go 1.27.2 and is not repaired by this source change. Only install the complete signature-verified v2.0.0 assets once actually published; never substitute unverified development builds. Signature validity is independent of known-vulnerability and hardware acceptance checks.
 
 KRM controller runs with privilege to manage owned Xray routing/interception. Anyone able to alter its private config, credentials, state, socket or signing key is trusted at that boundary. UI has no controller/process execution dependency; a separate remote UI host must use a dedicated unprivileged account. Only expose UI to intended trusted LAN clients; do not expose root API/socket to WAN.
 

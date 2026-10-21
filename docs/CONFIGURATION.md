@@ -2,7 +2,7 @@
 
 Templates in `configs/` use strict YAML subset decoded with unknown-field rejection. Keep real subscriptions and node keys in private files outside the repository.
 
-Only Keenetic/Netcraze routers are deployment targets: `platform.kind: keenetic`; existing interception remains owned by the operator/XKeen, without a new firewall-mode selector. See [hardware/firmware/ABI requirements](HARDWARE.md). Before upgrading an older generated Keenetic configuration, follow [offline removal of retired platform subsections](BREAKING_CHANGES.md#unreleased-keeneticnetcraze-only-router-targets); unknown keys remain errors.
+Only Keenetic/Netcraze routers are deployment targets: `platform.kind: keenetic`; existing interception remains owned by the operator/XKeen, without a new firewall-mode selector. See [hardware/firmware/ABI requirements](HARDWARE.md). Before upgrading an older generated Keenetic configuration, follow [offline removal of retired platform subsections](BREAKING_CHANGES.md#200-keeneticnetcraze-only-router-targets); unknown keys remain errors.
 
 ## Resource-limited installations
 
@@ -83,7 +83,7 @@ Keenetic supplies WAN counters and instantaneous speeds through RCI. `traffic_av
 
 Local `file://` subscription sources must be regular files. The fetcher opens without blocking on FIFO producers, validates the opened descriptor and checks cancellation during bounded reads. Manual refresh still honors source retry backoff even when no cache exists.
 
-Removed router targets and their managed nftables policy rules are not part of the current installation path. See [migration constraints](BREAKING_CHANGES.md#unreleased-keeneticnetcraze-only-router-targets) before upgrading an older configuration.
+Removed router targets and their managed nftables policy rules are not part of the current installation path. See [migration constraints](BREAKING_CHANGES.md#200-keeneticnetcraze-only-router-targets) before upgrading an older configuration.
 
 Update channel selection: `update.channel: rc` searches only Release Candidate releases; `stable` searches only Release releases. With enabled GitHub discovery and a compatible launcher, Router → System can save the choice in the private `update.install_dir/update-channel.json` sidecar; that choice takes precedence on launcher restart without rewriting YAML. Switching changes discovery only: installation remains explicit, `auto_apply` remains false, and `allow_downgrade` is never enabled by the panel. A signed bootstrap seed is verified using its own channel, independently of future discovery. Installed RC and previous slots remain verifiable after selecting Release.
 
