@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f7f4">
-  <meta name="description" content="Kee Route Manager is an open-source, self-hosted control plane for Xray routing on Keenetic, OpenWrt and Linux.">
+  <meta name="description" content="Kee Route Manager is an open-source Xray, VPN subscription, route health and failover panel for Keenetic and Netcraze routers.">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Kee Route Manager — Xray routing control">
-  <meta property="og:description" content="Manage subscriptions, route health and failover from a self-hosted panel.">
+  <meta property="og:title" content="Kee Route Manager — Keenetic / Netcraze Xray control">
+  <meta property="og:description" content="Manage Xray subscriptions, route health and failover on Keenetic and Netcraze routers. Hardware qualification is experimental.">
   <meta property="og:url" content="https://jarymor-ux.github.io/kee-route-manager/">
   <link rel="canonical" href="https://jarymor-ux.github.io/kee-route-manager/">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <title>Kee Route Manager — Xray routing control</title>
+  <title>Kee Route Manager — Keenetic / Netcraze Xray control</title>
   <style>
     :root { color-scheme:light; --bg:#f7f7f4; --ink:#202724; --muted:#56635c; --line:#cdd4cb; --accent:#245747; --surface:#fff; }
     *,*::before,*::after { box-sizing:border-box }
@@ -53,6 +53,10 @@
     pre { font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; margin:0; color:var(--ink) }
     .note { font-size:14px; padding-left:15px; border-left:3px solid #9baba1 }
     .muted-link { font-weight:650 }
+    details { border-top:1px solid var(--line); padding:12px 0 }
+    summary { cursor:pointer; font-weight:650 }
+    details p { margin:12px 0 0 !important }
+    summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px }
     footer { padding:28px 0 45px; color:var(--muted); font-size:13px }
     .footer-row { display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap }
     .footer-row div { display:flex; flex-wrap:wrap; gap:20px }
@@ -88,14 +92,14 @@
   <section class="hero">
     <div class="container">
       <div class="eyebrow" data-i18n="eyebrow">Open source / self-hosted / Go</div>
-      <h1 data-i18n="title">Xray routing, without the guesswork.</h1>
-      <p class="lead" data-i18n="lead">Kee Route Manager watches VPN nodes, maintains a working Xray pool and gives you a place to control routing on your own gateway.</p>
+      <h1 data-i18n="title">Xray control for Keenetic and Netcraze.</h1>
+      <p class="lead" data-i18n="lead">An open panel for Xray, VPN subscriptions, route health and node failover on Keenetic and Netcraze routers running compatible stock KeeneticOS/NDMS.</p>
       <div class="actions">
         <a href="https://github.com/jarymor-ux/kee-route-manager" data-i18n="source">Source code ↗</a>
-        <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/AGENT_INSTALL.md" data-i18n="guide">Installation guide ↗</a>
+        <a href="https://github.com/jarymor-ux/kee-route-manager/blob/v1.3.3/docs/AGENT_INSTALL.md" data-i18n="guide">Installation guide ↗</a>
         <a href="https://github.com/jarymor-ux/kee-route-manager/releases" data-i18n="releases">Releases ↗</a>
       </div>
-      <div class="meta"><span>Apache-2.0</span><span>Keenetic / OpenWrt / Linux</span><span data-i18n="experiment">Hardware support is experimental</span></div>
+      <div class="meta"><span>Apache-2.0</span><span>Keenetic / Netcraze</span><span data-i18n="experiment">Hardware support is experimental</span></div>
     </div>
   </section>
   <section class="section" id="capabilities">
@@ -127,12 +131,14 @@
     <div class="container section-grid">
       <div><div class="eyebrow">03 / <span data-i18n="getStarted">Get started</span></div><h2 data-i18n="installTitle">Start with a signed release.</h2></div>
       <div>
-        <p data-i18n="installText">The installer expects a working Xray setup. Choose the bootstrap for your platform from a fixed release, review the runbook and back up your current configuration first.</p>
+        <p data-i18n="installText">First prepare compatible stock firmware, Entware, storage and a working XKeen/Xray setup on the router. KRM does not install these prerequisites. Review the runbook and keep private backups plus an independent recovery connection.</p>
         <div class="installbox"><pre><code>curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh \
-  https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.3.3/bootstrap-linux.sh
-sh /tmp/krm-bootstrap.sh</code></pre></div>
-        <p class="note" data-i18n="installNote">Example for Linux only. On Keenetic or OpenWrt, use the matching bootstrap asset from the same release. Do not pipe an unverified script to a shell; follow the signature-verification instructions.</p>
-        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/AGENT_INSTALL.md" data-i18n="fullGuide">Read the complete installation and rollback guide ↗</a></p>
+  https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.3.3/bootstrap-keenetic.sh</code></pre></div>
+        <p class="note" data-i18n="installNote">Keenetic/Netcraze example pinned to the published v1.3.3 release. Its bootstrap verifies Ed25519 signatures and SHA-256 before downloaded programs execute. Verify initial bootstrap trust too. This release has no MIPS Big Endian binary; KN-2410/2510 must wait for a new signed release.</p>
+        <p data-i18n="verifyBootstrap">Before execution: obtain the v1.3.3 SHA256SUMS and SHA256SUMS.sig, verify the Ed25519 signature with the release public key authenticated independently, then check this file against the signed bootstrap-keenetic.sh digest. Stop on any missing file, mismatch or unknown key. Follow the trust-verification runbook below; a public key downloaded beside the signature is not independent trust.</p>
+        <p data-i18n="executeBootstrap">Only after the signature and bootstrap digest are verified, run:</p>
+        <div class="installbox"><pre><code>sh /tmp/krm-bootstrap.sh</code></pre></div>
+        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/v1.3.3/docs/AGENT_INSTALL.md" data-i18n="fullGuide">Read the complete installation and rollback guide ↗</a></p>
       </div>
     </div>
   </section>
@@ -140,8 +146,13 @@ sh /tmp/krm-bootstrap.sh</code></pre></div>
     <div class="container section-grid">
       <div><div class="eyebrow">04 / <span data-i18n="scope">Scope</span></div><h2 data-i18n="scopeTitle">What to expect.</h2></div>
       <div>
-        <p data-i18n="scopeText">KRM currently manages Xray, not arbitrary VPN backends or AmneziaWG. Hardware qualification is incomplete across all supported platforms. In particular, Keenetic does not have automatic direct bypass when Xray stops entirely.</p>
-        <p data-i18n="scopeText2">Updates are signed and explicitly applied; the launcher and some platform configurations still require separate maintenance. Keep device backups and a recovery path.</p>
+        <p data-i18n="scopeText">Router targets are Keenetic and Netcraze with compatible stock firmware, Entware and Xray. Hardware qualification is incomplete for individual models. Keenetic/Netcraze has no automatic direct bypass when the main Xray process stops.</p>
+        <p data-i18n="scopeText2">KRM uses the Xray backend only. Signed updates require explicit application; the stable launcher and remote management UI need separate maintenance. Keep backups and a recovery path. New MIPS Big Endian support is planned and unreleased; a model name or a cross-build does not prove compatibility.</p>
+        <h3 data-i18n="compatTitle">Check the exact model and its resources</h3>
+        <p data-i18n="compatText">Inspect the full model index, native ABI and byte order, available RAM, Entware storage and working Xray configuration. A 256 MB router shares memory with firmware and VPN traffic; there is no guaranteed 256 MB capacity claim. Core-only and a remote management UI can reduce resident processes on the router.</p>
+        <details><summary data-i18n="faqPrereq">Will KRM install Entware or Xray?</summary><p data-i18n="faqPrereqAnswer">No. Set up these prerequisites separately and prove your existing client route before installing KRM.</p></details>
+        <details><summary data-i18n="faqRemote">Can I put the UI on another computer?</summary><p data-i18n="faqRemoteAnswer">Yes, as a management-only client over an authenticated SSH tunnel with verified upstream TLS. The sole routing controller stays on the Keenetic/Netcraze router.</p></details>
+        <details><summary data-i18n="faqBE">Can v1.3.3 run on KN-2410?</summary><p data-i18n="faqBEAnswer">No MIPS Big Endian artifact is shipped in that release. Wait for a compatible signed release; do not substitute a little-endian binary or install from mutable development sources.</p></details>
         <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/KNOWN_LIMITATIONS.md" data-i18n="limitations">Read the known limitations ↗</a></p>
       </div>
     </div>
@@ -161,9 +172,9 @@ sh /tmp/krm-bootstrap.sh</code></pre></div>
 (() => {
   const ru = {
     navCapabilities:"Возможности",navInstall:"Установка",navScope:"Ограничения",
-    eyebrow:"Открытый код / свой сервер / Go",
-    title:"Управление маршрутизацией Xray.",
-    lead:"Kee Route Manager проверяет VPN-узлы, поддерживает рабочий пул Xray и позволяет управлять маршрутами на собственном шлюзе.",
+    eyebrow:"Открытый код / свой роутер / Go",
+    title:"Управление Xray на Keenetic и Netcraze.",
+    lead:"Открытая панель управления Xray, VPN-подписками, здоровьем маршрутов и переключением узлов для Keenetic и Netcraze на совместимой стоковой KeeneticOS/NDMS.",
     source:"Исходный код ↗",guide:"Инструкция по установке ↗",releases:"Релизы ↗",experiment:"Поддержка устройств экспериментальная",
     overview:"Обзор",capTitle:"Для повседневной работы.",
     subTitle:"Подписки",subDesc:"Поддерживаемые VLESS-ссылки и списки узлов Xray JSON. Заголовки провайдеров хранятся отдельно от кода.",
@@ -176,12 +187,19 @@ sh /tmp/krm-bootstrap.sh</code></pre></div>
     cli:"Локальное администрирование и проверка конфигурации.",
     launcher:"Подписанные версии и управление запуском.",archLink:"Документация по архитектуре ↗",
     getStarted:"Начало работы",installTitle:"Устанавливайте из подписанного релиза.",
-    installText:"Для установки нужен уже работающий Xray. Выберите bootstrap своей платформы из фиксированного релиза, изучите инструкцию и сохраните резервную копию настроек.",
-    installNote:"Пример только для Linux. Для Keenetic и OpenWrt выберите соответствующий bootstrap из того же релиза. Не запускайте непроверенные скрипты из сети; следуйте инструкции по проверке подписей.",
+    installText:"Сначала подготовьте совместимую стоковую прошивку, хранилище, Entware и работающий XKeen/Xray на роутере. KRM не устанавливает эти компоненты. Изучите инструкцию, сохраните приватные резервные копии и независимый канал восстановления.",
+    installNote:"Пример для Keenetic/Netcraze закреплён на опубликованном v1.3.3. Bootstrap проверяет Ed25519 и SHA-256 до исполнения скачанных программ; проверьте доверие и к самому bootstrap. В этом релизе нет MIPS Big Endian: KN-2410/2510 требуют нового подписанного релиза.",
+    verifyBootstrap:"До запуска: получите SHA256SUMS и SHA256SUMS.sig версии v1.3.3, проверьте Ed25519-подпись независимо подтверждённым release public key, затем сравните digest этого файла с подписанной записью bootstrap-keenetic.sh. При отсутствии файла, несовпадении или неизвестном ключе остановитесь. Следуйте процедуре доверия по ссылке ниже; ключ рядом с подписью сам по себе не устанавливает доверие.",
+    executeBootstrap:"Только после проверки подписи и digest bootstrap выполните:",
     fullGuide:"Полная инструкция по установке и восстановлению ↗",
     scope:"Поддержка",scopeTitle:"Границы проекта.",
-    scopeText:"Сейчас KRM управляет только Xray, а не произвольными VPN-движками или AmneziaWG. Аппаратные проверки всех платформ не завершены. На Keenetic нет автоматического прямого обхода при полной остановке Xray.",
-    scopeText2:"Обновления подписаны и применяются вручную; launcher и часть конфигураций требуют отдельного обслуживания. Нужны резервные копии и способ восстановить доступ.",
+    scopeText:"Целевые роутеры — Keenetic и Netcraze на совместимой стоковой прошивке с Entware и Xray. Проверки отдельных моделей не завершены. Автоматического прямого обхода при остановке основного Xray на Keenetic/Netcraze нет.",
+    scopeText2:"Используется только Xray backend. Подписанные обновления применяются явно; стабильный launcher и удалённый UI обслуживаются отдельно. Нужны backup и recovery. Поддержка MIPS Big Endian планируется и ещё не выпущена; имя модели и cross-build не доказывают совместимость.",
+    compatTitle:"Проверьте точную модель и ресурсы",
+    compatText:"Проверьте полный индекс модели, ABI и порядок байтов, доступную RAM, хранилище Entware и работающий Xray. На 256 МБ память делится с прошивкой и VPN-трафиком; гарантии достаточности нет. Core-only и удалённый management UI уменьшают число процессов на роутере.",
+    faqPrereq:"KRM сам установит Entware или Xray?",faqPrereqAnswer:"Нет. Подготовьте их отдельно и проверьте существующий клиентский маршрут до установки KRM.",
+    faqRemote:"Можно перенести UI на другой компьютер?",faqRemoteAnswer:"Да, только как клиент управления через authenticated SSH tunnel с проверкой upstream TLS. Единственный контроллер маршрутов остаётся на Keenetic/Netcraze.",
+    faqBE:"Можно запустить v1.3.3 на KN-2410?",faqBEAnswer:"В этом релизе нет MIPS Big Endian. Дождитесь совместимого подписанного релиза; не подменяйте BE сборкой LE и не устанавливайте с изменяемой ветки разработки.",
     limitations:"Известные ограничения ↗",issues:"Сообщить о проблеме",security:"Безопасность"
   };
   const nodes = [...document.querySelectorAll("[data-i18n]")];
@@ -191,9 +209,14 @@ sh /tmp/krm-bootstrap.sh</code></pre></div>
     const strings = lang === "ru" ? ru : en;
     for (const node of nodes) if (Object.hasOwn(strings,node.dataset.i18n)) node.textContent = strings[node.dataset.i18n];
     document.documentElement.lang = lang;
+    document.querySelector("nav").setAttribute("aria-label",lang === "ru" ? "Основная навигация" : "Main navigation");
+    const description = lang === "ru" ? "Открытая панель Xray, VPN-подписок, здоровья маршрутов и переключения узлов для Keenetic и Netcraze. Аппаратная совместимость экспериментальна." : "Open-source Xray, VPN subscription, route health and failover panel for Keenetic and Netcraze. Hardware compatibility is experimental.";
+    document.querySelector('meta[name="description"]').content = description;
+    document.querySelector('meta[property="og:description"]').content = description;
+    document.querySelector('meta[property="og:title"]').content = lang === "ru" ? "Kee Route Manager — Xray для Keenetic / Netcraze" : "Kee Route Manager — Keenetic / Netcraze Xray control";
     toggle.textContent = lang === "ru" ? "EN" : "RU";
     toggle.setAttribute("aria-label",lang === "ru" ? "Switch language to English" : "Переключить язык на русский");
-    document.title = lang === "ru" ? "Kee Route Manager — управление Xray" : "Kee Route Manager — Xray routing control";
+    document.title = lang === "ru" ? "Kee Route Manager — Xray для Keenetic / Netcraze" : "Kee Route Manager — Keenetic / Netcraze Xray control";
   }
   let language = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
   setLanguage(language);
