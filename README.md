@@ -2,7 +2,9 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-Kee Route Manager (KRM) controls a verified Xray hot pool and failover on gateways. **Release `v1.3.3` and Release Candidate `v1.3.3-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+**Security:** published v1.3.3 uses Go 1.27.2 and is affected by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509`). Source now builds with Go 1.27.3; a fixed signed KRM release is still required. Prefer waiting for it before a new deployment. Immutable published assets are unchanged.
+
+Kee Route Manager (KRM) is an open panel for Xray, VPN subscriptions, route health and node failover on **Keenetic and Netcraze routers**. [Hardware requirements and compatibility](docs/HARDWARE.md) define the supported scope. **Release `v1.3.3` and Release Candidate `v1.3.3-rc.1` use separate publication channels.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -13,26 +15,26 @@ Runtime components:
 - `kee-route-managerd`: sole owner of state, scheduler, Xray/firewall and authenticated HTTPS/Unix APIs. Runs without UI.
 - `kee-route-manager-ui`: embedded Web/PWA and TLS-verified API proxy. No router/core/process-execution dependency.
 - `kee-route-managerctl`: local daemon client; offline credential/config/strict-JSON candidate tools.
-- `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/OpenWrt local installations, UI; verifies signed release slots and applies updates on explicit request.
+- `kee-route-manager-launcher`: stable parent of the daemon and, on Keenetic/Netcraze local installations, UI; verifies signed release slots and applies updates on explicit request.
 
-Builds: Linux amd64, arm64, armv7, mipsle for all four runtime components and release tooling. Only the Xray backend is implemented; AmneziaWG and other tunnel engines are not supported. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
+Builds: Linux amd64 (development/tools and management UI), arm64, armv7, mipsle and MIPS BE `mips` (unreleased) for all four runtime components and release tooling. Only the Xray backend is implemented; AmneziaWG and other tunnel engines are not supported. Subscription formats: plain/base64 VLESS URI lists and strict Xray JSON node extraction (Reality TCP and WebSocket TLS). The subscription editor can prepare persistent HWID request headers for device-bound providers. Configuration parsing uses the YAML module listed in `go.mod`; runtime modules are included in the release inventory.
 
-Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. Linux/OpenWrt managed nftables can bypass interception independently of Xray. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every platform remains experimental pending hardware checks.
+Failover compares independent health targets through VPN and WAN with quorum; inconclusive/target outages preserve selection. Emergency fallback probes run in parallel; benchmark cannot enable direct. **Keenetic automatic Xray-outage bypass is unsupported**, as is bypass of pre-existing unmanaged interception. Every router model remains experimental pending hardware checks; independent automatic bypass is also unavailable on Netcraze.
 
-The launcher checks for updates at the configured interval; installation requires an explicit UI/CLI action. A signed protocol-1 bundle updates daemon, CLI and managed local UI together, verifies process/API/reconciliation readiness, and rolls back a failed trial before commit. After commit, recovery restarts the new version without restoring old controller state. The stable launcher is updated manually. Linux UI retains its separate unprivileged service. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
+The launcher checks for updates at the configured interval; installation requires an explicit UI/CLI action. A signed protocol-1 bundle updates daemon, CLI and managed local UI together, verifies process/API/reconciliation readiness, and rolls back a failed trial before commit. After commit, recovery restarts the new version without restoring old controller state. The stable launcher is updated manually. A separate management UI host runs only the UI and is maintained manually. Bootstrap pins one version and verifies Ed25519 manifest/checksums before executing downloaded code.
 
 Router → System offers Release Candidate (`rc`) and Release (`stable`) update channels with a compatible separately maintained launcher. Switching persists the discovery preference without installing a version or enabling downgrades. See [release channels and migration](docs/RELEASE.md).
 
 For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-For a fresh installation, download the bootstrap for your platform from **one immutable signed release containing the interactive installer** (currently `v1.3.3` stable or `v1.3.3-rc.1` RC), then run it without a config:
+For a fresh installation on a compatible Keenetic/Netcraze, download `bootstrap-keenetic.sh` from **one immutable signed release containing the interactive installer** (currently `v1.3.3` stable or `v1.3.3-rc.1` RC), then run it without a config. These released versions do not contain MIPS BE binaries: KN-2410/2510 require a future signed release, not an LE substitute:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
 sh /tmp/krm-bootstrap.sh
 ```
 
-Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` asset URL. Use a signed release that includes the interactive installer; previously published assets remain unchanged.
+Replace `RELEASE_URL` with that release's `bootstrap-keenetic.sh` asset URL for Keenetic/Netcraze. Use a signed release that includes the interactive installer; previously published assets remain unchanged.
 
 After verification of all release assets, the RU/EN wizard configures Xray paths, explicit routing tags, subscriptions and headers, score/health targets, pool size, optional speed testing and update discovery. With no `KRM_MODE`, installation defaults to `local-ui`; use `KRM_MODE=core sh /tmp/krm-bootstrap.sh` for controller only. The wizard generates a validated private controller config; `local-ui` also creates the UI config automatically, using `https://127.0.0.1:9443` and the controller's public certificate installed as `controller-ca.crt`. TLS verification remains enabled. An interactive terminal is required.
 

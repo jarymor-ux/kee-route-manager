@@ -1,6 +1,6 @@
 # Kee Route Manager — instructions for AI agents
 
-This contract applies to the entire repository. Product name: **Kee Route Manager (KRM)**. Read [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) and the relevant source/tests before editing. For deployment, follow [docs/AGENT_INSTALL.md](docs/AGENT_INSTALL.md) from beginning to end.
+This contract applies to the entire repository. Product name: **Kee Route Manager (KRM)**. Router targets are **Keenetic and Netcraze** on compatible stock KeeneticOS/NDMS using one `keenetic` adapter; see [docs/HARDWARE.md](docs/HARDWARE.md). A remote UI is a management client, never a generic router target. Read [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) and the relevant source/tests before editing. For deployment, follow [docs/AGENT_INSTALL.md](docs/AGENT_INSTALL.md) from beginning to end.
 
 ## Architecture invariants
 
@@ -16,7 +16,7 @@ This contract applies to the entire repository. Product name: **Kee Route Manage
 
 Execute clear, reversible repository work through completion. Delegate bounded independent work when it improves correctness; use separate file ownership and integrate before verification. Before cleanup/refactor, write a short plan and lock missing behavior with regressions. Prefer deletion and existing patterns, no unsolicited new dependencies.
 
-Do not create or commit review reports, test reports, raw logs, evidence directories, hardware result matrices or agent setup summaries. Keep necessary temporary evidence outside the checkout; communicate verification results in chat or CI. Repository documentation describes the product, configuration, installation and maintained limitations.
+Do not create or commit review reports, test reports, raw logs, evidence directories, one-off hardware result matrices or agent setup summaries. Keep necessary temporary evidence outside the checkout; communicate verification results in chat or CI. Repository documentation describes the product, configuration, installation and maintained limitations. Keep the sourced model/ABI/resource catalogue in docs/HARDWARE.md updated; its model entries do not establish hardware acceptance. Do not reintroduce OpenWrt or standalone Linux/systemd deployment integrations; retain necessary Entware/Linux/Go/build infrastructure and immutable legacy artifact verification.
 
 Run targeted tests, then `./scripts/check.sh`, race, vet, Staticcheck, Govulncheck, ShellCheck, fuzz smoke, cross-build and signed fixture verification. Use Docker for isolated Linux integration; never test firewall/uninstall against the developer host. Read failures and fix root causes. Do not equate cross-build or fake tests with hardware acceptance.
 
