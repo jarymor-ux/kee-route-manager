@@ -96,7 +96,7 @@
       <p class="lead" data-i18n="lead">An open panel for Xray, VPN subscriptions, route health and node failover on Keenetic and Netcraze routers running compatible stock KeeneticOS/NDMS.</p>
       <div class="actions">
         <a href="https://github.com/jarymor-ux/kee-route-manager" data-i18n="source">Source code ↗</a>
-        <a href="https://github.com/jarymor-ux/kee-route-manager/blob/v1.3.3/docs/AGENT_INSTALL.md" data-i18n="guide">Installation guide ↗</a>
+        <a href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/AGENT_INSTALL.md" data-i18n="guide">Installation guide ↗</a>
         <a href="https://github.com/jarymor-ux/kee-route-manager/releases" data-i18n="releases">Releases ↗</a>
       </div>
       <div class="meta"><span>Apache-2.0</span><span>Keenetic / Netcraze</span><span data-i18n="experiment">Hardware support is experimental</span></div>
@@ -131,16 +131,17 @@
     <div class="container section-grid">
       <div><div class="eyebrow">03 / <span data-i18n="getStarted">Get started</span></div><h2 data-i18n="installTitle">Start with a signed release.</h2></div>
       <div>
-        <p class="note" data-i18n="releaseSecurity">Published v1.3.3 was built with Go 1.27.2 and is affected by GO-2026-6809 in crypto/x509. Source now uses Go 1.27.3, but no fixed KRM release is published yet. Prefer waiting for a new signed release before a new deployment; existing assets remain immutable.</p>
+        <p class="note" data-i18n="releaseSecurity">Signed v2.0.1 uses Go 1.27.3, including the GO-2026-6809 crypto/x509 fix. Upgrade older generated Keenetic configurations offline before installation. Legacy v1.3.3 uses affected Go 1.27.2 and remains immutable. The v2.0.0 tag failed CI and has no release assets. Hardware acceptance is still pending for individual models.</p>
         <p><a href="https://pkg.go.dev/vuln/GO-2026-6809" data-i18n="releaseAdvisory">Go security advisory ↗</a></p>
+        <p><a href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets" data-i18n="migration">Read the mandatory upgrade migration ↗</a></p>
         <p data-i18n="installText">First prepare compatible stock firmware, Entware, storage and a working XKeen/Xray setup on the router. KRM does not install these prerequisites. Review the runbook and keep private backups plus an independent recovery connection.</p>
         <div class="installbox"><pre><code>curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh \
-  https://github.com/jarymor-ux/kee-route-manager/releases/download/v1.3.3/bootstrap-keenetic.sh</code></pre></div>
-        <p class="note" data-i18n="installNote">Keenetic/Netcraze example pinned to the published v1.3.3 release. Its bootstrap verifies Ed25519 signatures and SHA-256 before downloaded programs execute. Verify initial bootstrap trust too. This release has no MIPS Big Endian binary; KN-2410/2510 must wait for a new signed release.</p>
-        <p data-i18n="verifyBootstrap">Before execution: obtain the v1.3.3 SHA256SUMS and SHA256SUMS.sig, verify the Ed25519 signature with the release public key authenticated independently, then check this file against the signed bootstrap-keenetic.sh digest. Stop on any missing file, mismatch or unknown key. Follow the trust-verification runbook below; a public key downloaded beside the signature is not independent trust.</p>
+  https://github.com/jarymor-ux/kee-route-manager/releases/download/v2.0.1/bootstrap-keenetic.sh</code></pre></div>
+        <p class="note" data-i18n="installNote">Keenetic/Netcraze example pinned to signed v2.0.1. Its bootstrap verifies Ed25519 signatures and SHA-256 before downloaded programs execute. Verify initial bootstrap trust too. MIPS Big Endian binaries are included; KN-2410/2510 still require physical-device acceptance.</p>
+        <p data-i18n="verifyBootstrap">Before execution: obtain the v2.0.1 SHA256SUMS and SHA256SUMS.sig, verify the Ed25519 signature with the release public key authenticated independently, then check this file against the signed bootstrap-keenetic.sh digest. Stop on any missing file, mismatch or unknown key. Follow the trust-verification runbook below; a public key downloaded beside the signature is not independent trust.</p>
         <p data-i18n="executeBootstrap">Only after the signature and bootstrap digest are verified, run:</p>
         <div class="installbox"><pre><code>sh /tmp/krm-bootstrap.sh</code></pre></div>
-        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/v1.3.3/docs/AGENT_INSTALL.md" data-i18n="fullGuide">Read the complete installation and rollback guide ↗</a></p>
+        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/AGENT_INSTALL.md" data-i18n="fullGuide">Read the complete installation and rollback guide ↗</a></p>
       </div>
     </div>
   </section>
@@ -149,12 +150,12 @@
       <div><div class="eyebrow">04 / <span data-i18n="scope">Scope</span></div><h2 data-i18n="scopeTitle">What to expect.</h2></div>
       <div>
         <p data-i18n="scopeText">Router targets are Keenetic and Netcraze with compatible stock firmware, Entware and Xray. Hardware qualification is incomplete for individual models. Keenetic/Netcraze has no automatic direct bypass when the main Xray process stops.</p>
-        <p data-i18n="scopeText2">KRM uses the Xray backend only. Signed updates require explicit application; the stable launcher and remote management UI need separate maintenance. Keep backups and a recovery path. New MIPS Big Endian support is planned and unreleased; a model name or a cross-build does not prove compatibility.</p>
+        <p data-i18n="scopeText2">KRM uses the Xray backend only. Signed updates require explicit application; the stable launcher and remote management UI need separate maintenance. Keep backups and a recovery path. Version 2.0.1 includes MIPS Big Endian soft-float builds; a model name or cross-build does not establish physical-device compatibility.</p>
         <h3 data-i18n="compatTitle">Check the exact model and its resources</h3>
         <p data-i18n="compatText">Inspect the full model index, native ABI and byte order, available RAM, Entware storage and working Xray configuration. A 256 MB router shares memory with firmware and VPN traffic; there is no guaranteed 256 MB capacity claim. Core-only and a remote management UI can reduce resident processes on the router.</p>
         <details><summary data-i18n="faqPrereq">Will KRM install Entware or Xray?</summary><p data-i18n="faqPrereqAnswer">No. Set up these prerequisites separately and prove your existing client route before installing KRM.</p></details>
         <details><summary data-i18n="faqRemote">Can I put the UI on another computer?</summary><p data-i18n="faqRemoteAnswer">Yes, as a management-only client over an authenticated SSH tunnel with verified upstream TLS. The sole routing controller stays on the Keenetic/Netcraze router.</p></details>
-        <details><summary data-i18n="faqBE">Can v1.3.3 run on KN-2410?</summary><p data-i18n="faqBEAnswer">No MIPS Big Endian artifact is shipped in that release. Wait for a compatible signed release; do not substitute a little-endian binary or install from mutable development sources.</p></details>
+        <details><summary data-i18n="faqBE">Does v2.0.1 support KN-2410?</summary><p data-i18n="faqBEAnswer">Version 2.0.1 includes signed MIPS Big Endian binaries and read-only resource/dependency preflight. KN-2410 hardware acceptance remains pending: measure KeeneticOS, Xray and KRM peaks, prove the client route and retain recovery access. Never substitute a little-endian binary.</p></details>
         <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/KNOWN_LIMITATIONS.md" data-i18n="limitations">Read the known limitations ↗</a></p>
       </div>
     </div>
@@ -183,27 +184,27 @@
     healthTitle:"Проверка доступности",healthDesc:"Независимые проверки через VPN и WAN. При неоднозначном результате текущий маршрут сохраняется.",
     poolTitle:"Пул и переключение",poolDesc:"Оценка кандидатов, горячий пул Xray и переключение только при достаточных данных.",
     controlTitle:"Локальное управление",controlDesc:"Веб-панель, CLI, диагностика и подписанные обновления с ручным подтверждением.",
-    architecture:"Архитектура",archTitle:"Четыре отдельных компонента.",archNote:"Веб-интерфейс не управляет состоянием маршрутов или firewall напрямую.",
+    architecture:"Архитектура",archTitle:"Четыре отдельных компонента.",archNote:"Веб-интерфейс не управляет маршрутами или межсетевым экраном напрямую.",
     daemon:"Контроллер, планировщик, Xray и состояние платформы.",
     ui:"Отдельная веб-панель и API-прокси.",
     cli:"Локальное администрирование и проверка конфигурации.",
     launcher:"Подписанные версии и управление запуском.",archLink:"Документация по архитектуре ↗",
     getStarted:"Начало работы",installTitle:"Устанавливайте из подписанного релиза.",
-    releaseSecurity:"Опубликованный v1.3.3 собран Go 1.27.2 и затронут GO-2026-6809 в crypto/x509. Source уже использует Go 1.27.3, но исправленный релиз KRM пока не опубликован. Для новой установки лучше дождаться нового подписанного релиза; старые assets неизменяемы.",
-    releaseAdvisory:"Описание уязвимости Go ↗",
-    installText:"Сначала подготовьте совместимую стоковую прошивку, хранилище, Entware и работающий XKeen/Xray на роутере. KRM не устанавливает эти компоненты. Изучите инструкцию, сохраните приватные резервные копии и независимый канал восстановления.",
-    installNote:"Пример для Keenetic/Netcraze закреплён на опубликованном v1.3.3. Bootstrap проверяет Ed25519 и SHA-256 до исполнения скачанных программ; проверьте доверие и к самому bootstrap. В этом релизе нет MIPS Big Endian: KN-2410/2510 требуют нового подписанного релиза.",
-    verifyBootstrap:"До запуска: получите SHA256SUMS и SHA256SUMS.sig версии v1.3.3, проверьте Ed25519-подпись независимо подтверждённым release public key, затем сравните digest этого файла с подписанной записью bootstrap-keenetic.sh. При отсутствии файла, несовпадении или неизвестном ключе остановитесь. Следуйте процедуре доверия по ссылке ниже; ключ рядом с подписью сам по себе не устанавливает доверие.",
-    executeBootstrap:"Только после проверки подписи и digest bootstrap выполните:",
+    releaseSecurity:"Версия v2.0.1 собрана с Go 1.27.3 и включает исправление GO-2026-6809 в проверке сертификатов crypto/x509. Перед обновлением ранее созданного установщиком файла настроек Keenetic выполните описанную в инструкции подготовку при остановленном KRM. Старый v1.3.3 с Go 1.27.2 остаётся уязвимым; его файлы не заменяются. Проверки тега v2.0.0 завершились ошибкой, файлы этого релиза не опубликованы. Проверки отдельных моделей на самих роутерах ещё не завершены.",
+    releaseAdvisory:"Описание уязвимости Go ↗",migration:"Обязательная подготовка настроек перед обновлением ↗",
+    installText:"Сначала подготовьте совместимую заводскую прошивку, накопитель, Entware и работающий XKeen/Xray на роутере. KRM не устанавливает эти компоненты. Изучите инструкцию, сохраните резервные копии в защищённом месте и независимый способ восстановить доступ.",
+    installNote:"В примере для Keenetic/Netcraze используется фиксированная подписанная версия v2.0.1. Загрузочный скрипт проверяет подписи Ed25519 и контрольные суммы SHA-256 до запуска скачанных программ; сам скрипт тоже нужно проверить. Включены программы для MIPS с порядком байтов Big Endian, но проверки на настоящих KN-2410/2510 ещё необходимы.",
+    verifyBootstrap:"До запуска скачайте SHA256SUMS и SHA256SUMS.sig версии v2.0.1. Проверьте подпись Ed25519 открытым ключом релиза, подлинность которого подтверждена независимо, затем сравните контрольную сумму скрипта с подписанной записью bootstrap-keenetic.sh. Если файла нет, суммы не совпали или ключ неизвестен, остановитесь. Порядок проверки описан в инструкции ниже; скачанный вместе с подписью ключ сам по себе не подтверждает её подлинность.",
+    executeBootstrap:"Только после проверки подписи и контрольной суммы загрузочного скрипта выполните:",
     fullGuide:"Полная инструкция по установке и восстановлению ↗",
     scope:"Поддержка",scopeTitle:"Границы проекта.",
-    scopeText:"Целевые роутеры — Keenetic и Netcraze на совместимой стоковой прошивке с Entware и Xray. Проверки отдельных моделей не завершены. Автоматического прямого обхода при остановке основного Xray на Keenetic/Netcraze нет.",
-    scopeText2:"Используется только Xray backend. Подписанные обновления применяются явно; стабильный launcher и удалённый UI обслуживаются отдельно. Нужны backup и recovery. Поддержка MIPS Big Endian планируется и ещё не выпущена; имя модели и cross-build не доказывают совместимость.",
+    scopeText:"Поддерживаемое семейство — Keenetic и Netcraze на совместимой заводской прошивке с Entware и Xray. Проверки отдельных моделей не завершены. При остановке основного Xray KRM не обеспечивает автоматический выход в интернет напрямую.",
+    scopeText2:"Используется только движок Xray. Установку подписанного обновления подтверждает пользователь; программу запуска KRM и панель на другом компьютере обновляют отдельно. Сохраняйте резервные копии и способ восстановления доступа. В 2.0.1 включены программы для MIPS Big Endian с программными вычислениями с плавающей точкой. Название модели и успешная сборка не доказывают работу на настоящем роутере.",
     compatTitle:"Проверьте точную модель и ресурсы",
-    compatText:"Проверьте полный индекс модели, ABI и порядок байтов, доступную RAM, хранилище Entware и работающий Xray. На 256 МБ память делится с прошивкой и VPN-трафиком; гарантии достаточности нет. Core-only и удалённый management UI уменьшают число процессов на роутере.",
+    compatText:"Проверьте полный индекс модели, совместимость исполняемых программ и порядок байтов, свободную оперативную память, накопитель Entware и работу Xray. На устройстве с 256 МБ память также нужна прошивке и VPN; гарантии, что её хватит, нет. Установка без локальной панели и перенос панели на другой компьютер уменьшают число процессов на роутере.",
     faqPrereq:"KRM сам установит Entware или Xray?",faqPrereqAnswer:"Нет. Подготовьте их отдельно и проверьте существующий клиентский маршрут до установки KRM.",
-    faqRemote:"Можно перенести UI на другой компьютер?",faqRemoteAnswer:"Да, только как клиент управления через authenticated SSH tunnel с проверкой upstream TLS. Единственный контроллер маршрутов остаётся на Keenetic/Netcraze.",
-    faqBE:"Можно запустить v1.3.3 на KN-2410?",faqBEAnswer:"В этом релизе нет MIPS Big Endian. Дождитесь совместимого подписанного релиза; не подменяйте BE сборкой LE и не устанавливайте с изменяемой ветки разработки.",
+    faqRemote:"Можно перенести панель на другой компьютер?",faqRemoteAnswer:"Да. На другом компьютере работает только панель управления. Она подключается через SSH-туннель с проверкой подлинности сервера и проверяет TLS-сертификат контроллера. Единственный контроллер маршрутов остаётся на роутере Keenetic/Netcraze.",
+    faqBE:"Поддерживает ли v2.0.1 модель KN-2410?",faqBEAnswer:"В 2.0.1 есть подписанные программы для MIPS Big Endian и предварительная проверка памяти, места на накопителе и необходимых компонентов без изменения настроек. Испытания на настоящем KN-2410 ещё не пройдены: измерьте пиковое потребление памяти KeeneticOS, Xray и KRM, проверьте маршрут устройства в сети и сохраните способ восстановления доступа. Не используйте программу для Little Endian вместо Big Endian.",
     limitations:"Известные ограничения ↗",issues:"Сообщить о проблеме",security:"Безопасность"
   };
   const nodes = [...document.querySelectorAll("[data-i18n]")];
