@@ -30,7 +30,7 @@ func TestSubscriptionCacheSettingLoadsAndDefaults(t *testing.T) {
 }
 
 func TestSubscriptionCacheDefaultPreservesControllerAndUITemplates(t *testing.T) {
-	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml", "ui-keenetic.yaml", "ui-linux-openwrt.yaml"} {
+	for _, name := range []string{"keenetic.yaml", "ui-keenetic.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			cfg, err := Load(filepath.Join("..", "..", "configs", name))
 			if err != nil {

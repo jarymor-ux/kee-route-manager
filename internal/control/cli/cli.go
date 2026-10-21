@@ -37,7 +37,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 
 func runWithIO(ctx context.Context, args []string, version, commit, buildTime string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kee-route-managerctl <init-config|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
+		return fmt.Errorf("usage: kee-route-managerctl <init-config|preflight|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
 	}
 	command, args := args[0], args[1:]
 	switch command {
@@ -46,6 +46,8 @@ func runWithIO(ctx context.Context, args []string, version, commit, buildTime st
 		return nil
 	case "validate":
 		return Validate(args)
+	case "preflight":
+		return preflightCommand(ctx, args, out)
 	case "passwd":
 		return password(args)
 	case "route-candidates":
@@ -209,7 +211,7 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	f.SetOutput(out)
 	output := f.String("output", configflag.DefaultPath(), "output configuration path")
 	overwrite := f.Bool("overwrite", false, "allow replacing an existing output file")
-	platform := f.String("platform", "", "target platform (keenetic|openwrt|linux-systemd)")
+	platform := f.String("platform", "", "target router family (keenetic for Keenetic/Netcraze)")
 	uiOutput := f.String("ui-output", "", "create a local HTTPS UI configuration alongside the controller")
 	tlsDir := f.String("tls-dir", "", "new private directory for the local controller TLS identity")
 	if err := f.Parse(args); err != nil {

@@ -12,9 +12,7 @@ import (
 type Platform string
 
 const (
-	PlatformKeenetic     Platform = "keenetic"
-	PlatformOpenWrt      Platform = "openwrt"
-	PlatformLinuxSystemd Platform = "linux-systemd"
+	PlatformKeenetic Platform = "keenetic"
 )
 
 type SetupOptions struct {
@@ -81,11 +79,8 @@ type UIOptions struct {
 	RequestTimeout     config.Duration
 }
 
-func managedUIUpstreamCAPath(platform Platform) string {
-	if platform == PlatformKeenetic {
-		return "/opt/etc/kee-route-manager-ui/controller-ca.crt"
-	}
-	return "/etc/kee-route-manager-ui/controller-ca.crt"
+func managedUIUpstreamCAPath(_ Platform) string {
+	return "/opt/etc/kee-route-manager-ui/controller-ca.crt"
 }
 
 func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
@@ -156,7 +151,7 @@ func BuildControllerConfig(opts SetupOptions) (config.Config, error) {
 
 func BuildUIConfig(opts UIOptions) (config.Config, error) {
 	switch opts.Platform {
-	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	case PlatformKeenetic:
 	default:
 		return config.Config{}, fmt.Errorf("unsupported platform %q", opts.Platform)
 	}
@@ -238,16 +233,6 @@ func applyControllerTemplate(cfg *config.Config, platform Platform) {
 		cfg.Xray.ManagedDir = "/opt/etc/xray/configs"
 		cfg.Xray.BaseRoutingFile = "/opt/etc/xray/configs/05_routing.json"
 		cfg.Platform.XrayStatusCommand = []string{"/opt/etc/kee-route-manager/xray-status.sh"}
-	case PlatformOpenWrt:
-		cfg.Platform.OpenWrt.AllowReboot = true
-		cfg.Paths.LogFile = "/var/log/kee-route-manager.log"
-		cfg.Paths.RunDir = "/var/run/kee-route-manager"
-		cfg.Xray.AssetDir = "/usr/share/xray"
-		cfg.Xray.BaseRoutingFile = "/etc/xray/configs/05_routing.json"
-	case PlatformLinuxSystemd:
-		cfg.Paths.LogFile = "/var/log/kee-route-manager.log"
-		cfg.Xray.AssetDir = "/usr/share/xray"
-		cfg.Xray.BaseRoutingFile = "/etc/xray/configs/05_routing.json"
 	}
 }
 

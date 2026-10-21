@@ -324,16 +324,6 @@ func (c Config) validateController() []error {
 			register("web.listen", p)
 		}
 	}
-	fwMode, tcpPort, udpPort := c.Platform.Linux.FirewallMode, c.Platform.Linux.TCPRedirectPort, c.Platform.Linux.UDPTProxyPort
-	if c.Platform.Kind == "openwrt" {
-		fwMode, tcpPort, udpPort = c.Platform.OpenWrt.FirewallMode, c.Platform.OpenWrt.TCPRedirectPort, c.Platform.OpenWrt.UDPTProxyPort
-	}
-	if fwMode == "managed" {
-		register("platform.tcp_redirect", tcpPort)
-		if udpPort != tcpPort {
-			register("platform.udp_tproxy", udpPort)
-		}
-	}
 	tagRE := regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	tags := map[string]bool{}
 	for _, tag := range append([]string{c.Xray.APITag, c.Xray.BalancerTag, c.Xray.ManagedDirectTag}, slotTags(c)...) {

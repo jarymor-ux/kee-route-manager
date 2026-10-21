@@ -66,7 +66,7 @@ func TestInteractiveInstallerDefaultsDoNotChangeLegacyDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	var out strings.Builder
-	if err := InitConfigForPlatform(strings.NewReader(installerScript("2", "", "", nil)), &out, path, false, PlatformOpenWrt); err != nil {
+	if err := InitConfigForPlatform(strings.NewReader(installerScript("2", "", "", nil)), &out, path, false, PlatformKeenetic); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(path)
@@ -76,7 +76,7 @@ func TestInteractiveInstallerDefaultsDoNotChangeLegacyDefaults(t *testing.T) {
 	if cfg.Benchmark.FullInterval.Duration != 6*time.Hour || cfg.Subscriptions.CacheEnabled {
 		t.Fatal("incorrect new interactive defaults")
 	}
-	options := validOptions(PlatformOpenWrt)
+	options := validOptions(PlatformKeenetic)
 	generated, err := BuildControllerConfig(options)
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
 			t.Fatalf("invalid hostname accepted: %q", name)
 		}
 	}
-	ui, err := BuildUIConfig(UIOptions{Platform: PlatformLinuxSystemd, Hostname: "Alice.Jopa"})
+	ui, err := BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Hostname: "Alice.Jopa"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
 		t.Fatal("programmatic builder accepted invalid hostname")
 	}
 	// Explicit prepared bindings retain their configured deployment behavior.
-	ui, err = BuildUIConfig(UIOptions{Platform: PlatformOpenWrt, Listen: "192.168.88.1:18443"})
+	ui, err = BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Listen: "192.168.88.1:18443"})
 	if err != nil || ui.Web.Listen != "192.168.88.1:18443" {
 		t.Fatal("prepared listen ignored", err)
 	}
@@ -212,7 +212,7 @@ func TestLocalUIWizardLeavesNoPairOnCoreWriteFailure(t *testing.T) {
 	uiPath := filepath.Join(dir, "ui.yaml")
 	tlsDir := filepath.Join(dir, "tls")
 	var out strings.Builder
-	err := InitLocalUIConfig(strings.NewReader(installerScript("2", "", "", []string{"", "", ""})), &out, corePath, uiPath, tlsDir, PlatformOpenWrt)
+	err := InitLocalUIConfig(strings.NewReader(installerScript("2", "", "", []string{"", "", ""})), &out, corePath, uiPath, tlsDir, PlatformKeenetic)
 	if err == nil {
 		t.Fatal("unwritable core destination accepted")
 	}

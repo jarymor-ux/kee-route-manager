@@ -187,3 +187,12 @@ func TestSignRejectsMissingArgumentsAndInvalidKeys(t *testing.T) {
 		t.Fatal("signature created on failure")
 	}
 }
+
+func TestMIPSReleaseNames(t *testing.T) {
+	for _, arch := range []string{"mips", "mipsle"} {
+		got, arm, ok := parseName("kee-route-manager-linux-" + arch)
+		if !ok || got != arch || arm != "" {
+			t.Fatalf("invalid %s mapping: %q %q %v", arch, got, arm, ok)
+		}
+	}
+}

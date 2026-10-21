@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -82,8 +81,6 @@ type Platform struct {
 	XrayStatusCommand  []string `json:"xray_status_command"`
 	KRMRestartCommand  []string `json:"krm_restart_command"`
 	Keenetic           Keenetic `json:"keenetic"`
-	OpenWrt            OpenWrt  `json:"openwrt"`
-	Linux              Linux    `json:"linux"`
 }
 type Keenetic struct {
 	RCIBaseURL        string `json:"rci_base_url"`
@@ -92,28 +89,6 @@ type Keenetic struct {
 	XKeenPolicyName   string `json:"xkeen_policy_name"`
 	AllowReboot       bool   `json:"allow_reboot"`
 	AllowPolicyChange bool   `json:"allow_policy_change"`
-}
-type OpenWrt struct {
-	XrayService     string   `json:"xray_service"`
-	AllowReboot     bool     `json:"allow_reboot"`
-	FirewallMode    string   `json:"firewall_mode"`
-	LANInterfaces   []string `json:"lan_interfaces"`
-	TCPRedirectPort int      `json:"tcp_redirect_port"`
-	UDPTProxyPort   int      `json:"udp_tproxy_port"`
-	Mark            int      `json:"mark"`
-	RouteTable      int      `json:"route_table"`
-	BypassCIDRs     []string `json:"bypass_cidrs"`
-}
-type Linux struct {
-	XrayService     string   `json:"xray_service"`
-	AllowReboot     bool     `json:"allow_reboot"`
-	FirewallMode    string   `json:"firewall_mode"`
-	LANInterfaces   []string `json:"lan_interfaces"`
-	TCPRedirectPort int      `json:"tcp_redirect_port"`
-	UDPTProxyPort   int      `json:"udp_tproxy_port"`
-	Mark            int      `json:"mark"`
-	RouteTable      int      `json:"route_table"`
-	BypassCIDRs     []string `json:"bypass_cidrs"`
 }
 type Xray struct {
 	Binary           string    `json:"binary"`
@@ -225,10 +200,6 @@ type UIProxy struct {
 	RequestTimeout     Duration `json:"request_timeout"`
 }
 
-func defaultBypassCIDRs() []string {
-	return []string{"0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4"}
-}
-
 func Default() Config {
 	return Config{
 		SchemaVersion: 1, Instance: Instance{Name: "Kee Route Manager", Role: "controller"},
@@ -236,7 +207,7 @@ func Default() Config {
 		API:           API{Enabled: true, Listen: "127.0.0.1:9443", TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
 		Failover:      Failover{DetectionInterval: Dur(5 * time.Second), FailureThreshold: 2, ProbeTimeout: Dur(2 * time.Second), OverallDeadline: Dur(5 * time.Second), Quorum: 2},
 		Web:           Web{Enabled: true, Listen: "0.0.0.0:9444", CredentialsFile: "/etc/kee-route-manager/credentials.json", SessionTTL: Dur(24 * time.Hour), TLS: TLS{Enabled: true, AutoGenerate: true, CertFile: "/etc/kee-route-manager/tls.crt", KeyFile: "/etc/kee-route-manager/tls.key"}},
-		Platform:      Platform{Kind: "auto", CommandTimeout: Dur(30 * time.Second), Keenetic: Keenetic{RCIBaseURL: "http://127.0.0.1:79/rci/", NDMCBinary: "ndmc", XKeenBinary: "/opt/sbin/xkeen", XKeenPolicyName: "XKeen", AllowReboot: true, AllowPolicyChange: true}, OpenWrt: OpenWrt{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br-lan"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}, Linux: Linux{XrayService: "xray", FirewallMode: "existing", LANInterfaces: []string{"br0"}, TCPRedirectPort: 12345, UDPTProxyPort: 12345, Mark: 1, RouteTable: 100, BypassCIDRs: defaultBypassCIDRs()}},
+		Platform:      Platform{Kind: "auto", CommandTimeout: Dur(30 * time.Second), Keenetic: Keenetic{RCIBaseURL: "http://127.0.0.1:79/rci/", NDMCBinary: "ndmc", XKeenBinary: "/opt/sbin/xkeen", XKeenPolicyName: "XKeen", AllowReboot: true, AllowPolicyChange: true}},
 		Xray:          Xray{Binary: "/usr/bin/xray", ConfigDir: "/etc/xray/configs", ManagedDir: "/etc/xray/configs", APIAddress: "127.0.0.1:10085", APITag: "krm-api", BalancerTag: "krm-main", SlotTagPrefix: "krm-slot-", ManagedDirectTag: "krm-direct", ProbePortStart: 19000, HealthProxyPort: 18999, DynamicAPI: true, Route: XrayRoute{InboundTags: []string{"redirect", "tproxy"}, ReplaceOutboundTags: []string{"vless-reality"}}},
 		Subscriptions: Subscriptions{CacheEnabled: true, MaxNodesPerSource: 500, MaxSources: 20, MaxNodes: 500, CacheTTL: Dur(7 * 24 * time.Hour), RefreshInterval: Dur(30 * time.Minute), RequestTimeout: Dur(20 * time.Second), MaxResponseBytes: 4 << 20},
 		Health:        Health{Interval: Dur(15 * time.Second), FailureThreshold: 2, RecoveryThreshold: 2, RequestTimeout: Dur(8 * time.Second), MaxResponseBytes: 64 << 10, HotPoolFreshness: Dur(5 * time.Minute), ProviderRetryBackoff: []Duration{Dur(15 * time.Second), Dur(30 * time.Second), Dur(time.Minute), Dur(2 * time.Minute), Dur(5 * time.Minute), Dur(10 * time.Minute)}},
@@ -412,26 +383,6 @@ func (c *Config) ApplyPlatformDefaults() {
 		if len(c.Platform.KRMRestartCommand) == 0 {
 			c.Platform.KRMRestartCommand = []string{"/opt/etc/init.d/S99kee-route-manager", "restart"}
 		}
-	case "openwrt":
-		if len(c.Platform.XrayRestartCommand) == 0 {
-			c.Platform.XrayRestartCommand = []string{"/etc/init.d/" + c.Platform.OpenWrt.XrayService, "restart"}
-		}
-		if len(c.Platform.XrayStatusCommand) == 0 {
-			c.Platform.XrayStatusCommand = []string{"/etc/init.d/" + c.Platform.OpenWrt.XrayService, "status"}
-		}
-		if len(c.Platform.KRMRestartCommand) == 0 {
-			c.Platform.KRMRestartCommand = []string{"/etc/init.d/kee-route-manager", "restart"}
-		}
-	case "linux-systemd":
-		if len(c.Platform.XrayRestartCommand) == 0 {
-			c.Platform.XrayRestartCommand = []string{"systemctl", "restart", c.Platform.Linux.XrayService}
-		}
-		if len(c.Platform.XrayStatusCommand) == 0 {
-			c.Platform.XrayStatusCommand = []string{"systemctl", "is-active", c.Platform.Linux.XrayService}
-		}
-		if len(c.Platform.KRMRestartCommand) == 0 {
-			c.Platform.KRMRestartCommand = []string{"systemctl", "restart", "kee-route-manager"}
-		}
 	}
 	if c.API.UnixSocket == "" {
 		c.API.UnixSocket = filepath.Join(c.Paths.RunDir, "control.sock")
@@ -443,57 +394,9 @@ func (c *Config) ApplyPlatformDefaults() {
 		c.Update.LauncherSocket = filepath.Join(c.Paths.RunDir, "launcher.sock")
 	}
 }
-func validateManagedFirewall(prefix, mode string, interfaces []string, tcpPort, udpPort, mark, table int, bypass []string) []error {
-	if mode != "managed" {
-		return nil
-	}
-	var errs []error
-	interfaceRE := regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
-	if len(interfaces) == 0 {
-		errs = append(errs, fmt.Errorf("%s.lan_interfaces is required in managed mode", prefix))
-	}
-	seen := map[string]bool{}
-	for _, iface := range interfaces {
-		if !interfaceRE.MatchString(iface) {
-			errs = append(errs, fmt.Errorf("%s.lan_interfaces contains invalid interface %q", prefix, iface))
-		}
-		if seen[iface] {
-			errs = append(errs, fmt.Errorf("%s.lan_interfaces contains duplicate %q", prefix, iface))
-		}
-		seen[iface] = true
-	}
-	for name, port := range map[string]int{"tcp_redirect_port": tcpPort, "udp_tproxy_port": udpPort} {
-		if port < 1 || port > 65535 {
-			errs = append(errs, fmt.Errorf("%s.%s must be between 1 and 65535", prefix, name))
-		}
-	}
-	if mark < 1 || mark > 1<<30 {
-		errs = append(errs, fmt.Errorf("%s.mark must be between 1 and %d", prefix, 1<<30))
-	}
-	if table < 1 || table > 1<<30 || table >= 253 && table <= 255 {
-		errs = append(errs, fmt.Errorf("%s.route_table must be between 1 and %d and must not use reserved tables 253..255", prefix, 1<<30))
-	}
-	if len(bypass) == 0 {
-		errs = append(errs, fmt.Errorf("%s.bypass_cidrs cannot be empty in managed mode", prefix))
-	}
-	for _, cidr := range bypass {
-		ip, _, err := net.ParseCIDR(cidr)
-		if err != nil || ip.To4() == nil {
-			errs = append(errs, fmt.Errorf("%s.bypass_cidrs contains invalid IPv4 CIDR %q", prefix, cidr))
-		}
-	}
-	return errs
-}
-
 func DetectPlatform() string {
 	if _, err := os.Stat("/opt/etc/ndm"); err == nil {
 		return "keenetic"
-	}
-	if _, err := os.Stat("/etc/openwrt_release"); err == nil {
-		return "openwrt"
-	}
-	if runtime.GOOS == "linux" {
-		return "linux-systemd"
 	}
 	return "unknown"
 }
@@ -520,22 +423,8 @@ func (c Config) Validate() error {
 		return errors.Join(es...)
 	}
 	es = append(es, c.validateController()...)
-	if c.Platform.Kind != "keenetic" && c.Platform.Kind != "openwrt" && c.Platform.Kind != "linux-systemd" {
+	if c.Platform.Kind != "keenetic" {
 		es = append(es, fmt.Errorf("unsupported platform.kind %q", c.Platform.Kind))
-	}
-	if c.Platform.Kind == "openwrt" {
-		v := c.Platform.OpenWrt
-		if v.FirewallMode != "existing" && v.FirewallMode != "managed" {
-			es = append(es, fmt.Errorf("platform.openwrt.firewall_mode must be existing or managed"))
-		}
-		es = append(es, validateManagedFirewall("platform.openwrt", v.FirewallMode, v.LANInterfaces, v.TCPRedirectPort, v.UDPTProxyPort, v.Mark, v.RouteTable, v.BypassCIDRs)...)
-	}
-	if c.Platform.Kind == "linux-systemd" {
-		v := c.Platform.Linux
-		if v.FirewallMode != "existing" && v.FirewallMode != "managed" {
-			es = append(es, fmt.Errorf("platform.linux.firewall_mode must be existing or managed"))
-		}
-		es = append(es, validateManagedFirewall("platform.linux", v.FirewallMode, v.LANInterfaces, v.TCPRedirectPort, v.UDPTProxyPort, v.Mark, v.RouteTable, v.BypassCIDRs)...)
 	}
 	if c.Xray.Binary == "" || c.Xray.ConfigDir == "" || c.Xray.ManagedDir == "" {
 		es = append(es, fmt.Errorf("xray binary/config_dir/managed_dir are required"))

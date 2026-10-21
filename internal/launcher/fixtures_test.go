@@ -120,7 +120,7 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 	})
 	t.Setenv("KRM_LAUNCHER_TEST_HELPER", "1")
 	c := config.Default()
-	c.Platform.Kind, c.Platform.Linux.FirewallMode = "linux-systemd", "existing"
+	c.Platform.Kind = "keenetic"
 	c.Platform.XrayStatusCommand, c.Platform.XrayRestartCommand = []string{"/bin/true"}, []string{"/bin/false"}
 	c.Xray.Binary = "/bin/false"
 	c.Xray.ConfigDir, c.Xray.ManagedDir = filepath.Join(root, "xray"), filepath.Join(root, "xray")

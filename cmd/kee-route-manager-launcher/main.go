@@ -56,16 +56,10 @@ func run(args []string) error {
 			return fmt.Errorf("install requires --release-dir")
 		}
 		if *bin == "" {
-			c, err := config.Load(abs)
-			if err != nil {
+			if _, err := config.Load(abs); err != nil {
 				return err
 			}
-			*bin = "/usr/local/bin"
-			if c.Platform.Kind == "keenetic" {
-				*bin = "/opt/bin"
-			} else if c.Platform.Kind == "openwrt" {
-				*bin = "/usr/bin"
-			}
+			*bin = "/opt/bin"
 		}
 		return launcher.Install(abs, *ui, *release, *bin)
 	}
