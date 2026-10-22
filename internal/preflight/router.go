@@ -175,10 +175,10 @@ func checkRoutes(c config.Config) error {
 			}
 			// Only an unconditional inbound -> outbound rule is eligible for
 			// KRM adoption. Conditional DNS/DIRECT exceptions remain untouched.
-			unconditional := (rule.Type == "" || rule.Type == "field") && rule.BalancerTag == "" && rule.OutboundTag != ""
+			unconditional := (rule.Type == "" || rule.Type == "field") && (rule.OutboundTag != "" || rule.BalancerTag != "")
 			for field := range fields {
 				switch field {
-				case "type", "inboundTag", "outboundTag":
+				case "type", "inboundTag", "outboundTag", "balancerTag":
 				default:
 					unconditional = false
 				}
@@ -186,15 +186,34 @@ func checkRoutes(c config.Config) error {
 			if !unconditional {
 				continue
 			}
+			// A preceding global catch-all shadows any later selected route.
+			// A trailing catch-all is an ordinary fallback and is harmless.
+			if len(rule.InboundTag) == 0 {
+				for _, tag := range c.Xray.Route.InboundTags {
+					if !selected[tag+"\x00"+rule.OutboundTag] {
+						if owners[tag] == nil {
+							owners[tag] = map[string]bool{}
+						}
+						owners[tag]["global-catch-all"] = true
+						}
+				}
+				continue
+			}
+			owner := rule.OutboundTag
+			if rule.BalancerTag != "" {
+				owner = "balancer:" + rule.BalancerTag
+			}
 			for _, tag := range rule.InboundTag {
 				if tag == "" {
 					continue
 				}
-				selected[tag+"\x00"+rule.OutboundTag] = true
+				if rule.BalancerTag == "" {
+					selected[tag+"\x00"+rule.OutboundTag] = true
+				}
 				if owners[tag] == nil {
 					owners[tag] = map[string]bool{}
 				}
-				owners[tag][rule.OutboundTag] = true
+				owners[tag][owner] = true
 			}
 		}
 	}
