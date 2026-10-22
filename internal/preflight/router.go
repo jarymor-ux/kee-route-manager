@@ -199,7 +199,7 @@ func checkRoutes(c config.Config) error {
 				}
 				continue
 			}
-			owner := rule.OutboundTag
+			owner := "outbound:" + rule.OutboundTag
 			if rule.BalancerTag != "" {
 				owner = "balancer:" + rule.BalancerTag
 			}
