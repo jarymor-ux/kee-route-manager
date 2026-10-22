@@ -35,9 +35,9 @@ func TestKeeneticPrivateLANHTTPUI(t *testing.T) {
 
 func TestKeeneticPanelAutoBindOnlyUniquePrivateBridgeAddress(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name       string
 		interfaces []lanBindCandidate
-		want string
+		want       string
 	}{
 		{"unique-lan", []lanBindCandidate{{name: "br0", ip: net.ParseIP("192.168.1.1"), up: true}}, "192.168.1.1"},
 		{"multiple-bridges", []lanBindCandidate{{name: "br0", ip: net.ParseIP("192.168.1.1"), up: true}, {name: "br1", ip: net.ParseIP("192.168.2.1"), up: true}}, "127.0.0.1"},
