@@ -91,3 +91,27 @@ func TestDiscoverRoutingMissingDirRemainsManual(t *testing.T) {
 		t.Fatalf("missing dependency should defer to manual wizard: %#v %v", got, err)
 	}
 }
+
+func TestDiscoverRoutingRefusesConflictingUnconditionalOwners(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules string
+	}{
+		{"direct-before-vpn", `[{"type":"field","inboundTag":["redirect"],"outboundTag":"DIRECT"},{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy"}]`},
+		{"direct-after-vpn", `[{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy"},{"type":"field","inboundTag":["redirect"],"outboundTag":"DIRECT"}]`},
+		{"balancer-before-vpn", `[{"type":"field","inboundTag":["redirect"],"balancerTag":"balance"},{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy"}]`},
+		{"other-vpn-same-inbound", `[{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy"},{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy2"}]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDiscoveryFile(t, dir, "01.json", `{"inbounds":[{"tag":"redirect"}],"outbounds":[{"tag":"proxy","protocol":"vless"},{"tag":"proxy2","protocol":"trojan"},{"tag":"DIRECT","protocol":"freedom"}]}`)
+			writeDiscoveryFile(t, dir, "05.json", `{"routing":{"rules":`+tc.rules+`}}`)
+			got, err := discoverRouting(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("conflicting default owners must require manual review, got %#v", got)
+			}
+		})
+	}
+}
