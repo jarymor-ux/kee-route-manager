@@ -101,12 +101,33 @@ if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
  [ ! -e "$CONFIG_DIR/tls.crt" ] && [ ! -L "$CONFIG_DIR/tls.crt" ] && [ ! -e "$CONFIG_DIR/tls.key" ] && [ ! -L "$CONFIG_DIR/tls.key" ] || fail 'existing controller TLS identity detected'
  openssl x509 -in "$KRM_GENERATED_TLS_DIR/tls.crt" -noout >/dev/null || fail 'invalid generated controller certificate'
 fi
-# Preserve existing installations; reinstall requires explicit uninstall first.
-if [ "$MODE" != ui ]; then [ ! -e "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'; fi
-if [ "$MODE" != core ]; then [ ! -e "$UI_CONFIG" ] && [ ! -e "$BIN/kee-route-manager-ui" ] || fail 'existing UI installation detected'; fi
+# Refuse stale partial installs, pre-existing service scripts, symlinks and
+# private credentials BEFORE writing anything. Even a dangling symlink can
+# redirect cp/passwd into files not owned by KRM.
+ensure_absent(){
+ [ ! -e "$1" ] && [ ! -L "$1" ] || fail "existing managed path detected (do not overwrite): $1"
+}
+if [ "$MODE" != ui ]; then
+ [ ! -e "$CONFIG" ] && [ ! -L "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -L "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] && [ ! -L "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'
+ [ ! -L "$CONFIG_DIR" ] || fail 'controller configuration directory must not be a symlink'
+ for path in "$BIN/kee-route-managerctl" "$CONFIG_DIR/credentials.json" "$CONFIG_DIR/xray-status.sh" /opt/etc/init.d/S99kee-route-manager; do
+  ensure_absent "$path"
+ done
+ if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
+  ensure_absent "$CONFIG_DIR/tls.crt"
+  ensure_absent "$CONFIG_DIR/tls.key"
+ fi
+fi
+if [ "$MODE" != core ]; then
+ [ ! -e "$UI_CONFIG" ] && [ ! -L "$UI_CONFIG" ] && [ ! -e "$BIN/kee-route-manager-ui" ] && [ ! -L "$BIN/kee-route-manager-ui" ] || fail 'existing UI installation detected'
+ [ ! -L "$UI_DIR" ] || fail 'UI configuration directory must not be a symlink'
+ ensure_absent "$UI_DIR/controller-ca.crt"
+fi
 if [ "$MANAGED_UI" = 1 ]; then
  UI_SERVICE=/opt/etc/init.d/S98kee-route-manager-ui
- [ ! -e "$UI_SERVICE" ] || fail 'existing standalone UI service detected; stop and uninstall it before a launcher-managed local-ui installation'
+ [ ! -e "$UI_SERVICE" ] && [ ! -L "$UI_SERVICE" ] || fail 'existing standalone UI service detected; stop and uninstall it before a launcher-managed local-ui installation'
+elif [ "$MODE" = ui ]; then
+ ensure_absent /opt/etc/init.d/S98kee-route-manager-ui
 fi
 mkdir -p "$BIN"
 if [ "$MODE" != ui ]; then
