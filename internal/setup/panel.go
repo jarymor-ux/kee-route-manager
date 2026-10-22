@@ -64,7 +64,13 @@ func (w *wizard) askLocalUI(platform Platform) (UIOptions, error) {
 		}
 		fmt.Fprintln(w.out, w.msg.InvalidUIHostname)
 	}
-	return UIOptions{Platform: platform, Listen: net.JoinHostPort(host, strconv.Itoa(port)), Hostname: hostname, Upstream: "https://127.0.0.1:9443", UpstreamCAFile: managedUIUpstreamCAPath(platform)}, nil
+	// Only the browser listener is plain HTTP. The controller API remains on
+	// verified loopback TLS and is not exposed to the LAN.
+	plainHTTP := platform == PlatformKeenetic
+	if plainHTTP {
+		fmt.Fprintln(w.out, w.msg.UIHTTPWarning)
+	}
+	return UIOptions{Platform: platform, PlainHTTP: plainHTTP, Listen: net.JoinHostPort(host, strconv.Itoa(port)), Hostname: hostname, Upstream: "https://127.0.0.1:9443", UpstreamCAFile: managedUIUpstreamCAPath(platform)}, nil
 }
 func validPanelHostname(name string) bool {
 	if len(name) > 253 || strings.HasSuffix(strings.ToLower(name), ".local") || net.ParseIP(name) != nil {
@@ -86,6 +92,20 @@ func validPanelHostname(name string) bool {
 	}
 	return true
 }
+func panelURLScheme(listen, hostname string, plainHTTP bool) string {
+	if !plainHTTP {
+		return panelURL(listen, hostname)
+	}
+	host, port, _ := net.SplitHostPort(listen)
+	if hostname != "" {
+		host = hostname
+	}
+	if port == "80" {
+		return "http://" + host
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
 func panelURL(listen, hostname string) string {
 	host, port, _ := net.SplitHostPort(listen)
 	if hostname != "" {
