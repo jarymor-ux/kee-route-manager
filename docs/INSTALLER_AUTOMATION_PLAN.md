@@ -2,9 +2,9 @@
 
 Status: **partially implemented in Draft PR #31**; do not treat this plan as a working zero-touch installer or hardware acceptance.
 
-Implemented: conservative read-only routing ownership discovery, guarded LAN/loopback HTTP browser UI with verified loopback HTTPS upstream, stable signed update discovery without automatic application, early overwrite/symlink rejection for installer-owned paths, and mandatory native Xray/XKeen/routing/resource preflight before persistent installer writes.
+Implemented: conservative read-only routing ownership discovery and prepared-configuration refusal of conditional, competing balancer/DIRECT and preceding global routes, guarded LAN/loopback HTTP browser UI with verified loopback HTTPS upstream, stable signed update discovery without automatic application, early overwrite/symlink rejection for installer-owned paths, and mandatory native Xray/XKeen/routing/resource preflight before persistent installer writes.
 
-Staged dependency groundwork: `install/common/dependency-assets.sh` downloads **immutable, digest-and-size-pinned** XKeen 2.1 or Xray v26.10.21 archives into a new private directory. The official GitHub release-asset SHA-256 digests are embedded for MIPS BE/LE, ARMv7 and ARM64. This is deliberately **staging only**, not an unattended installation; archive extraction, native validation and router policy changes require separate implementation and acceptance.\n\nStill required: safe provisioning and clean Xray/XKeen bootstrap, durable installation intent/rollback/resume, native service validation and exact-model router acceptance. The installed KRM workflow still needs working XKeen/Xray prerequisites. XKeen on newer KeeneticOS may require operator-supplied device configuration; do not run upstream mutable install scripts or automatically change DNS, WAN or interception policy.
+Staged dependency groundwork: `install/common/dependency-assets.sh` downloads **immutable, digest-and-size-pinned** XKeen 2.1 or Xray v26.10.21 archives into a new private directory. The official GitHub release-asset SHA-256 digests are embedded for MIPS BE/LE, ARMv7 and ARM64. A separate `install/common/dependency-prepare.sh` now safely extracts the pinned payload to another private staging directory, rejects archive path/link tricks and checks Xray's native ELF class/CPU. It does **not** install or execute either component; native Xray validation, activation and router policy changes still require separate implementation and acceptance.\n\nStill required: safe provisioning and clean Xray/XKeen bootstrap, durable installation intent/rollback/resume, native service validation and exact-model router acceptance. The installed KRM workflow still needs working XKeen/Xray prerequisites. XKeen on newer KeeneticOS may require operator-supplied device configuration; do not run upstream mutable install scripts or automatically change DNS, WAN or interception policy.
 
 ## Agreed user experience
 
@@ -34,3 +34,7 @@ Staged dependency groundwork: `install/common/dependency-assets.sh` downloads **
 - Never execute unverified downloaded code; pin repository/tag/digests and respect release trust model.
 - Never expose API or passwords on WAN; do not assume HTTP is encrypted.
 - Real-router compatibility is experimental until separate hardware acceptance.
+
+### Offline dependency preparation (no activation)
+
+After Entware is available, `dependency-prepare.sh xray /absolute/new/staging-dir` or `dependency-prepare.sh xkeen /absolute/new/staging-dir` downloads the pinned release asset using `dependency-assets.sh`, verifies exact bytes and SHA-256, then unpacks approved files into a new private directory. Xray requires `unzip`; XKeen requires `tar`. The source directory must not exist. Neither helper writes to `/opt/sbin`, initializes XKeen, starts Xray, configures routing, or modifies router policy. A successful offline preparation is **not** evidence that the native services work on a device.
