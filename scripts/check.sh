@@ -13,6 +13,7 @@ node --check scripts/test-ui-browser.cjs
 node scripts/test-ui.js
 if [[ -n "${PLAYWRIGHT_MODULE_PATH:-}" ]]; then node scripts/test-ui-browser.cjs; fi
 bash scripts/test-architecture.sh
+bash scripts/test-dependency-assets.sh
 bash scripts/test-preflight.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
