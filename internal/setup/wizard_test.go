@@ -66,7 +66,7 @@ func TestInitConfigRussianScenarioProducesValidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Platform.Kind != "keenetic" || cfg.Pool.Size != 5 || cfg.Update.Channel != "rc" || cfg.Update.AutoApply {
+	if cfg.Platform.Kind != "keenetic" || cfg.Pool.Size != 5 || cfg.Update.Channel != "stable" || cfg.Update.AutoApply {
 		t.Fatalf("unexpected generated config: platform=%q pool=%d update=%#v", cfg.Platform.Kind, cfg.Pool.Size, cfg.Update)
 	}
 	if !strings.Contains(out, "Выберите язык") || !strings.Contains(out, "Создать конфигурацию?") {
