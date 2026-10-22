@@ -134,7 +134,7 @@ func checkRoutes(c config.Config) error {
 				Tag string `json:"tag"`
 			} `json:"inbounds"`
 			Routing *struct {
-				Script string `json:"script"`
+				Script string            `json:"script"`
 				Rules  []json.RawMessage `json:"rules"`
 			} `json:"routing"`
 		}
