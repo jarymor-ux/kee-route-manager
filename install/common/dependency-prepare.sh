@@ -69,6 +69,7 @@ else
  tar -xzf "$archive" -C "$dest/extracted" || fail 'cannot extract XKeen'
  [ -f "$dest/extracted/xkeen" ] && [ ! -L "$dest/extracted/xkeen" ] || fail 'XKeen entrypoint missing'
  [ -d "$dest/extracted/_xkeen" ] && [ ! -L "$dest/extracted/_xkeen" ] || fail 'XKeen modules missing'
+ [ -f "$dest/extracted/_xkeen/import.sh" ] && [ ! -L "$dest/extracted/_xkeen/import.sh" ] || fail 'XKeen module import entrypoint missing'
  [ "$(du -sk "$dest/extracted" | awk '{print $1}')" -le 16384 ] || fail 'XKeen extraction exceeds 16 MiB'
 fi
 rm -f "$dest/entries" "$dest/entry-types"
