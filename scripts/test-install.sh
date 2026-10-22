@@ -138,8 +138,15 @@ check_ui(){
  # UI config contains no credentials; TLS private keys remain private.
  "$bin/kee-route-manager-ui" validate --config "$ui_config" >/dev/null
  "$bin/kee-route-manager-ui" ready --config "$ui_config" >/dev/null
- [[ "$(stat -c %a "$prefix/var/lib/kee-route-manager-ui/tls.key")" = 600 ]]
- curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+ if [[ "${1:-https}" = http ]]; then
+  # Configless local UI intentionally uses HTTP and no browser TLS key.
+  # Its upstream still authenticates the controller over HTTPS.
+  [[ ! -e "$prefix/var/lib/kee-route-manager-ui/tls.key" ]]
+  curl -fsS http://127.0.0.1:9444/assets/app.js >/dev/null
+ else
+  [[ "$(stat -c %a "$prefix/var/lib/kee-route-manager-ui/tls.key")" = 600 ]]
+  curl --cacert "$prefix/var/lib/kee-route-manager-ui/tls.crt" -fsS https://127.0.0.1:9444/assets/app.js >/dev/null
+ fi
 }
 platform_paths(){
  case "$platform" in
@@ -209,7 +216,7 @@ assert cfg['subscriptions']['cache_enabled'] is False
 PYDEFAULTS
   [[ -L "$bin/kee-route-managerd" && -f "$bin/kee-route-manager-launcher" ]]
   if [[ "$mode" = local-ui ]]; then
-   check_ui
+   check_ui http
    grep -Fq 'https://127.0.0.1:9443' "$ui_config"
    grep -Fq '127.0.0.1:9444' "$ui_config"
    grep -Fq 'alice.jopa' "$ui_config"
