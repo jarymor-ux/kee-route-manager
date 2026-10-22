@@ -113,7 +113,7 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 		}
 		if doc.Routing != nil {
 			if routingFile != "" {
-				return nil, fmt.Errorf("multiple Xray routing sections: explicit review required")
+				return nil, fmt.Errorf("multiple xray routing sections: explicit review required")
 			}
 			routingFile = path
 			routingRules = doc.Routing.Rules
@@ -125,17 +125,46 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 
 	byOutbound := map[string]map[string]bool{}
 	unsafeOutbound := map[string]bool{}
+	// Record all unconditional owners, not only VPN targets. An earlier
+	// catch-all DIRECT or balancer rule can make a VPN rule unreachable.
+	owners := map[string]map[string]bool{}
 	for _, raw := range routingRules {
 		var rule discoveryRule
 		if err := json.Unmarshal(raw, &rule); err != nil {
-			return nil, fmt.Errorf("invalid Xray routing rule")
-		}
-		if !outboundVPN[rule.OutboundTag] || rule.BalancerTag != "" {
-			continue
+			return nil, fmt.Errorf("invalid xray routing rule")
 		}
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err != nil {
-			return nil, fmt.Errorf("invalid Xray routing fields")
+			return nil, fmt.Errorf("invalid xray routing fields")
+		}
+		unconditional := rule.Type == "field"
+		for key := range fields {
+			switch key {
+			case "type", "inboundTag", "outboundTag", "balancerTag":
+			default:
+				unconditional = false
+			}
+		}
+		if unconditional {
+			var tags []string
+			if err := json.Unmarshal(rule.InboundTag, &tags); err == nil && len(tags) > 0 {
+				owner := "outbound:" + rule.OutboundTag
+				if rule.BalancerTag != "" {
+					owner = "balancer:" + rule.BalancerTag
+				}
+				for _, tag := range tags {
+					if !inbounds[tag] || strings.HasPrefix(tag, "krm-") {
+						continue
+					}
+					if owners[tag] == nil {
+						owners[tag] = map[string]bool{}
+					}
+					owners[tag][owner] = true
+				}
+			}
+		}
+		if !outboundVPN[rule.OutboundTag] || rule.BalancerTag != "" {
+			continue
 		}
 		// Extra match clauses mean the rule may be an exception rather than
 		// the default traffic route. Never silently adopt such policies.
@@ -171,6 +200,17 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 	candidates := make([]routeCandidate, 0, len(byOutbound))
 	for outbound, tags := range byOutbound {
 		if unsafeOutbound[outbound] {
+			continue
+		}
+		// A tag with multiple unconditional owners is not safe to adopt.
+		conflict := false
+		for tag := range tags {
+			if len(owners[tag]) != 1 || !owners[tag]["outbound:"+outbound] {
+				conflict = true
+				break
+			}
+		}
+		if conflict {
 			continue
 		}
 		inboundTags := make([]string, 0, len(tags))
