@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // routeCandidate is a read-only proposal. The installer must still run its
@@ -73,13 +74,16 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 			return nil, fmt.Errorf("too many xray JSON configuration files")
 		}
 		path := filepath.Join(dir, entry.Name())
-		info, err := entry.Info()
-		if err != nil || info.Size() > 4<<20 {
-			return nil, fmt.Errorf("xray config file cannot be inspected or exceeds 4 MiB")
-		}
-		f, err := os.Open(path)
+		// Prevent a FIFO hang or symlink substitution between ReadDir and
+		// opening the file. The descriptor, not the directory entry, is checked.
+		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			return nil, fmt.Errorf("xray configuration cannot be read: %w", err)
+		}
+		info, err := f.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > 4<<20 {
+			f.Close()
+			return nil, fmt.Errorf("xray config file cannot be inspected or exceeds 4 MiB")
 		}
 		b, readErr := io.ReadAll(io.LimitReader(f, (4<<20)+1))
 		f.Close()
