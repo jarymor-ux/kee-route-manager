@@ -100,8 +100,19 @@ sync || fail 'cannot persist dependency transaction intent'
 committed=0
 cleanup(){
  if [ "$committed" = 0 ]; then
-  # An ambiguous interruption is deliberately retained for manual review.
-  recover_pending >&2 || true
+  # During THIS process's failed attempt we know which paths it published.
+  # A concurrently created foreign entrypoint must be preserved, but must
+  # not prevent cleanup of our own XKeen module link or version store.
+  if owned_link "$path" "$installed_target"; then rm -- "$path" || true; fi
+  if [ "$kind" = xkeen ] && owned_link "$module_path" "$module_target"; then
+   rm -- "$module_path" || true
+  fi
+  if owned_store; then rm -rf -- "$store" || true; fi
+  if [ ! -e "$store" ] && [ ! -L "$store" ]; then
+   rm -rf -- "$journal"
+  else
+   echo 'ERROR: unfinished dependency transaction requires manual recovery' >&2
+  fi
  else
   rm -rf -- "$journal"
  fi
