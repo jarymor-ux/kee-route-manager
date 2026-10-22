@@ -32,7 +32,12 @@ store="$base/$kind-$version"
 journal="$base/.pending-$kind"
 path="$prefix/sbin/$kind"
 installed_target="$store/$kind"
-module_path="$prefix/sbin/_xkeen"
+# XKeen imports /opt/sbin/.xkeen/import.sh at runtime. The verified
+# release archive calls the source directory _xkeen, but publishing that
+# source name would trigger upstream's on-start rename and can collide with
+# an operator's existing .xkeen tree.
+module_path="$prefix/sbin/.xkeen"
+legacy_module_path="$prefix/sbin/_xkeen"
 module_target="$store/_xkeen"
 
 # A journal precedes version-store creation and link publication. The token is
@@ -90,8 +95,11 @@ verify_recovery(){
  if [ -e "$path" ] || [ -L "$path" ]; then
   owned_link "$path" "$installed_target" || fail 'dependency entrypoint changed; manual recovery required'
  fi
- if [ "$kind" = xkeen ] && { [ -e "$module_path" ] || [ -L "$module_path" ]; }; then
-  owned_link "$module_path" "$module_target" || fail 'XKeen module link changed; manual recovery required'
+ if [ "$kind" = xkeen ]; then
+  [ ! -e "$legacy_module_path" ] && [ ! -L "$legacy_module_path" ] || fail 'unexpected XKeen staging modules; manual recovery required'
+  if [ -e "$module_path" ] || [ -L "$module_path" ]; then
+   owned_link "$module_path" "$module_target" || fail 'XKeen module link changed; manual recovery required'
+  fi
  fi
 }
 recover_pending(){
@@ -122,6 +130,7 @@ fi
 [ ! -e "$path" ] && [ ! -L "$path" ] || fail "existing dependency path: $path"
 if [ "$kind" = xkeen ]; then
  [ ! -e "$module_path" ] && [ ! -L "$module_path" ] || fail 'existing XKeen modules; refusing overwrite'
+ [ ! -e "$legacy_module_path" ] && [ ! -L "$legacy_module_path" ] || fail 'existing XKeen staging modules; refusing overwrite'
 fi
 [ ! -e "$store" ] && [ ! -L "$store" ] || fail 'dependency version already exists; inspect before retrying'
 mkdir -m 0700 "$journal" || fail 'cannot reserve provisioning journal'
