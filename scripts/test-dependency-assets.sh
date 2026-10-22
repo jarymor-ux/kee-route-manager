@@ -21,7 +21,7 @@ if PATH="$WORK/bin:$PATH" sh "$ROOT/install/common/dependency-assets.sh" xkeen "
 fi
 grep -Fq 'dependency asset size mismatch' "$WORK/stderr"
 [[ ! -e "$WORK/unverified" ]]
-if sh "$ROOT/install/common/dependency-assets.sh" xkeen "$WORK/../relative" >/dev/null 2>&1; then
+if sh "$ROOT/install/common/dependency-assets.sh" xkeen relative >/dev/null 2>&1; then
  echo 'existing parent path was unexpectedly accepted' >&2; exit 1
 fi
 mkdir "$WORK/existing"
