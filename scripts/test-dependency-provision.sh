@@ -113,6 +113,7 @@ printf '#!/bin/sh\nexit 0\n' > "$pbase/xkeen-2.1/xkeen"
 chmod 0700 "$pbase/xkeen-2.1/xkeen"
 mkdir -m 0700 "$pbase/xkeen-2.1/_xkeen"
 ( cd "$pbase/xkeen-2.1" && openssl dgst -sha256 xkeen ) > "$pbase/xkeen-2.1/provenance.sha256"
+LC_ALL=C tar -cf - -C "$pbase/xkeen-2.1" _xkeen | openssl dgst -sha256 >> "$pbase/xkeen-2.1/provenance.sha256"
 ln -s "$pbase/xkeen-2.1/xkeen" "$partial/sbin/xkeen"
 ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
 KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
@@ -121,10 +122,18 @@ KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
 if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
  echo 'recovery of non-pending transaction should be refused' >&2; exit 1
 fi
-# A previously valid payload later changed by an operator must not be
-# silently accepted or removed simply because the old links still match.
+# A stale journal must never certify unexpected or modified XKeen module
+# contents while the entrypoint itself is unchanged.
 mkdir -m 0700 "$pbase/.pending-xkeen"
 printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
+printf 'unexpected module\n' > "$pbase/xkeen-2.1/_xkeen/foreign"
+if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
+ echo 'modified XKeen modules were accepted during recovery' >&2; exit 1
+fi
+[[ -f "$pbase/xkeen-2.1/_xkeen/foreign" && -d "$pbase/.pending-xkeen" ]]
+rm "$pbase/xkeen-2.1/_xkeen/foreign"
+# A previously valid payload later changed by an operator must not be
+# silently accepted or removed simply because the old links still match.
 printf '# modified\n' >> "$pbase/xkeen-2.1/xkeen"
 if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
  echo 'tampered dependency was finalized or removed' >&2; exit 1
