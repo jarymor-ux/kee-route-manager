@@ -44,12 +44,26 @@ if sh "$helper" xray --approve >/dev/null 2>&1; then
  echo 'second provisioning overwrote Xray' >&2; exit 1
 fi
 sh "$helper" xkeen --approve >/dev/null
-[[ -L "$WORK/entware/sbin/xkeen" && -L "$WORK/entware/sbin/_xkeen" ]]
-[[ -f "$WORK/entware/sbin/_xkeen/readme" ]]
+[[ -L "$WORK/entware/sbin/xkeen" && -L "$WORK/entware/sbin/.xkeen" ]]
+[[ -f "$WORK/entware/sbin/.xkeen/readme" ]]
+# The source archive directory is named _xkeen, but XKeen loads .xkeen
+# at runtime. Never publish the legacy staging name.
+[[ ! -e "$WORK/entware/sbin/_xkeen" && ! -L "$WORK/entware/sbin/_xkeen" ]]
 if sh "$helper" xkeen --approve >/dev/null 2>&1; then
  echo 'second provisioning overwrote XKeen' >&2; exit 1
 fi
-rm "$WORK/entware/sbin/xkeen" "$WORK/entware/sbin/_xkeen"
+# Do not let upstream's _xkeen -> .xkeen migration erase an operator tree.
+mkdir -p "$WORK/existing-dot/sbin/.xkeen" "$WORK/existing-dot/var/lib"
+if KRM_DEPENDENCY_PREFIX="$WORK/existing-dot" sh "$helper" xkeen --approve >/dev/null 2>&1; then
+ echo 'operator .xkeen modules were not protected' >&2; exit 1
+fi
+[[ -d "$WORK/existing-dot/sbin/.xkeen" && ! -L "$WORK/existing-dot/sbin/.xkeen" ]]
+mkdir -p "$WORK/existing-legacy/sbin/_xkeen" "$WORK/existing-legacy/var/lib"
+if KRM_DEPENDENCY_PREFIX="$WORK/existing-legacy" sh "$helper" xkeen --approve >/dev/null 2>&1; then
+ echo 'operator _xkeen staging directory was not protected' >&2; exit 1
+fi
+[[ -d "$WORK/existing-legacy/sbin/_xkeen" ]]
+rm "$WORK/entware/sbin/xkeen" "$WORK/entware/sbin/.xkeen"
 ln -s /nonexistent "$WORK/entware/sbin/xkeen"
 if sh "$helper" xkeen --approve >/dev/null 2>&1; then
  echo 'dangling XKeen symlink was overwritten' >&2; exit 1
@@ -67,7 +81,7 @@ if KRM_DEPENDENCY_PREFIX="$WORK/conflict" PROVISION_TEST_CONFLICT_XKEEN=1 sh "$h
  echo 'XKeen collision was not detected' >&2; exit 1
 fi
 [[ "$(cat "$WORK/conflict/sbin/xkeen")" = operator-owned ]]
-[[ ! -e "$WORK/conflict/sbin/_xkeen" && ! -L "$WORK/conflict/sbin/_xkeen" ]]
+[[ ! -e "$WORK/conflict/sbin/.xkeen" && ! -L "$WORK/conflict/sbin/.xkeen" ]]
 [[ ! -e "$WORK/conflict/var/lib/kee-route-manager-deps/xkeen-2.1" ]]
 # A concurrent reservation of the private version store is never cleaned up
 # as if it were owned by this attempted transaction.
@@ -85,9 +99,9 @@ pbase="$partial/var/lib/kee-route-manager-deps"
 mkdir -m 0700 "$pbase" "$pbase/.pending-xkeen" "$pbase/xkeen-2.1"
 printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
 cp "$pbase/.pending-xkeen/token" "$pbase/xkeen-2.1/.krm-provision-token"
-ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
+ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/.xkeen"
 KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
-[[ ! -e "$pbase/xkeen-2.1" && ! -L "$partial/sbin/_xkeen" && ! -e "$pbase/.pending-xkeen" ]]
+[[ ! -e "$pbase/xkeen-2.1" && ! -L "$partial/sbin/.xkeen" && ! -e "$pbase/.pending-xkeen" ]]
 # Foreign replacement after interruption must be refused and preserved,
 # including a dangling/foreign link at the published binary path.
 mkdir -m 0700 "$pbase/.pending-xkeen" "$pbase/xkeen-2.1"
@@ -115,10 +129,10 @@ mkdir -m 0700 "$pbase/xkeen-2.1/_xkeen"
 ( cd "$pbase/xkeen-2.1" && openssl dgst -sha256 xkeen ) > "$pbase/xkeen-2.1/provenance.sha256"
 LC_ALL=C tar -cf - -C "$pbase/xkeen-2.1" _xkeen | openssl dgst -sha256 >> "$pbase/xkeen-2.1/provenance.sha256"
 ln -s "$pbase/xkeen-2.1/xkeen" "$partial/sbin/xkeen"
-ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
+ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/.xkeen"
 KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
 [[ ! -e "$pbase/.pending-xkeen" && -d "$pbase/xkeen-2.1" ]]
-[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/_xkeen" ]]
+[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/.xkeen" ]]
 if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
  echo 'recovery of non-pending transaction should be refused' >&2; exit 1
 fi
@@ -139,6 +153,6 @@ if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1
  echo 'tampered dependency was finalized or removed' >&2; exit 1
 fi
 [[ -d "$pbase/.pending-xkeen" && -f "$pbase/xkeen-2.1/xkeen" ]]
-[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/_xkeen" ]]
+[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/.xkeen" ]]
 
 printf '%s\n' 'Isolated provisioning and interruption recovery verified.'
