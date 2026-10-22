@@ -190,7 +190,7 @@ func checkRoutes(c config.Config) error {
 			// A trailing catch-all is an ordinary fallback and is harmless.
 			if len(rule.InboundTag) == 0 {
 				for _, tag := range c.Xray.Route.InboundTags {
-					if !selected[tag+"\x00"+rule.OutboundTag] {
+					if len(owners[tag]) == 0 {
 						if owners[tag] == nil {
 							owners[tag] = map[string]bool{}
 						}
