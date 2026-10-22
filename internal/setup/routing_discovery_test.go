@@ -1,0 +1,93 @@
+package setup
+
+import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func writeDiscoveryFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiscoverRoutingChoosesOnlyUnconditionalVPN(t *testing.T) {
+	dir := t.TempDir()
+	writeDiscoveryFile(t, dir, "01_inbounds.json", `{"inbounds":[{"tag":"redirect","protocol":"dokodemo-door"},{"tag":"tproxy","protocol":"dokodemo-door"}]}`)
+	writeDiscoveryFile(t, dir, "04_outbounds.json", `{"outbounds":[{"tag":"DIRECT","protocol":"freedom"},{"tag":"proxy-main","protocol":"vless"}]}`)
+	writeDiscoveryFile(t, dir, "05_routing.json", `{"routing":{"rules":[{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy-main"},{"type":"field","inboundTag":["tproxy"],"outboundTag":"proxy-main"},{"type":"field","inboundTag":["redirect"],"domain":["private"],"outboundTag":"DIRECT"}]}}`)
+	got, err := discoverRouting(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []routeCandidate{{File: filepath.Join(dir, "05_routing.json"), InboundTags: []string{"redirect", "tproxy"}, OutboundTag: "proxy-main"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+	// Automatic routing needs no additional manual tag input.
+	w := &wizard{in: bufio.NewReader(strings.NewReader("")), out: new(strings.Builder), msg: messagesEN}
+	file, tags, outbound, err := w.selectRouting(dir)
+	if err != nil || file != want[0].File || !reflect.DeepEqual(tags, want[0].InboundTags) || outbound != want[0].OutboundTag {
+		t.Fatalf("automatic selection: %s %#v %s %v", file, tags, outbound, err)
+	}
+}
+
+func TestDiscoverRoutingAmbiguousRequiresChoice(t *testing.T) {
+	dir := t.TempDir()
+	writeDiscoveryFile(t, dir, "01.json", `{"inbounds":[{"tag":"redirect"},{"tag":"tproxy"}],"outbounds":[{"tag":"a-proxy","protocol":"vless"},{"tag":"b-proxy","protocol":"trojan"}]}`)
+	writeDiscoveryFile(t, dir, "05.json", `{"routing":{"rules":[{"type":"field","inboundTag":["redirect"],"outboundTag":"a-proxy"},{"type":"field","inboundTag":["tproxy"],"outboundTag":"b-proxy"}]}}`)
+	candidates, err := discoverRouting(dir)
+	if err != nil || len(candidates) != 2 {
+		t.Fatalf("candidates=%#v err=%v", candidates, err)
+	}
+	var output strings.Builder
+	w := &wizard{in: bufio.NewReader(strings.NewReader("99\n2\n")), out: &output, msg: messagesEN}
+	file, tags, outbound, err := w.selectRouting(dir)
+	if err != nil || file != filepath.Join(dir, "05.json") || outbound != "b-proxy" || !reflect.DeepEqual(tags, []string{"tproxy"}) {
+		t.Fatalf("manual choice: %s %#v %s %v", file, tags, outbound, err)
+	}
+	if !strings.Contains(output.String(), messagesEN.AutoRoutingInvalid) {
+		t.Fatal("invalid candidate choice was not rejected")
+	}
+}
+
+func TestDiscoverRoutingRefusesAmbiguousOrMalformedFiles(t *testing.T) {
+	for _, scenario := range []struct {
+		name, one, two string
+	}{
+		{"multiple-routing", `{"routing":{"rules":[]}}`, `{"routing":{"rules":[]}}`},
+		{"malformed-json", `{"routing":{"rules":[]}}`, `{"inbounds":[}`},
+		{"trailing-json", `{"routing":{"rules":[]}}`, `{"outbounds":[]} {}`},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDiscoveryFile(t, dir, "01.json", scenario.one)
+			writeDiscoveryFile(t, dir, "02.json", scenario.two)
+			if _, err := discoverRouting(dir); err == nil {
+				t.Fatal("unsafe configuration silently accepted")
+			}
+		})
+	}
+}
+
+func TestDiscoverRoutingDoesNotAdoptConditionalOrDirectRules(t *testing.T) {
+	dir := t.TempDir()
+	writeDiscoveryFile(t, dir, "01.json", `{"inbounds":[{"tag":"redirect"}],"outbounds":[{"tag":"proxy","protocol":"vless"},{"tag":"direct","protocol":"freedom"}]}`)
+	writeDiscoveryFile(t, dir, "05.json", `{"routing":{"rules":[{"type":"field","inboundTag":["redirect"],"outboundTag":"direct"},{"type":"field","inboundTag":["redirect"],"outboundTag":"proxy","domain":["example.org"]}]}}`)
+	got, err := discoverRouting(dir)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("unconditional VPN required, got %#v err=%v", got, err)
+	}
+}
+
+func TestDiscoverRoutingMissingDirRemainsManual(t *testing.T) {
+	got, err := discoverRouting(filepath.Join(t.TempDir(), "missing"))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("missing dependency should defer to manual wizard: %#v %v", got, err)
+	}
+}
