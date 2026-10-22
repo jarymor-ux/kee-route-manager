@@ -40,6 +40,7 @@ type Messages struct {
 	SummaryUI                string
 	UIDNSInstruction         string
 	UITLSInstruction         string
+	UIHTTPWarning            string
 
 	PlatformTitle          string
 	PlatformHelp           string
@@ -126,6 +127,7 @@ var messagesRU = Messages{
 	SummaryUI:                "Адрес панели",
 	UIDNSInstruction:         "В локальном DNS настройте запись A: %s → %s. Для этого имени используйте DNS роутера; установщик не меняет DNS.",
 	UITLSInstruction:         "Для HTTPS импортируйте сертификат панели в доверенные сертификаты браузера/устройства.",
+	UIHTTPWarning:            "Внимание: браузерная панель будет работать по HTTP. Пароль и сессии не шифруются — используйте только доверенную LAN.",
 
 	PlatformTitle:          "Платформа:",
 	PlatformHelp:           "Выберите платформу, на которой будет работать Kee Route Manager.",
@@ -212,6 +214,7 @@ var messagesEN = Messages{
 	SummaryUI:                "Panel address",
 	UIDNSInstruction:         "Configure a local DNS A record: %s → %s. Use the router DNS for this name; the installer does not change DNS.",
 	UITLSInstruction:         "For HTTPS, trust the panel certificate in your browser/device certificate store.",
+	UIHTTPWarning:            "WARNING: browser UI will use plain HTTP. Passwords and sessions are unencrypted; use trusted LAN only.",
 
 	PlatformTitle:          "Platform:",
 	PlatformHelp:           "Choose the platform where Kee Route Manager will run.",
@@ -354,6 +357,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 			return err
 		}
 		summary.uiListen, summary.uiHostname = uiOptions.Listen, uiOptions.Hostname
+		summary.uiHTTP = uiOptions.PlainHTTP
 	}
 	w.printSummary(summary)
 	ok, err := w.askBool(w.msg.Create, true)
@@ -465,6 +469,7 @@ type wizardSummary struct {
 	benchmarkInterval    config.Duration
 	cacheEnabled         bool
 	uiListen, uiHostname string
+	uiHTTP               bool
 }
 
 func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error) {
@@ -997,12 +1002,14 @@ func (w *wizard) printSummary(s wizardSummary) {
 	}
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryCache, cache)
 	if s.uiListen != "" {
-		fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUI, panelURL(s.uiListen, s.uiHostname))
+		fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUI, panelURLScheme(s.uiListen, s.uiHostname, s.uiHTTP))
 		if s.uiHostname != "" {
 			host, _, _ := net.SplitHostPort(s.uiListen)
 			fmt.Fprintf(w.out, w.msg.UIDNSInstruction+"\n", s.uiHostname, host)
 		}
-		fmt.Fprintln(w.out, w.msg.UITLSInstruction)
+		if !s.uiHTTP {
+			fmt.Fprintln(w.out, w.msg.UITLSInstruction)
+		}
 	}
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummarySpeed, speed)
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUpdates, updates)
