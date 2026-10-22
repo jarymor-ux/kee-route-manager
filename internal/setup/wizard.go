@@ -152,7 +152,7 @@ var messagesRU = Messages{
 	SpeedURLHelp:           "HTTPS URL-шаблон для download benchmark. Обязателен placeholder {bytes}.",
 	SpeedURLPrompt:         "HTTPS URL-шаблон проверки скорости",
 	UpdatesEnable:          "Включить обновления? [д/Н]",
-	UpdateChannel:          "Канал обновлений [rc]",
+	UpdateChannel:          "Канал обновлений [stable]",
 	SummaryTitle:           "Итог:",
 	SummaryPlatform:        "Платформа",
 	SummaryXrayBinary:      "Xray binary",
@@ -233,7 +233,7 @@ var messagesEN = Messages{
 	SpeedURLHelp:           "Download benchmark URL template. It must contain the {bytes} placeholder.",
 	SpeedURLPrompt:         "Speed test URL template",
 	UpdatesEnable:          "Enable updates? [y/N]",
-	UpdateChannel:          "Update channel [rc]",
+	UpdateChannel:          "Update channel [stable]",
 	SummaryTitle:           "Summary:",
 	SummaryPlatform:        "Platform",
 	SummaryXrayBinary:      "Xray binary",
@@ -540,7 +540,7 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		}
 	}
 
-	updatesEnabled, err := w.askBool(w.msg.UpdatesEnable, false)
+	updatesEnabled, err := w.askBool(w.msg.UpdatesEnable, true)
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
@@ -780,7 +780,7 @@ func (w *wizard) askChannel() (string, error) {
 			return "", err
 		}
 		if answer == "" {
-			return "rc", nil
+			return defaultUpdateChannel, nil
 		}
 		if answer == "rc" || answer == "stable" {
 			return answer, nil
