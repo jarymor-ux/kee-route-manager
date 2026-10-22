@@ -23,6 +23,7 @@ func (w *wizard) askBenchmarkInterval() (config.Duration, error) {
 		fmt.Fprintln(w.out, w.msg.InvalidBenchmarkInterval)
 	}
 }
+
 // lanBindCandidate represents a read-only interface discovery result. Never
 // infer a LAN listener from an arbitrary private WAN or VPN interface.
 type lanBindCandidate struct {
