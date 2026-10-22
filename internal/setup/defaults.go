@@ -4,7 +4,7 @@ import "github.com/jarymor-ux/kee-route-manager/internal/releasetrust"
 
 const (
 	defaultUpdateRepository = "jarymor-ux/kee-route-manager"
-	defaultUpdateChannel    = "rc"
+	defaultUpdateChannel    = "stable"
 )
 
 func defaultUpdateOptions() UpdateOptions {
