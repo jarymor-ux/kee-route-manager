@@ -21,7 +21,7 @@ func TestKeeneticPrivateLANHTTPUI(t *testing.T) {
 			t.Fatalf("non-private HTTP listener accepted: %s", address)
 		}
 	}
-	if _, err := BuildUIConfig(UIOptions{Platform: PlatformLinuxSystemd, PlainHTTP: true, Listen: "192.168.1.1:9444"}); err == nil {
+	if _, err := BuildUIConfig(UIOptions{Platform: Platform("linux-systemd"), PlainHTTP: true, Listen: "192.168.1.1:9444"}); err == nil {
 		t.Fatal("HTTP LAN listener permitted outside Keenetic")
 	}
 	httpsUI, err := BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Listen: "192.168.1.1:9444"})
