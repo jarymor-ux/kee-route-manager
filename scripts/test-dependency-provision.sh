@@ -29,6 +29,7 @@ PREPARE
 printf '#!/bin/sh\nexit 0\n' > "$WORK/fixture/xray"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/fixture/xkeen"
 printf 'module\n' > "$WORK/fixture/_xkeen/readme"
+printf '# module loader\n' > "$WORK/fixture/_xkeen/import.sh"
 chmod 0755 "$WORK/fixture/xray" "$WORK/fixture/xkeen"
 helper="$WORK/checkout/install/common/dependency-provision.sh"
 export KRM_DEPENDENCY_PREFIX="$WORK/entware" PROVISION_TEST_FIXTURE="$WORK/fixture"
