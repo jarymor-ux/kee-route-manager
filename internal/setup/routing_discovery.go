@@ -70,33 +70,33 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 		}
 		files++
 		if files > 128 {
-			return nil, fmt.Errorf("too many Xray JSON configuration files")
+			return nil, fmt.Errorf("too many xray JSON configuration files")
 		}
 		path := filepath.Join(dir, entry.Name())
 		info, err := entry.Info()
 		if err != nil || info.Size() > 4<<20 {
-			return nil, fmt.Errorf("Xray config file cannot be inspected or exceeds 4 MiB")
+			return nil, fmt.Errorf("xray config file cannot be inspected or exceeds 4 MiB")
 		}
 		f, err := os.Open(path)
 		if err != nil {
-			return nil, fmt.Errorf("Xray configuration cannot be read: %w", err)
+			return nil, fmt.Errorf("xray configuration cannot be read: %w", err)
 		}
 		b, readErr := io.ReadAll(io.LimitReader(f, (4<<20)+1))
 		f.Close()
 		if readErr != nil || len(b) > 4<<20 {
-			return nil, fmt.Errorf("Xray configuration is unreadable or exceeds 4 MiB")
+			return nil, fmt.Errorf("xray configuration is unreadable or exceeds 4 MiB")
 		}
 		total += int64(len(b))
 		if total > 16<<20 {
-			return nil, fmt.Errorf("Xray configuration exceeds 16 MiB total")
+			return nil, fmt.Errorf("xray configuration exceeds 16 MiB total")
 		}
 		var doc discoveryDocument
 		dec := json.NewDecoder(bytes.NewReader(b))
 		if err := dec.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("Xray configuration must be strict JSON")
+			return nil, fmt.Errorf("xray configuration must be strict JSON")
 		}
 		if err := dec.Decode(new(any)); err != io.EOF {
-			return nil, fmt.Errorf("Xray configuration has trailing JSON")
+			return nil, fmt.Errorf("xray configuration has trailing JSON")
 		}
 		for _, inbound := range doc.Inbounds {
 			if inbound.Tag != "" {
