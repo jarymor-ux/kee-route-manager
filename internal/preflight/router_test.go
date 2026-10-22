@@ -66,6 +66,53 @@ func TestRoutingPreflightRequiresAuthoritativeBase(t *testing.T) {
 	}
 }
 
+func TestRoutingPreflightRequiresUniqueUnconditionalRule(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		rules  string
+		accept bool
+	}{
+		{
+			name: "only selected unconditional route",
+			rules: `[{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+			accept: true,
+		},
+		{
+			name: "conditional DIRECT exception preserved",
+			rules: `[{"inboundTag":["redirect","tproxy"],"domain":["domain:internal.example"],"outboundTag":"direct"},{"type":"field","inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+			accept: true,
+		},
+		{
+			name:  "only conditional candidate cannot own route",
+			rules: `[{"inboundTag":["redirect","tproxy"],"domain":["example.com"],"outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:  "unsupported routing type",
+			rules: `[{"type":"unsupported","inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:  "balancer cannot be adopted",
+			rules: `[{"inboundTag":["redirect","tproxy"],"balancerTag":"balancer","outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:  "competing unconditional DIRECT owner",
+			rules: `[{"inboundTag":["redirect","tproxy"],"outboundTag":"direct"},{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:  "malformed inbound tag",
+			rules: `[{"inboundTag":"redirect","outboundTag":"vless-reality"}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := routingFixture(t)
+			writeRouterFixture(t, c.Xray.BaseRoutingFile, `{"routing":{"rules":`+tc.rules+`}}`)
+			if err := checkRoutes(c); (err == nil) != tc.accept {
+				t.Fatalf("accepted=%v expected=%v error=%v", err == nil, tc.accept, err)
+			}
+		})
+	}
+}
+
 func TestRoutingPreflightDoesNotBlockOnSpecialFiles(t *testing.T) {
 	for _, link := range []bool{false, true} {
 		t.Run(fmt.Sprintf("symlink=%v", link), func(t *testing.T) {
