@@ -195,7 +195,7 @@ func checkRoutes(c config.Config) error {
 							owners[tag] = map[string]bool{}
 						}
 						owners[tag]["global-catch-all"] = true
-						}
+					}
 				}
 				continue
 			}
