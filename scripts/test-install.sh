@@ -242,7 +242,7 @@ PYDEFAULTS
  done
 # Prepared YAML owns the legacy placeholder route. Keep it separate from the
 # wizard's proxy-main fixture: two unconditional owners are now refused.
-printf '%s\\n' '{"inbounds":[{"tag":"redirect"},{"tag":"tproxy"}],"outbounds":[{"tag":"proxy-main"},{"tag":"REPLACE_WITH_SELECTED_OUTBOUND"}],"routing":{"rules":[{"inboundTag":["redirect","tproxy"],"outboundTag":"REPLACE_WITH_SELECTED_OUTBOUND"}]}}' > /opt/etc/xray/configs/05_routing.json
+printf '%s\n' '{"inbounds":[{"tag":"redirect"},{"tag":"tproxy"}],"outbounds":[{"tag":"proxy-main"},{"tag":"REPLACE_WITH_SELECTED_OUTBOUND"}],"routing":{"rules":[{"inboundTag":["redirect","tproxy"],"outboundTag":"REPLACE_WITH_SELECTED_OUTBOUND"}]}}' > /opt/etc/xray/configs/05_routing.json
 prepared_bootstrap(){
  KRM_TEST_ASSETS="$WORK/source/dist" PATH="$WORK/bootstrap-fake:$PATH" \
   sh "$WORK/bootstrap-$platform.sh" </dev/null
