@@ -53,14 +53,28 @@ owned_link(){
 valid_payload(){
  [ -f "$store/$kind" ] && [ -x "$store/$kind" ] && [ ! -L "$store/$kind" ] || return 1
  [ -f "$store/provenance.sha256" ] && [ ! -L "$store/provenance.sha256" ] || return 1
+ expected_lines=1
  if [ "$kind" = xkeen ]; then
   [ -d "$store/_xkeen" ] && [ ! -L "$store/_xkeen" ] || return 1
+  expected_lines=2
  fi
- recorded=$(sed -n 's/^.*= //p' "$store/provenance.sha256")
+ [ "$(wc -l < "$store/provenance.sha256" | tr -d '[:space:]')" = "$expected_lines" ] || return 1
+ recorded=$(sed -n '1s/^.*= //p' "$store/provenance.sha256")
  case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
  [ "${#recorded}" = 64 ] || return 1
  computed=$(openssl dgst -sha256 "$store/$kind" | sed 's/^.*= //') || return 1
- [ "$recorded" = "$computed" ]
+ [ "$recorded" = "$computed" ] || return 1
+ if [ "$kind" = xkeen ]; then
+  # The executable is only a launcher. XKeen's modules are executable
+  # installation material too, so a stale journal must not certify changed
+  # modules or unexpected new paths under _xkeen.
+  recorded=$(sed -n '2s/^.*= //p' "$store/provenance.sha256")
+  case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
+  [ "${#recorded}" = 64 ] || return 1
+  computed=$(LC_ALL=C tar -cf - -C "$store" _xkeen 2>/dev/null | openssl dgst -sha256 | sed 's/^.*= //') || return 1
+  [ "$recorded" = "$computed" ] || return 1
+ fi
+ return 0
 }
 # Refuse drift before removing anything: never delete a foreign path or
 # an occupied version store, even during an explicitly requested recovery.
@@ -151,6 +165,10 @@ else
  chmod 0700 "$store/xkeen"
 fi
 ( cd "$store" && if [ "$kind" = xray ]; then openssl dgst -sha256 xray; else openssl dgst -sha256 xkeen; fi ) > "$store/provenance.sha256"
+if [ "$kind" = xkeen ]; then
+ # Pin the complete verified XKeen module tree, not just its entrypoint.
+ LC_ALL=C tar -cf - -C "$store" _xkeen | openssl dgst -sha256 >> "$store/provenance.sha256"
+fi
 chmod 0600 "$store/provenance.sha256"
 # Flush completed native payload before publishing any executable entrypoint.
 sync || fail 'cannot persist prepared dependency payload'
