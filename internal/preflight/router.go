@@ -134,7 +134,7 @@ func checkRoutes(c config.Config) error {
 			} `json:"inbounds"`
 			Routing *struct {
 				Script string `json:"script"`
-				Rules []struct {
+				Rules  []struct {
 					InboundTag  []string `json:"inboundTag"`
 					OutboundTag string   `json:"outboundTag"`
 					BalancerTag string   `json:"balancerTag"`
