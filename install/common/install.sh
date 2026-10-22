@@ -187,4 +187,4 @@ if [ "$MODE" != core ]; then
  done
  [ "$ui_ready" = 1 ] || fail 'UI/upstream not ready; installation retained for diagnosis'
 fi
-printf 'Installed mode=%s. Check readiness, initial benchmark, HTTPS login and router recovery using docs/AGENT_INSTALL.md.\n' "$MODE"
+printf 'Installed mode=%s. Check readiness, initial benchmark, HTTP(S) login according to UI config and router recovery using docs/AGENT_INSTALL.md.\n' "$MODE"
