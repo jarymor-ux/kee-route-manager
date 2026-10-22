@@ -49,6 +49,11 @@ type Messages struct {
 	XrayConfigDirPrompt    string
 	BaseRoutingHelp        string
 	BaseRoutingPrompt      string
+	AutoRoutingFound       string
+	AutoRoutingChoices     string
+	AutoRoutingSelect      string
+	AutoRoutingManual      string
+	AutoRoutingInvalid     string
 	InboundTagsHelp        string
 	InboundTagsPrompt      string
 	OutboundTagHelp        string
@@ -130,6 +135,11 @@ var messagesRU = Messages{
 	XrayConfigDirPrompt:    "Каталог конфигурации Xray",
 	BaseRoutingHelp:        "Базовый routing-файл Xray, содержащий правило, которое будет заменяться управляемым outbound.",
 	BaseRoutingPrompt:      "Базовый routing-файл",
+	AutoRoutingFound:       "Автоматически определена маршрутизация: %s (inbound: %s, outbound: %s)\n",
+	AutoRoutingChoices:     "Найдено несколько возможных VPN-маршрутов. Выберите нужный:",
+	AutoRoutingSelect:      "Номер маршрута (0 — ручная настройка)",
+	AutoRoutingManual:      "0. Настроить вручную",
+	AutoRoutingInvalid:     "Выберите номер из списка.",
 	InboundTagsHelp:        "Inbound tags правила маршрутизации. Укажите через запятую.",
 	InboundTagsPrompt:      "Inbound tags",
 	OutboundTagHelp:        "Outbound tag правила, которое Kee Route Manager должен заменять. Если tag неочевиден, используйте: kee-route-managerctl route-candidates --file PATH. При неоднозначности tag автоматически не выбирается.",
@@ -211,6 +221,11 @@ var messagesEN = Messages{
 	XrayConfigDirPrompt:    "Xray config directory",
 	BaseRoutingHelp:        "Base Xray routing file containing the rule whose outbound will be managed.",
 	BaseRoutingPrompt:      "Base routing file",
+	AutoRoutingFound:       "Detected Xray routing: %s (inbound: %s, outbound: %s)\n",
+	AutoRoutingChoices:     "Multiple possible VPN routes found. Choose the correct one:",
+	AutoRoutingSelect:      "Route number (0 for manual setup)",
+	AutoRoutingManual:      "0. Configure manually",
+	AutoRoutingInvalid:     "Choose a listed route number.",
 	InboundTagsHelp:        "Inbound tags for the routing rule. Separate multiple tags with commas.",
 	InboundTagsPrompt:      "Inbound tags",
 	OutboundTagHelp:        "Outbound tag of the rule Kee Route Manager should replace. If it is unclear, use: kee-route-managerctl route-candidates --file PATH. Ambiguous routing tags are never selected automatically.",
@@ -472,23 +487,7 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
-	routingDefault := filepath.Join(configDir, "05_routing.json")
-	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
-	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
-	inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	inbound := splitTags(inboundRaw)
-	if len(inbound) == 0 {
-		return SetupOptions{}, wizardSummary{}, fmt.Errorf("inbound tags are required")
-	}
-	fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
-	outbound, err := w.askRequired(w.msg.OutboundTagPrompt)
+	routing, inbound, outbound, err := w.selectRouting(configDir)
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
@@ -600,6 +599,62 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		cacheEnabled:      cacheEnabled,
 	}
 	return opts, summary, nil
+}
+
+// selectRouting uses read-only discovery before falling back to manual input.
+func (w *wizard) selectRouting(dir string) (string, []string, string, error) {
+	candidates, err := discoverRouting(dir)
+	if err != nil {
+		return "", nil, "", err
+	}
+	if len(candidates) == 1 {
+		c := candidates[0]
+		fmt.Fprintf(w.out, w.msg.AutoRoutingFound, c.File, strings.Join(c.InboundTags, ","), c.OutboundTag)
+		return c.File, c.InboundTags, c.OutboundTag, nil
+	}
+	if len(candidates) > 1 {
+		fmt.Fprintln(w.out, w.msg.AutoRoutingChoices)
+		for i, c := range candidates {
+			fmt.Fprintf(w.out, "%d. %s ← %s (%s)\n", i+1, strings.Join(c.InboundTags, ","), c.OutboundTag, filepath.Base(c.File))
+		}
+		fmt.Fprintln(w.out, w.msg.AutoRoutingManual)
+		for {
+			answer, err := w.prompt(w.msg.AutoRoutingSelect)
+			if err != nil {
+				return "", nil, "", err
+			}
+			selected, err := strconv.Atoi(answer)
+			if err == nil && selected == 0 {
+				break
+			}
+			if err == nil && selected > 0 && selected <= len(candidates) {
+				c := candidates[selected-1]
+				return c.File, c.InboundTags, c.OutboundTag, nil
+			}
+			fmt.Fprintln(w.out, w.msg.AutoRoutingInvalid)
+		}
+	}
+	routingDefault := filepath.Join(dir, "05_routing.json")
+	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
+	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
+	if err != nil {
+		return "", nil, "", err
+	}
+	fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
+	inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
+	if err != nil {
+		return "", nil, "", err
+	}
+	inbound := splitTags(inboundRaw)
+	if len(inbound) == 0 {
+		return "", nil, "", fmt.Errorf("inbound tags are required")
+	}
+	fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
+	outbound, err := w.askRequired(w.msg.OutboundTagPrompt)
+	if err != nil {
+		return "", nil, "", err
+	}
+	return routing, inbound, outbound, nil
 }
 
 func (w *wizard) askPlatform() (Platform, error) {
