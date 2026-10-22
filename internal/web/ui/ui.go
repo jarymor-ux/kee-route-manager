@@ -113,6 +113,11 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 	proxy.ModifyResponse = func(response *http.Response) error {
 		if c.Web.TLS.Enabled {
 			secureSessionCookie(response)
+		} else {
+			// The controller uses loopback HTTPS, so its cookies are Secure.
+			// The operator explicitly chose HTTP for the browser-facing UI:
+			// normalize the proxy cookie or login would never persist.
+			setSessionCookieSecure(response, false)
 		}
 		r := response.Request
 		if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login" && response.StatusCode == http.StatusOK {
@@ -152,6 +157,10 @@ func ProxyHandler(c config.Config) (http.Handler, error) {
 }
 
 func secureSessionCookie(response *http.Response) {
+	setSessionCookieSecure(response, true)
+}
+
+func setSessionCookieSecure(response *http.Response, secure bool) {
 	values := response.Header.Values("Set-Cookie")
 	if len(values) == 0 {
 		return
@@ -159,10 +168,10 @@ func secureSessionCookie(response *http.Response) {
 	changed := false
 	for i, raw := range values {
 		parsed := (&http.Response{Header: http.Header{"Set-Cookie": []string{raw}}}).Cookies()
-		if len(parsed) != 1 || parsed[0].Name != auth.CookieName || parsed[0].Secure {
+		if len(parsed) != 1 || parsed[0].Name != auth.CookieName || parsed[0].Secure == secure {
 			continue
 		}
-		parsed[0].Secure = true
+		parsed[0].Secure = secure
 		values[i] = parsed[0].String()
 		changed = true
 	}
