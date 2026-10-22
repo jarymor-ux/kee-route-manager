@@ -88,6 +88,7 @@ func checkRoutes(c config.Config) error {
 	}
 	inbounds := map[string]bool{}
 	selected := map[string]bool{}
+	owners := map[string]map[string]bool{}
 	// These four files are completely replaced by the candidate manager. Like
 	// xray.checkRoutingFiles, treat only the configured adoption file as the
 	// authoritative user routing section, and refuse other user sections.
@@ -134,11 +135,7 @@ func checkRoutes(c config.Config) error {
 			} `json:"inbounds"`
 			Routing *struct {
 				Script string `json:"script"`
-				Rules  []struct {
-					InboundTag  []string `json:"inboundTag"`
-					OutboundTag string   `json:"outboundTag"`
-					BalancerTag string   `json:"balancerTag"`
-				} `json:"rules"`
+				Rules  []json.RawMessage `json:"rules"`
 			} `json:"routing"`
 		}
 		dec := json.NewDecoder(bytes.NewReader(data))
@@ -165,12 +162,39 @@ func checkRoutes(c config.Config) error {
 			return fmt.Errorf("configured base file has no routing object")
 		}
 		foundBase = true
-		for _, rule := range doc.Routing.Rules {
-			if rule.BalancerTag != "" {
+		for _, raw := range doc.Routing.Rules {
+			var rule struct {
+				Type        string   `json:"type"`
+				InboundTag  []string `json:"inboundTag"`
+				OutboundTag string   `json:"outboundTag"`
+				BalancerTag string   `json:"balancerTag"`
+			}
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(raw, &rule) != nil || json.Unmarshal(raw, &fields) != nil {
+				return fmt.Errorf("invalid Xray routing rule")
+			}
+			// Only an unconditional inbound -> outbound rule is eligible for
+			// KRM adoption. Conditional DNS/DIRECT exceptions remain untouched.
+			unconditional := (rule.Type == "" || rule.Type == "field") && rule.BalancerTag == "" && rule.OutboundTag != ""
+			for field := range fields {
+				switch field {
+				case "type", "inboundTag", "outboundTag":
+				default:
+					unconditional = false
+				}
+			}
+			if !unconditional {
 				continue
 			}
 			for _, tag := range rule.InboundTag {
+				if tag == "" {
+					continue
+				}
 				selected[tag+"\x00"+rule.OutboundTag] = true
+				if owners[tag] == nil {
+					owners[tag] = map[string]bool{}
+				}
+				owners[tag][rule.OutboundTag] = true
 			}
 		}
 	}
@@ -178,6 +202,9 @@ func checkRoutes(c config.Config) error {
 		return fmt.Errorf("configured base routing file is missing")
 	}
 	for _, tag := range c.Xray.Route.InboundTags {
+		if len(owners[tag]) > 1 {
+			return fmt.Errorf("conflicting unconditional routing owners for selected inbound")
+		}
 		if !inbounds[tag] {
 			return fmt.Errorf("selected inbound tag is absent")
 		}
