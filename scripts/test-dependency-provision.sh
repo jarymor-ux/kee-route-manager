@@ -77,4 +77,46 @@ if KRM_DEPENDENCY_PREFIX="$WORK/store-conflict" PROVISION_TEST_CONFLICT_STORE=1 
 fi
 [[ "$(cat "$WORK/store-conflict/var/lib/kee-route-manager-deps/xray-v26.10.21/sentinel")" = operator-owned ]]
 [[ ! -e "$WORK/store-conflict/sbin/xray" ]]
-printf '%s\n' 'Isolated approved provisioning, pinned-store linking, refusal to overwrite, failed prepare, and no implicit service activation verified.'
+# Simulate SIGKILL/power loss after a version store and the first XKeen
+# symlink were published. Recovery must remove only owned writes.
+partial="$WORK/recovery"
+mkdir -p "$partial/sbin" "$partial/var/lib"
+pbase="$partial/var/lib/kee-route-manager-deps"
+mkdir -m 0700 "$pbase" "$pbase/.pending-xkeen" "$pbase/xkeen-2.1"
+printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
+cp "$pbase/.pending-xkeen/token" "$pbase/xkeen-2.1/.krm-provision-token"
+ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
+KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
+[[ ! -e "$pbase/xkeen-2.1" && ! -L "$partial/sbin/_xkeen" && ! -e "$pbase/.pending-xkeen" ]]
+# Foreign replacement after interruption must be refused and preserved,
+# including a dangling/foreign link at the published binary path.
+mkdir -m 0700 "$pbase/.pending-xkeen" "$pbase/xkeen-2.1"
+printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
+cp "$pbase/.pending-xkeen/token" "$pbase/xkeen-2.1/.krm-provision-token"
+ln -s /unrelated-operator-target "$partial/sbin/xkeen"
+if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
+ echo 'foreign link was modified during recovery' >&2; exit 1
+fi
+[[ "$(readlink "$partial/sbin/xkeen")" = /unrelated-operator-target ]]
+[[ -d "$pbase/.pending-xkeen" && -d "$pbase/xkeen-2.1" ]]
+rm "$partial/sbin/xkeen"
+# Loss of the ownership token also requires manual inspection, never rm -rf.
+rm "$pbase/xkeen-2.1/.krm-provision-token"
+if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
+ echo 'unmarked version directory was deleted' >&2; exit 1
+fi
+[[ -d "$pbase/xkeen-2.1" ]]
+# A crash after both links are published is a completed transaction. Merely
+# remove the stale journal, do not uninstall the functional payload.
+cp "$pbase/.pending-xkeen/token" "$pbase/xkeen-2.1/.krm-provision-token"
+printf 'verified fixture\n' > "$pbase/xkeen-2.1/provenance.sha256"
+ln -s "$pbase/xkeen-2.1/xkeen" "$partial/sbin/xkeen"
+ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
+KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
+[[ ! -e "$pbase/.pending-xkeen" && -d "$pbase/xkeen-2.1" ]]
+[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/_xkeen" ]]
+if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
+ echo 'recovery of non-pending transaction should be refused' >&2; exit 1
+fi
+
+printf '%s\n' 'Isolated provisioning and interruption recovery verified.'
