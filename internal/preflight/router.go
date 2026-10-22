@@ -133,6 +133,7 @@ func checkRoutes(c config.Config) error {
 				Tag string `json:"tag"`
 			} `json:"inbounds"`
 			Routing *struct {
+				Script string `json:"script"`
 				Rules []struct {
 					InboundTag  []string `json:"inboundTag"`
 					OutboundTag string   `json:"outboundTag"`
@@ -147,6 +148,9 @@ func checkRoutes(c config.Config) error {
 		}
 		if err != nil {
 			return fmt.Errorf("configuration must be strict JSON")
+		}
+		if doc.Routing != nil && doc.Routing.Script != "" {
+			return fmt.Errorf("scripted routing requires explicit operator review")
 		}
 		for _, in := range doc.Inbounds {
 			inbounds[in.Tag] = true

@@ -39,7 +39,7 @@ func writeRouterFixture(t *testing.T, path, body string) {
 }
 
 func TestRoutingPreflightRequiresAuthoritativeBase(t *testing.T) {
-	for _, scenario := range []string{"valid", "missing base", "missing routing", "second routing", "empty second routing", "managed fragment"} {
+	for _, scenario := range []string{"valid", "missing base", "missing routing", "second routing", "empty second routing", "managed fragment", "scripted routing"} {
 		t.Run(scenario, func(t *testing.T) {
 			c := routingFixture(t)
 			switch scenario {
@@ -52,6 +52,8 @@ func TestRoutingPreflightRequiresAuthoritativeBase(t *testing.T) {
 				writeRouterFixture(t, filepath.Join(c.Xray.ConfigDir, "99_other.json"), selectedRouting)
 			case "empty second routing":
 				writeRouterFixture(t, filepath.Join(c.Xray.ConfigDir, "99_other.json"), `{"routing":{}}`)
+			case "scripted routing":
+				writeRouterFixture(t, c.Xray.BaseRoutingFile, `{"routing":{"script":"return direct","rules":[{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]}}`)
 			case "managed fragment":
 				writeRouterFixture(t, filepath.Join(c.Xray.ConfigDir, "05_90_kee_route_manager_routing.json"), `{"routing":{"rules":[]}}`)
 			}
