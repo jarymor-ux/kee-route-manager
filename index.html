@@ -1,231 +1,169 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f7f4">
-  <meta name="description" content="Kee Route Manager is an open-source Xray, VPN subscription, route health and failover panel for Keenetic and Netcraze routers.">
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="Kee Route Manager — Keenetic / Netcraze Xray control">
-  <meta property="og:description" content="Manage Xray subscriptions, route health and failover on Keenetic and Netcraze routers. Hardware qualification is experimental.">
-  <meta property="og:url" content="https://jarymor-ux.github.io/kee-route-manager/">
-  <link rel="canonical" href="https://jarymor-ux.github.io/kee-route-manager/">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <title>Kee Route Manager — Keenetic / Netcraze Xray control</title>
-  <style>
-    :root { color-scheme:light; --bg:#f7f7f4; --ink:#202724; --muted:#56635c; --line:#cdd4cb; --accent:#245747; --surface:#fff; }
-    *,*::before,*::after { box-sizing:border-box }
-    html { scroll-behavior:smooth }
-    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif }
-    a { color:var(--accent); text-underline-offset:3px }
-    a:hover { text-decoration-thickness:2px }
-    a:focus-visible,button:focus-visible { outline:2px solid var(--accent); outline-offset:4px }
-    .container { width:min(1020px,calc(100% - 40px)); margin-inline:auto }
-    header { background:var(--bg); border-bottom:1px solid var(--line) }
-    .topbar { display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:72px }
-    .brand { font-size:16px; color:var(--ink); text-decoration:none; font-weight:700; letter-spacing:-.035em; white-space:nowrap }
-    .brand-mark { color:var(--accent); font-family:ui-monospace,SFMono-Regular,Consolas,monospace; margin-right:10px; font-weight:800; letter-spacing:0 }
-    nav { display:flex; align-items:center; flex-wrap:wrap; gap:18px; font-size:14px }
-    nav a { color:var(--ink); text-decoration:none }
-    nav a:hover { text-decoration:underline }
-    button { font:inherit; font-size:13px; font-weight:650; border:1px solid var(--line); border-radius:4px; padding:5px 10px; background:var(--surface); color:var(--ink); cursor:pointer }
-    .eyebrow { color:var(--accent); font:700 12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; text-transform:uppercase; letter-spacing:.085em }
-    .hero { padding:104px 0 85px; border-bottom:1px solid var(--line) }
-    h1 { font-size:clamp(42px,6.2vw,72px); line-height:1.08; letter-spacing:-.065em; font-weight:650; max-width:820px; margin:18px 0 26px }
-    .lead { font-size:clamp(17px,2.1vw,21px); line-height:1.55; color:var(--muted); max-width:710px; margin:0 }
-    .actions { display:flex; flex-wrap:wrap; gap:22px; margin-top:30px; font-weight:650 }
-    .actions a { text-decoration:none; border-bottom:1px solid currentColor }
-    .meta { margin-top:53px; color:var(--muted); font-size:13px; display:flex; flex-wrap:wrap; gap:14px 25px }
-    .meta span:not(:last-child)::after { content:"/"; margin-left:25px; color:#a6aea5 }
-    .section { padding:76px 0; border-bottom:1px solid var(--line) }
-    .section-grid { display:grid; grid-template-columns:minmax(180px,260px) 1fr; gap:44px }
-    h2 { font-size:clamp(27px,3.8vw,37px); line-height:1.19; font-weight:650; letter-spacing:-.04em; margin:10px 0 16px }
-    .section p { margin:0 0 18px; color:var(--muted) }
-    .items { display:grid; grid-template-columns:1fr 1fr; gap:28px 35px }
-    h3 { font-size:17px; letter-spacing:-.02em; margin:0 0 7px }
-    .items p { font-size:15px; line-height:1.65; margin:0 }
-    .rule-list { margin:0; padding:0; list-style:none }
-    .rule-list li { padding:13px 0; border-top:1px solid var(--line); color:var(--muted) }
-    .rule-list strong { display:inline-block; min-width:185px; font-weight:650; color:var(--ink) }
-    code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace }
-    code { font-size:.89em }
-    .installbox { background:var(--surface); border:1px solid var(--line); border-radius:5px; padding:23px; margin:21px 0 }
-    pre { font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; margin:0; color:var(--ink) }
-    .note { font-size:14px; padding-left:15px; border-left:3px solid #9baba1 }
-    .muted-link { font-weight:650 }
-    details { border-top:1px solid var(--line); padding:12px 0 }
-    summary { cursor:pointer; font-weight:650 }
-    details p { margin:12px 0 0 !important }
-    summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px }
-    footer { padding:28px 0 45px; color:var(--muted); font-size:13px }
-    .footer-row { display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap }
-    .footer-row div { display:flex; flex-wrap:wrap; gap:20px }
-    @media(max-width:720px) {
-      .container { width:min(100% - 32px,1020px) }
-      .topbar { align-items:flex-start; flex-wrap:wrap; padding:17px 0; gap:8px }
-      nav { gap:10px 17px; width:100% }
-      .hero { padding:68px 0 57px }
-      .meta { margin-top:38px }
-      .meta span:not(:last-child)::after { display:none }
-      .section { padding:53px 0 }
-      .section-grid { grid-template-columns:1fr; gap:18px }
-      .items { grid-template-columns:1fr; gap:24px }
-      .rule-list strong { min-width:0; display:block }
-    }
-    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto } }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f6f8f5">
+<meta name="description" content="Kee Route Manager — открытая веб-панель для Xray на Keenetic и Netcraze: VPN-подписки, выбор узлов, проверки маршрутов, мониторинг и ручные обновления.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kee Route Manager — Xray на Keenetic / Netcraze">
+<meta property="og:description" content="VPN-подписки, мониторинг и управление узлами Xray на вашем роутере.">
+<meta property="og:url" content="https://jarymor-ux.github.io/kee-route-manager/">
+<link rel="canonical" href="https://jarymor-ux.github.io/kee-route-manager/">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<title>Kee Route Manager — Xray на Keenetic и Netcraze</title>
+<style>
+:root{--bg:#f6f8f5;--surface:#fff;--ink:#14221e;--muted:#56665e;--line:#dce5dd;--green:#1e7253;--green2:#d8efe2;--dark:#102b22;--shadow:0 24px 50px rgba(18,39,30,.1);color-scheme:light}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.58 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--green);text-underline-offset:4px}a:focus-visible,button:focus-visible{outline:3px solid #7acbaa;outline-offset:3px}button{font:inherit;cursor:pointer}
+.wrap{width:min(1140px,calc(100% - 44px));margin-inline:auto}.top{background:rgba(246,248,245,.96);border-bottom:1px solid var(--line)}
+.top-inner{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand{display:inline-flex;align-items:center;gap:12px;font-size:16px;font-weight:750;color:var(--ink);text-decoration:none;white-space:nowrap}
+.logo{width:40px;height:40px;background:var(--dark);color:#d5f3e3;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:13px;letter-spacing:-.04em}
+nav{display:flex;align-items:center;gap:24px;font-size:14px}nav a{text-decoration:none;color:var(--ink);font-weight:550}nav a:hover{text-decoration:underline}
+.lang{border:1px solid var(--line);padding:8px 12px;border-radius:9px;background:var(--surface);font-size:13px;font-weight:700;color:var(--ink)}
+.hero{padding:92px 0 90px;background:radial-gradient(circle at 77% 25%,#e1f2e6,transparent 39%),var(--bg);border-bottom:1px solid var(--line)}
+.hero-grid{display:grid;grid-template-columns:.95fr 1.05fr;align-items:center;gap:52px}
+.kicker{display:inline-flex;align-items:center;gap:9px;color:var(--green);font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}
+.kicker::before{content:"";width:8px;height:8px;background:#3f9a70;border-radius:50%}
+h1{font-size:clamp(39px,5vw,64px);line-height:1.1;letter-spacing:-.052em;margin:20px 0 22px;max-width:580px}
+.lead{font-size:18px;color:var(--muted);max-width:540px;margin:0}
+.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:31px 0 23px}
+.btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;padding:13px 18px;min-height:47px;font-size:14px;font-weight:700;border-radius:10px;text-decoration:none;border:1px solid var(--line);white-space:nowrap}
+.btn.primary{background:var(--dark);color:#fff;border-color:var(--dark)}
+.btn.secondary{background:var(--surface);color:var(--ink)}
+.btn:hover{transform:translateY(-1px)}
+.hero-foot{color:var(--muted);font-size:13px}
+.preview{background:#101318;border:7px solid #ffffff;border-radius:15px;box-shadow:var(--shadow);overflow:hidden}
+.preview img{display:block;width:100%;height:auto}
+.preview-label{display:block;font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
+section.section{padding:83px 0;border-bottom:1px solid var(--line)}
+.eyebrow{color:var(--green);font-size:12px;letter-spacing:.11em;text-transform:uppercase;font-weight:800}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:30px;margin:0 0 33px}
+h2{font-size:clamp(28px,3.4vw,42px);letter-spacing:-.04em;line-height:1.18;margin:10px 0 0}
+.desc{color:var(--muted);max-width:545px;margin:0}
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.feature{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:25px 23px;min-height:180px}
+.feature .number{display:block;font-size:13px;color:var(--green);font-weight:800;margin-bottom:22px}
+.feature h3{font-size:18px;line-height:1.3;margin:0 0 9px;letter-spacing:-.025em}
+.feature p{font-size:14px;margin:0;color:var(--muted)}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:23px}
+figure{margin:0}.shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#13161c;box-shadow:0 12px 30px rgba(18,39,30,.06)}
+.shot img{width:100%;height:auto;display:block}
+figcaption{padding:13px 2px 0;font-size:14px;color:var(--muted)}
+figcaption strong{color:var(--ink);display:block;font-size:16px;margin-bottom:4px}
+.disclaimer{font-size:13px;color:var(--muted);background:#e9f0e9;border-radius:9px;padding:12px 16px;margin-top:24px}
+.compat{width:100%;border-collapse:collapse;background:var(--surface);border-radius:13px;overflow:hidden}
+.compat th,.compat td{padding:18px 21px;text-align:left;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+.compat th{background:#eaf0e9;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.compat tr:last-child td{border-bottom:0}
+.tag{color:#805b15;background:#fff3d6;display:inline-flex;font-size:12px;font-weight:750;padding:3px 9px;border-radius:7px;white-space:nowrap}
+.compat-note{font-size:14px;color:var(--muted);margin-top:15px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.step{padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:13px}
+.step .n{color:var(--green);font-size:24px;font-weight:750}
+.step h3{margin:13px 0 10px;font-size:18px;letter-spacing:-.02em}
+.step p{margin:0;font-size:14px;color:var(--muted)}
+.install-actions{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:30px}
+.notice{padding:20px 22px;border-left:4px solid #d5a750;background:#fffaf0;border-radius:0 9px 9px 0;margin-top:31px;color:#594a2f;font-size:14px}
+.notice strong{display:block;color:#3f341f;margin-bottom:5px}
+.footer{padding:27px 0 40px;font-size:13px;color:var(--muted)}
+.footer-row{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.footer-links{display:flex;gap:20px;flex-wrap:wrap}
+.skip{position:absolute;top:-70px;left:12px;background:var(--dark);color:#fff;padding:8px 12px;z-index:8}.skip:focus{top:10px}
+@media(max-width:970px){.hero-grid{grid-template-columns:1fr;gap:34px}.hero{padding:65px 0}.section-head{display:block}.section-head .desc{margin-top:15px}.gallery{grid-template-columns:1fr}.feature-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){.wrap{width:calc(100% - 32px)}.top-inner{padding:15px 0;flex-wrap:wrap}.brand{font-size:15px}nav{width:100%;gap:12px 18px;flex-wrap:wrap;font-size:13px}.hero{padding:48px 0 55px}h1{font-size:41px}.lead{font-size:16px}.actions .btn{width:100%}.section{padding:60px 0!important}.feature-grid,.steps{grid-template-columns:1fr}.compat-wrap{overflow-x:auto}.compat{min-width:595px}.feature{min-height:auto}.section-head{margin-bottom:24px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn:hover{transform:none}}
+</style>
 </head>
 <body>
-<header>
-  <div class="container topbar">
-    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">KRM/</span>Kee Route Manager</a>
-    <nav aria-label="Main navigation">
-      <a href="#capabilities" data-i18n="navCapabilities">Features</a>
-      <a href="#install" data-i18n="navInstall">Install</a>
-      <a href="#scope" data-i18n="navScope">Limitations</a>
-      <a href="https://github.com/jarymor-ux/kee-route-manager">GitHub ↗</a>
-      <button id="language" type="button" aria-label="Switch language to Russian">RU</button>
-    </nav>
-  </div>
-</header>
-<main id="top">
-  <section class="hero">
-    <div class="container">
-      <div class="eyebrow" data-i18n="eyebrow">Open source / self-hosted / Go</div>
-      <h1 data-i18n="title">Xray control for Keenetic and Netcraze.</h1>
-      <p class="lead" data-i18n="lead">An open panel for Xray, VPN subscriptions, route health and node failover on Keenetic and Netcraze routers running compatible stock KeeneticOS/NDMS.</p>
-      <div class="actions">
-        <a href="https://github.com/jarymor-ux/kee-route-manager" data-i18n="source">Source code ↗</a>
-        <a href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/AGENT_INSTALL.md" data-i18n="guide">Installation guide ↗</a>
-        <a href="https://github.com/jarymor-ux/kee-route-manager/releases" data-i18n="releases">Releases ↗</a>
-      </div>
-      <div class="meta"><span>Apache-2.0</span><span>Keenetic / Netcraze</span><span data-i18n="experiment">Hardware support is experimental</span></div>
-    </div>
-  </section>
-  <section class="section" id="capabilities">
-    <div class="container section-grid">
-      <div><div class="eyebrow">01 / <span data-i18n="overview">Overview</span></div><h2 data-i18n="capTitle">Built for day-to-day routing.</h2></div>
-      <div class="items">
-        <div><h3 data-i18n="subTitle">Subscriptions</h3><p data-i18n="subDesc">Manage supported VLESS links and Xray JSON node lists. Keep provider headers in private storage.</p></div>
-        <div><h3 data-i18n="healthTitle">Health checks</h3><p data-i18n="healthDesc">Compare independent VPN and WAN probes. Uncertain results leave the active route alone.</p></div>
-        <div><h3 data-i18n="poolTitle">Pool and failover</h3><p data-i18n="poolDesc">Score candidates, maintain an Xray hot pool and switch deliberately when evidence is sufficient.</p></div>
-        <div><h3 data-i18n="controlTitle">Local control</h3><p data-i18n="controlDesc">A web panel, command-line tools, diagnostics and signed updates with explicit approval.</p></div>
-      </div>
-    </div>
-  </section>
-  <section class="section" id="architecture">
-    <div class="container section-grid">
-      <div><div class="eyebrow">02 / <span data-i18n="architecture">Architecture</span></div><h2 data-i18n="archTitle">A small set of separate tools.</h2><p data-i18n="archNote">The UI does not own routing state or firewall rules.</p></div>
-      <div>
-        <ul class="rule-list">
-          <li><strong><code>kee-route-managerd</code></strong> <span data-i18n="daemon">Controller, scheduler, Xray and platform state.</span></li>
-          <li><strong><code>kee-route-manager-ui</code></strong> <span data-i18n="ui">Independent web panel and API proxy.</span></li>
-          <li><strong><code>kee-route-managerctl</code></strong> <span data-i18n="cli">Local administration and validation.</span></li>
-          <li><strong><code>kee-route-manager-launcher</code></strong> <span data-i18n="launcher">Signed update slots and supervised startup.</span></li>
-        </ul>
-        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/ARCHITECTURE.md" data-i18n="archLink">Read the architecture notes ↗</a></p>
-      </div>
-    </div>
-  </section>
-  <section class="section" id="install">
-    <div class="container section-grid">
-      <div><div class="eyebrow">03 / <span data-i18n="getStarted">Get started</span></div><h2 data-i18n="installTitle">Start with a signed release.</h2></div>
-      <div>
-        <p class="note" data-i18n="releaseSecurity">Signed v2.0.1 uses Go 1.27.3, including the GO-2026-6809 crypto/x509 fix. Upgrade older generated Keenetic configurations offline before installation. Legacy v1.3.3 uses affected Go 1.27.2 and remains immutable. The v2.0.0 tag failed CI and has no release assets. Hardware acceptance is still pending for individual models.</p>
-        <p><a href="https://pkg.go.dev/vuln/GO-2026-6809" data-i18n="releaseAdvisory">Go security advisory ↗</a></p>
-        <p><a href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets" data-i18n="migration">Read the mandatory upgrade migration ↗</a></p>
-        <p data-i18n="installText">First prepare compatible stock firmware, Entware, storage and a working XKeen/Xray setup on the router. KRM does not install these prerequisites. Review the runbook and keep private backups plus an independent recovery connection.</p>
-        <div class="installbox"><pre><code>curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh \
-  https://github.com/jarymor-ux/kee-route-manager/releases/download/v2.0.1/bootstrap-keenetic.sh</code></pre></div>
-        <p class="note" data-i18n="installNote">Keenetic/Netcraze example pinned to signed v2.0.1. Its bootstrap verifies Ed25519 signatures and SHA-256 before downloaded programs execute. Verify initial bootstrap trust too. MIPS Big Endian binaries are included; KN-2410/2510 still require physical-device acceptance.</p>
-        <p data-i18n="verifyBootstrap">Before execution: obtain the v2.0.1 SHA256SUMS and SHA256SUMS.sig, verify the Ed25519 signature with the release public key authenticated independently, then check this file against the signed bootstrap-keenetic.sh digest. Stop on any missing file, mismatch or unknown key. Follow the trust-verification runbook below; a public key downloaded beside the signature is not independent trust.</p>
-        <p data-i18n="executeBootstrap">Only after the signature and bootstrap digest are verified, run:</p>
-        <div class="installbox"><pre><code>sh /tmp/krm-bootstrap.sh</code></pre></div>
-        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/AGENT_INSTALL.md" data-i18n="fullGuide">Read the complete installation and rollback guide ↗</a></p>
-      </div>
-    </div>
-  </section>
-  <section class="section" id="scope">
-    <div class="container section-grid">
-      <div><div class="eyebrow">04 / <span data-i18n="scope">Scope</span></div><h2 data-i18n="scopeTitle">What to expect.</h2></div>
-      <div>
-        <p data-i18n="scopeText">Router targets are Keenetic and Netcraze with compatible stock firmware, Entware and Xray. Hardware qualification is incomplete for individual models. Keenetic/Netcraze has no automatic direct bypass when the main Xray process stops.</p>
-        <p data-i18n="scopeText2">KRM uses the Xray backend only. Signed updates require explicit application; the stable launcher and remote management UI need separate maintenance. Keep backups and a recovery path. Version 2.0.1 includes MIPS Big Endian soft-float builds; a model name or cross-build does not establish physical-device compatibility.</p>
-        <h3 data-i18n="compatTitle">Check the exact model and its resources</h3>
-        <p data-i18n="compatText">Inspect the full model index, native ABI and byte order, available RAM, Entware storage and working Xray configuration. A 256 MB router shares memory with firmware and VPN traffic; there is no guaranteed 256 MB capacity claim. Core-only and a remote management UI can reduce resident processes on the router.</p>
-        <details><summary data-i18n="faqPrereq">Will KRM install Entware or Xray?</summary><p data-i18n="faqPrereqAnswer">No. Set up these prerequisites separately and prove your existing client route before installing KRM.</p></details>
-        <details><summary data-i18n="faqRemote">Can I put the UI on another computer?</summary><p data-i18n="faqRemoteAnswer">Yes, as a management-only client over an authenticated SSH tunnel with verified upstream TLS. The sole routing controller stays on the Keenetic/Netcraze router.</p></details>
-        <details><summary data-i18n="faqBE">Does v2.0.1 support KN-2410?</summary><p data-i18n="faqBEAnswer">Version 2.0.1 includes signed MIPS Big Endian binaries and read-only resource/dependency preflight. KN-2410 hardware acceptance remains pending: measure KeeneticOS, Xray and KRM peaks, prove the client route and retain recovery access. Never substitute a little-endian binary.</p></details>
-        <p><a class="muted-link" href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/KNOWN_LIMITATIONS.md" data-i18n="limitations">Read the known limitations ↗</a></p>
-      </div>
-    </div>
-  </section>
+<a href="#content" class="skip" data-i18n="skip">К содержимому</a>
+<header class="top"><div class="wrap top-inner">
+ <a class="brand" href="#top"><span class="logo">KRM</span> Kee Route Manager</a>
+ <nav aria-label="Навигация"><a href="#features" data-i18n="navFeatures">Возможности</a><a href="#screens" data-i18n="navScreens">Интерфейс</a><a href="#compat" data-i18n="navCompat">Совместимость</a><a href="#install" data-i18n="navInstall">Установка</a><a href="https://github.com/jarymor-ux/kee-route-manager" rel="noopener">GitHub ↗</a><button id="language" class="lang" type="button" aria-label="Switch language to English">EN</button></nav>
+</div></header>
+<main id="content">
+<section class="hero" id="top"><div class="wrap hero-grid">
+<div><span class="kicker" data-i18n="heroTag">Открытый код · Keenetic / Netcraze</span>
+<h1 data-i18n="heroTitle">VPN на роутере — под вашим контролем.</h1>
+<p class="lead" data-i18n="heroLead">Kee Route Manager управляет Xray-подписками и VPN-узлами, проверяет доступность маршрутов и помогает переключаться между серверами через локальную веб-панель.</p>
+<div class="actions"><a class="btn primary" id="release-link" href="https://github.com/jarymor-ux/kee-route-manager/releases/tag/v2.0.1" data-i18n="download">Скачать v2.0.1 ↗</a><a class="btn secondary" href="#install" data-i18n="getStarted">Как установить ↓</a></div>
+<div class="hero-foot" data-i18n="heroFoot">Только Xray · KeeneticOS/NDMS · без облачного аккаунта KRM</div></div>
+<div><div class="preview"><img src="screens/overview.svg" width="1280" height="720" fetchpriority="high" alt="Демонстрационный макет интерфейса KRM: VPN, маршрут и состояние соединения" data-alt="overview"></div>
+<span class="preview-label" data-i18n="previewCaption">Предпросмотр интерфейса. Данные условные.</span></div>
+</div></section>
+<section class="section" id="features"><div class="wrap">
+<div class="section-head"><div><span class="eyebrow" data-i18n="featuresTag">Возможности</span><h2 data-i18n="featuresTitle">Всё важное для управления VPN.</h2></div><p class="desc" data-i18n="featuresDesc">Не просто список серверов: KRM помогает видеть состояние маршрута и управлять им на роутере.</p></div>
+<div class="feature-grid">
+<article class="feature"><span class="number">01</span><h3 data-i18n="f1Title">VPN-подписки</h3><p data-i18n="f1Desc">Добавление и редактирование источников VLESS и поддерживаемых узлов Xray JSON прямо в панели.</p></article>
+<article class="feature"><span class="number">02</span><h3 data-i18n="f2Title">Подбор узлов</h3><p data-i18n="f2Desc">Задержка, оценки и необязательный замер скорости. Горячий пул доступных серверов.</p></article>
+<article class="feature"><span class="number">03</span><h3 data-i18n="f3Title">Переключение при сбоях</h3><p data-i18n="f3Desc">При подтверждённых проблемах VPN выбирает резервный узел. При неясном результате не меняет маршрут.</p></article>
+<article class="feature"><span class="number">04</span><h3 data-i18n="f4Title">Мониторинг роутера</h3><p data-i18n="f4Desc">CPU, RAM, WAN, трафик, временные графики и состояние соединения — в одном месте.</p></article>
+<article class="feature"><span class="number">05</span><h3 data-i18n="f5Title">Клиенты и политики</h3><p data-i18n="f5Desc">Просмотр устройств локальной сети и управление их политиками через Keenetic.</p></article>
+<article class="feature"><span class="number">06</span><h3 data-i18n="f6Title">Контроль и обновления</h3><p data-i18n="f6Desc">Роли пользователей, журнал событий, диагностика и подписанные обновления с подтверждением.</p></article>
+</div></div></section>
+<section class="section" id="screens"><div class="wrap">
+<div class="section-head"><div><span class="eyebrow" data-i18n="screensTag">Интерфейс</span><h2 data-i18n="screensTitle">Работа в веб-панели.</h2></div><p class="desc" data-i18n="screensDesc">Структура экранов основана на текущем Web UI проекта.</p></div>
+<div class="gallery">
+<figure><div class="shot"><img src="screens/nodes.svg" loading="lazy" width="1280" height="720" alt="Макет вкладки Узлы с горячим пулом, поиском и таблицей доступных серверов" data-alt="nodes"></div><figcaption><strong data-i18n="nodesTitle">Узлы и горячий пул</strong><span data-i18n="nodesDesc">Резервные серверы, задержка, оценка и состояние.</span></figcaption></figure>
+<figure><div class="shot"><img src="screens/router.svg" loading="lazy" width="1280" height="720" alt="Макет вкладки Роутер с мониторингом CPU, RAM и графиками WAN" data-alt="router"></div><figcaption><strong data-i18n="routerTitle">Состояние роутера</strong><span data-i18n="routerDesc">Ресурсы устройства и текущая сетевая активность.</span></figcaption></figure>
+</div>
+<p class="disclaimer" data-i18n="screensNote">Это демонстрационные макеты на основе реальной структуры Web UI, не скриншоты работающего роутера. Значения показаны для примера.</p>
+</div></section>
+<section class="section" id="compat"><div class="wrap">
+<div class="section-head"><div><span class="eyebrow" data-i18n="compatTag">Совместимость</span><h2 data-i18n="compatTitle">Keenetic и Netcraze.</h2></div><p class="desc" data-i18n="compatDesc">Подходят модели с совместимой штатной прошивкой, Entware и работающим Xray. Важно проверить архитектуру и доступную память.</p></div>
+<div class="compat-wrap"><table class="compat">
+<thead><tr><th data-i18n="tabModels">Примеры моделей</th><th data-i18n="tabPlatform">Архитектура</th><th data-i18n="tabStatus">Статус</th></tr></thead>
+<tbody><tr><td>Giga SE / Hero DSL KN-2410<br>Ultra SE / Peak DSL KN-2510</td><td>MIPS Big Endian</td><td><span class="tag" data-i18n="experimental">Экспериментально</span></td></tr>
+<tr><td>Giga KN-1010<br>Ultra / Titan KN-1810</td><td>MIPS Little Endian</td><td><span class="tag" data-i18n="experimental">Экспериментально</span></td></tr>
+<tr><td>Ultra / Titan KN-1811<br>Peak KN-2710</td><td>ARM64</td><td><span class="tag" data-i18n="experimental">Экспериментально</span></td></tr></tbody></table></div>
+<p class="compat-note"><span data-i18n="compatNote">Это примеры, а не список аппаратно подтверждённых моделей: испытания на конкретных устройствах ещё продолжаются.</span> <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/HARDWARE.md" data-i18n="allModels">Полная таблица моделей и требований ↗</a></p>
+</div></section>
+<section class="section" id="install"><div class="wrap">
+<div class="section-head"><div><span class="eyebrow" data-i18n="installTag">Установка</span><h2 data-i18n="installTitle">Начать за три шага.</h2></div><p class="desc" data-i18n="installDesc">KRM не заменяет Xray — он работает с уже подготовленным роутером.</p></div>
+<div class="steps">
+<div class="step"><div class="n">01</div><h3 data-i18n="s1Title">Подготовьте роутер</h3><p data-i18n="s1Desc">Штатная KeeneticOS/NDMS, Entware, рабочий Xray/XKeen, SSH, место на накопителе и резервная копия.</p></div>
+<div class="step"><div class="n">02</div><h3 data-i18n="s2Title">Проверьте релиз</h3><p data-i18n="s2Desc">Выберите подписанный релиз, проверьте его Ed25519-подпись и SHA-256, включая сам bootstrap.</p></div>
+<div class="step"><div class="n">03</div><h3 data-i18n="s3Title">Запустите мастер</h3><p data-i18n="s3Desc">После проверки запустите установщик и задайте пути Xray, подписки, проверки сети и режим панели.</p></div>
+</div>
+<div class="install-actions"><a class="btn primary" id="install-guide" href="https://github.com/jarymor-ux/kee-route-manager/blob/v2.0.1/docs/INSTALL.md" data-i18n="installGuide">Пошаговая инструкция ↗</a><a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/AGENT_INSTALL.md" data-i18n="agentGuide">Полное руководство для AI-агента ↗</a></div>
+<div class="notice"><strong data-i18n="noticeTitle">Важно перед установкой</strong><span data-i18n="noticeText">Поддержка конкретных моделей пока экспериментальная. При остановке самого Xray автоматический переход на прямое подключение не гарантирован. Проверьте совместимость, сохраните доступ по SSH и резервную копию.</span> <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/KNOWN_LIMITATIONS.md" data-i18n="noticeLink">Все ограничения ↗</a></div>
+</div></section>
 </main>
-<footer>
-  <div class="container footer-row">
-    <span>Kee Route Manager · Apache-2.0</span>
-    <div>
-      <a href="https://github.com/jarymor-ux/kee-route-manager/issues" data-i18n="issues">Issues</a>
-      <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/SECURITY.md" data-i18n="security">Security</a>
-      <a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/README.ru.md">README RU</a>
-    </div>
-  </div>
-</footer>
+<footer class="footer"><div class="wrap footer-row"><span>Kee Route Manager · Apache-2.0</span><div class="footer-links"><a href="https://github.com/jarymor-ux/kee-route-manager">GitHub</a><a href="https://github.com/jarymor-ux/kee-route-manager/releases" data-i18n="footerReleases">Релизы</a><a href="https://github.com/jarymor-ux/kee-route-manager/issues" data-i18n="footerIssues">Сообщить об ошибке</a><a href="https://github.com/jarymor-ux/kee-route-manager/blob/main/docs/SECURITY.md" data-i18n="footerSecurity">Безопасность</a></div></div></footer>
 <script>
-(() => {
-  const ru = {
-    navCapabilities:"Возможности",navInstall:"Установка",navScope:"Ограничения",
-    eyebrow:"Открытый код / свой роутер / Go",
-    title:"Управление Xray на Keenetic и Netcraze.",
-    lead:"Открытая панель управления Xray, VPN-подписками, здоровьем маршрутов и переключением узлов для Keenetic и Netcraze на совместимой стоковой KeeneticOS/NDMS.",
-    source:"Исходный код ↗",guide:"Инструкция по установке ↗",releases:"Релизы ↗",experiment:"Поддержка устройств экспериментальная",
-    overview:"Обзор",capTitle:"Для повседневной работы.",
-    subTitle:"Подписки",subDesc:"Поддерживаемые VLESS-ссылки и списки узлов Xray JSON. Заголовки провайдеров хранятся отдельно от кода.",
-    healthTitle:"Проверка доступности",healthDesc:"Независимые проверки через VPN и WAN. При неоднозначном результате текущий маршрут сохраняется.",
-    poolTitle:"Пул и переключение",poolDesc:"Оценка кандидатов, горячий пул Xray и переключение только при достаточных данных.",
-    controlTitle:"Локальное управление",controlDesc:"Веб-панель, CLI, диагностика и подписанные обновления с ручным подтверждением.",
-    architecture:"Архитектура",archTitle:"Четыре отдельных компонента.",archNote:"Веб-интерфейс не управляет маршрутами или межсетевым экраном напрямую.",
-    daemon:"Контроллер, планировщик, Xray и состояние платформы.",
-    ui:"Отдельная веб-панель и API-прокси.",
-    cli:"Локальное администрирование и проверка конфигурации.",
-    launcher:"Подписанные версии и управление запуском.",archLink:"Документация по архитектуре ↗",
-    getStarted:"Начало работы",installTitle:"Устанавливайте из подписанного релиза.",
-    releaseSecurity:"Версия v2.0.1 собрана с Go 1.27.3 и включает исправление GO-2026-6809 в проверке сертификатов crypto/x509. Перед обновлением ранее созданного установщиком файла настроек Keenetic выполните описанную в инструкции подготовку при остановленном KRM. Старый v1.3.3 с Go 1.27.2 остаётся уязвимым; его файлы не заменяются. Проверки тега v2.0.0 завершились ошибкой, файлы этого релиза не опубликованы. Проверки отдельных моделей на самих роутерах ещё не завершены.",
-    releaseAdvisory:"Описание уязвимости Go ↗",migration:"Обязательная подготовка настроек перед обновлением ↗",
-    installText:"Сначала подготовьте совместимую заводскую прошивку, накопитель, Entware и работающий XKeen/Xray на роутере. KRM не устанавливает эти компоненты. Изучите инструкцию, сохраните резервные копии в защищённом месте и независимый способ восстановить доступ.",
-    installNote:"В примере для Keenetic/Netcraze используется фиксированная подписанная версия v2.0.1. Загрузочный скрипт проверяет подписи Ed25519 и контрольные суммы SHA-256 до запуска скачанных программ; сам скрипт тоже нужно проверить. Включены программы для MIPS с порядком байтов Big Endian, но проверки на настоящих KN-2410/2510 ещё необходимы.",
-    verifyBootstrap:"До запуска скачайте SHA256SUMS и SHA256SUMS.sig версии v2.0.1. Проверьте подпись Ed25519 открытым ключом релиза, подлинность которого подтверждена независимо, затем сравните контрольную сумму скрипта с подписанной записью bootstrap-keenetic.sh. Если файла нет, суммы не совпали или ключ неизвестен, остановитесь. Порядок проверки описан в инструкции ниже; скачанный вместе с подписью ключ сам по себе не подтверждает её подлинность.",
-    executeBootstrap:"Только после проверки подписи и контрольной суммы загрузочного скрипта выполните:",
-    fullGuide:"Полная инструкция по установке и восстановлению ↗",
-    scope:"Поддержка",scopeTitle:"Границы проекта.",
-    scopeText:"Поддерживаемое семейство — Keenetic и Netcraze на совместимой заводской прошивке с Entware и Xray. Проверки отдельных моделей не завершены. При остановке основного Xray KRM не обеспечивает автоматический выход в интернет напрямую.",
-    scopeText2:"Используется только движок Xray. Установку подписанного обновления подтверждает пользователь; программу запуска KRM и панель на другом компьютере обновляют отдельно. Сохраняйте резервные копии и способ восстановления доступа. В 2.0.1 включены программы для MIPS Big Endian с программными вычислениями с плавающей точкой. Название модели и успешная сборка не доказывают работу на настоящем роутере.",
-    compatTitle:"Проверьте точную модель и ресурсы",
-    compatText:"Проверьте полный индекс модели, совместимость исполняемых программ и порядок байтов, свободную оперативную память, накопитель Entware и работу Xray. На устройстве с 256 МБ память также нужна прошивке и VPN; гарантии, что её хватит, нет. Установка без локальной панели и перенос панели на другой компьютер уменьшают число процессов на роутере.",
-    faqPrereq:"KRM сам установит Entware или Xray?",faqPrereqAnswer:"Нет. Подготовьте их отдельно и проверьте существующий клиентский маршрут до установки KRM.",
-    faqRemote:"Можно перенести панель на другой компьютер?",faqRemoteAnswer:"Да. На другом компьютере работает только панель управления. Она подключается через SSH-туннель с проверкой подлинности сервера и проверяет TLS-сертификат контроллера. Единственный контроллер маршрутов остаётся на роутере Keenetic/Netcraze.",
-    faqBE:"Поддерживает ли v2.0.1 модель KN-2410?",faqBEAnswer:"В 2.0.1 есть подписанные программы для MIPS Big Endian и предварительная проверка памяти, места на накопителе и необходимых компонентов без изменения настроек. Испытания на настоящем KN-2410 ещё не пройдены: измерьте пиковое потребление памяти KeeneticOS, Xray и KRM, проверьте маршрут устройства в сети и сохраните способ восстановления доступа. Не используйте программу для Little Endian вместо Big Endian.",
-    limitations:"Известные ограничения ↗",issues:"Сообщить о проблеме",security:"Безопасность"
-  };
-  const nodes = [...document.querySelectorAll("[data-i18n]")];
-  const en = Object.fromEntries(nodes.map(node => [node.dataset.i18n,node.textContent]));
-  const toggle = document.getElementById("language");
-  function setLanguage(lang) {
-    const strings = lang === "ru" ? ru : en;
-    for (const node of nodes) if (Object.hasOwn(strings,node.dataset.i18n)) node.textContent = strings[node.dataset.i18n];
-    document.documentElement.lang = lang;
-    document.querySelector("nav").setAttribute("aria-label",lang === "ru" ? "Основная навигация" : "Main navigation");
-    const description = lang === "ru" ? "Открытая панель Xray, VPN-подписок, здоровья маршрутов и переключения узлов для Keenetic и Netcraze. Аппаратная совместимость экспериментальна." : "Open-source Xray, VPN subscription, route health and failover panel for Keenetic and Netcraze. Hardware compatibility is experimental.";
-    document.querySelector('meta[name="description"]').content = description;
-    document.querySelector('meta[property="og:description"]').content = description;
-    document.querySelector('meta[property="og:title"]').content = lang === "ru" ? "Kee Route Manager — Xray для Keenetic / Netcraze" : "Kee Route Manager — Keenetic / Netcraze Xray control";
-    toggle.textContent = lang === "ru" ? "EN" : "RU";
-    toggle.setAttribute("aria-label",lang === "ru" ? "Switch language to English" : "Переключить язык на русский");
-    document.title = lang === "ru" ? "Kee Route Manager — Xray для Keenetic / Netcraze" : "Kee Route Manager — Keenetic / Netcraze Xray control";
-  }
-  let language = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
-  setLanguage(language);
-  toggle.addEventListener("click",() => { language = language === "en" ? "ru" : "en"; setLanguage(language); });
+(()=>{"use strict";
+const en={
+skip:"Skip to content",navFeatures:"Features",navScreens:"Interface",navCompat:"Compatibility",navInstall:"Install",
+heroTag:"Open source · Keenetic / Netcraze",heroTitle:"Your router. Your VPN. Your control.",heroLead:"Kee Route Manager manages Xray subscriptions and VPN nodes, checks route health and helps switch between servers through a local web panel.",download:"Download v2.0.1 ↗",getStarted:"How to install ↓",heroFoot:"Xray only · KeeneticOS/NDMS · no KRM cloud account",previewCaption:"Interface preview. Sample data.",
+featuresTag:"Features",featuresTitle:"Everything you need to manage your VPN.",featuresDesc:"More than a server list: see the state of your route and control it on the router.",
+f1Title:"VPN subscriptions",f1Desc:"Add and manage VLESS sources and supported Xray JSON nodes in the panel.",
+f2Title:"Node selection",f2Desc:"Latency, scores and optional speed tests. Keep a hot pool of ready nodes.",
+f3Title:"Failover",f3Desc:"Switch to a reserve node on confirmed VPN failures; keep the route if checks are inconclusive.",
+f4Title:"Router monitoring",f4Desc:"CPU, RAM, WAN, traffic, short-term charts and connection health in one place.",
+f5Title:"Clients and policies",f5Desc:"View LAN devices and manage their policies through Keenetic.",
+f6Title:"Control and updates",f6Desc:"User roles, event history, diagnostics and signed updates with explicit approval.",
+screensTag:"Interface",screensTitle:"Work from a web panel.",screensDesc:"Screen layouts follow the current project Web UI.",
+nodesTitle:"Nodes and hot pool",nodesDesc:"Standby servers, latency, scores and health.",routerTitle:"Router status",routerDesc:"Device resources and current network activity.",
+screensNote:"These are illustrative previews based on the real Web UI structure, not screenshots of a live router. All numbers are sample data.",
+compatTag:"Compatibility",compatTitle:"Keenetic and Netcraze.",compatDesc:"Requires compatible stock firmware, Entware and a working Xray installation. Verify the architecture and free memory.",
+tabModels:"Example models",tabPlatform:"Architecture",tabStatus:"Status",experimental:"Experimental",compatNote:"These are examples, not hardware-qualified models. Per-device validation is still pending.",allModels:"Complete model and hardware requirements ↗",
+installTag:"Install",installTitle:"Get started in three steps.",installDesc:"KRM manages an existing Xray deployment; it does not install Xray for you.",
+s1Title:"Prepare the router",s1Desc:"Stock KeeneticOS/NDMS, Entware, working Xray/XKeen, SSH, storage and backups.",
+s2Title:"Verify the release",s2Desc:"Select a signed release. Verify Ed25519 signatures and SHA-256 hashes, including the bootstrap.",
+s3Title:"Run the wizard",s3Desc:"After verification, run the installer and configure Xray paths, subscriptions, network probes and panel mode.",
+installGuide:"Step-by-step guide ↗",agentGuide:"Full AI agent installation guide ↗",
+noticeTitle:"Before installing",noticeText:"Model support is experimental. KRM cannot guarantee direct Internet bypass if Xray itself stops. Verify hardware, keep SSH recovery access and a backup.",noticeLink:"All limitations ↗",
+footerReleases:"Releases",footerIssues:"Report an issue",footerSecurity:"Security"};
+const ru={};
+document.querySelectorAll("[data-i18n]").forEach(el=>{ru[el.dataset.i18n]=el.textContent});
+const toggle=document.getElementById("language");
+let lang="ru";try{lang=localStorage.getItem("krm-site-lang")||((navigator.language||"").toLowerCase().startsWith("ru")?"ru":"en")}catch(_){lang=(navigator.language||"").toLowerCase().startsWith("ru")?"ru":"en"}
+let version="v2.0.1";
+function render(){const dict=lang==="ru"?ru:en;document.documentElement.lang=lang;document.querySelectorAll("[data-i18n]").forEach(el=>{if(Object.prototype.hasOwnProperty.call(dict,el.dataset.i18n))el.textContent=dict[el.dataset.i18n]});document.querySelector("nav").setAttribute("aria-label",lang==="ru"?"Навигация":"Navigation");toggle.textContent=lang==="ru"?"EN":"RU";toggle.setAttribute("aria-label",lang==="ru"?"Switch language to English":"Переключить язык на русский");document.getElementById("release-link").textContent=(lang==="ru"?"Скачать ":"Download ")+version+" ↗";document.title=lang==="ru"?"Kee Route Manager — Xray на Keenetic и Netcraze":"Kee Route Manager — Xray for Keenetic and Netcraze";const alts={overview:["Демонстрационный макет интерфейса KRM: VPN, маршрут и состояние соединения","Illustrative KRM overview panel preview"],nodes:["Макет вкладки Узлы с горячим пулом, поиском и таблицей","Illustrative KRM node list and hot pool preview"],router:["Макет мониторинга CPU, RAM и WAN","Illustrative router resource monitoring preview"]};document.querySelectorAll("img[data-alt]").forEach(el=>{const a=alts[el.dataset.alt];if(a)el.alt=a[lang==="ru"?0:1]});}
+toggle.addEventListener("click",()=>{lang=lang==="ru"?"en":"ru";try{localStorage.setItem("krm-site-lang",lang)}catch(_){}render()});
+render();
+fetch("https://api.github.com/repos/jarymor-ux/kee-route-manager/releases?per_page=20",{headers:{"Accept":"application/vnd.github+json"}}).then(r=>{if(!r.ok)throw Error("unavailable");return r.json()}).then(releases=>{const stable=releases.find(r=>!r.draft&&!r.prerelease&&/^v\d+\.\d+\.\d+$/.test(r.tag_name));if(!stable)return;version=stable.tag_name;document.getElementById("release-link").href=stable.html_url;document.getElementById("install-guide").href="https://github.com/jarymor-ux/kee-route-manager/blob/"+version+"/docs/INSTALL.md";render()}).catch(()=>{});
 })();
 </script>
 </body>
