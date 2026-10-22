@@ -37,7 +37,8 @@ type discoveryDocument struct {
 		Protocol string `json:"protocol"`
 	} `json:"outbounds"`
 	Routing *struct {
-		Rules []json.RawMessage `json:"rules"`
+		Rules  []json.RawMessage `json:"rules"`
+		Script string            `json:"script"`
 	} `json:"routing"`
 }
 
@@ -59,6 +60,7 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 	inbounds := map[string]bool{}
 	var routingFile string
 	var routingRules []json.RawMessage
+	var routingScript string
 	var total int64
 	files := 0
 	for _, entry := range entries {
@@ -121,10 +123,14 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 			}
 			routingFile = path
 			routingRules = doc.Routing.Rules
+			routingScript = doc.Routing.Script
 		}
 	}
 	if routingFile == "" {
 		return nil, nil
+	}
+	if routingScript != "" {
+		return nil, fmt.Errorf("scripted Xray routing requires explicit operator review")
 	}
 
 	byOutbound := map[string]map[string]bool{}
@@ -141,7 +147,8 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 		if err := json.Unmarshal(raw, &fields); err != nil {
 			return nil, fmt.Errorf("invalid xray routing fields")
 		}
-		unconditional := rule.Type == "field"
+		// Newer Xray routing schemas omit the legacy "type: field" key.
+		unconditional := rule.Type == "" || rule.Type == "field"
 		for key := range fields {
 			switch key {
 			case "type", "inboundTag", "outboundTag", "balancerTag":
@@ -179,7 +186,7 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 				unsafeOutbound[rule.OutboundTag] = true
 			}
 		}
-		if rule.Type != "field" {
+		if rule.Type != "" && rule.Type != "field" {
 			unsafeOutbound[rule.OutboundTag] = true
 			continue
 		}
