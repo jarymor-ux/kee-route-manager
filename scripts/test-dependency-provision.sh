@@ -109,7 +109,10 @@ fi
 # A crash after both links are published is a completed transaction. Merely
 # remove the stale journal, do not uninstall the functional payload.
 cp "$pbase/.pending-xkeen/token" "$pbase/xkeen-2.1/.krm-provision-token"
-printf 'verified fixture\n' > "$pbase/xkeen-2.1/provenance.sha256"
+printf '#!/bin/sh\nexit 0\n' > "$pbase/xkeen-2.1/xkeen"
+chmod 0700 "$pbase/xkeen-2.1/xkeen"
+mkdir -m 0700 "$pbase/xkeen-2.1/_xkeen"
+( cd "$pbase/xkeen-2.1" && openssl dgst -sha256 xkeen ) > "$pbase/xkeen-2.1/provenance.sha256"
 ln -s "$pbase/xkeen-2.1/xkeen" "$partial/sbin/xkeen"
 ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/_xkeen"
 KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
