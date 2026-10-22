@@ -40,7 +40,7 @@ func selectKeeneticLANBind(candidates []lanBindCandidate) string {
 		// A named Ethernet/WAN device is not evidence of a trusted LAN.
 		// Keenetic normally uses a bridge interface for local segments.
 		name := c.name
-		if name != "br-lan" && !(len(name) >= 3 && strings.HasPrefix(name, "br") && name[2] >= '0' && name[2] <= '9') {
+		if name != "br-lan" && !(len(name) == 3 && strings.HasPrefix(name, "br") && name[2] >= '0' && name[2] <= '9') {
 			continue
 		}
 		found[c.ip.String()] = true
