@@ -129,3 +129,25 @@ func TestDiscoverRoutingRejectsSymlinkedConfiguration(t *testing.T) {
 		t.Fatal("installer must not follow external configuration symlinks")
 	}
 }
+
+func TestDiscoverRoutingAcceptsImplicitFieldInModernXray(t *testing.T) {
+	dir := t.TempDir()
+	writeDiscoveryFile(t, dir, "03_inbounds.json", `{"inbounds":[{"tag":"redirect","protocol":"tunnel"}]}`)
+	writeDiscoveryFile(t, dir, "04_outbounds.json", `{"outbounds":[{"tag":"vpn","protocol":"vless"},{"tag":"direct","protocol":"freedom"}]}`)
+	writeDiscoveryFile(t, dir, "05_routing.json", `{"routing":{"rules":[{"inboundTag":["redirect"],"outboundTag":"vpn"}]}}`)
+	got, err := discoverRouting(dir)
+	want := []routeCandidate{{File: filepath.Join(dir, "05_routing.json"), InboundTags: []string{"redirect"}, OutboundTag: "vpn"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("modern Xray implicit field route: got %#v, want %#v, error %v", got, want, err)
+	}
+}
+
+func TestDiscoverRoutingRejectsScriptOverride(t *testing.T) {
+	dir := t.TempDir()
+	writeDiscoveryFile(t, dir, "03_inbounds.json", `{"inbounds":[{"tag":"redirect","protocol":"tunnel"}]}`)
+	writeDiscoveryFile(t, dir, "04_outbounds.json", `{"outbounds":[{"tag":"vpn","protocol":"vless"}]}`)
+	writeDiscoveryFile(t, dir, "05_routing.json", `{"routing":{"script":"router.lua","rules":[{"inboundTag":["redirect"],"outboundTag":"vpn"}]}}`)
+	if _, err := discoverRouting(dir); err == nil {
+		t.Fatal("routing with Lua selection must not be auto-adopted")
+	}
+}
