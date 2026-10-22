@@ -25,12 +25,22 @@ cp "$PREPARE_TEST_ARCHIVE" "$dest/$name"
 DOWNLOAD
 printf '#!/bin/sh\nexit 0\n' > "$WORK/source/xkeen"
 printf 'module\n' > "$WORK/source/_xkeen/readme"
+printf '# module loader\n' > "$WORK/source/_xkeen/import.sh"
 tar -czf "$WORK/good-xkeen.tar.gz" -C "$WORK/source" xkeen _xkeen
 helper="$WORK/checkout/install/common/dependency-prepare.sh"
 PREPARE_TEST_ARCHIVE="$WORK/good-xkeen.tar.gz" sh "$helper" xkeen "$WORK/ok-xkeen" > /dev/null
 cmp "$WORK/ok-xkeen/extracted/xkeen" "$WORK/source/xkeen"
 [[ -f "$WORK/ok-xkeen/extracted/_xkeen/readme" ]]
+[[ -f "$WORK/ok-xkeen/extracted/_xkeen/import.sh" ]]
 [[ ! -e "$WORK/ok-xkeen/entries" ]]
+# Reject archives with a directory named _xkeen but no module loader.
+mkdir -p "$WORK/missing-import/_xkeen"
+cp "$WORK/source/xkeen" "$WORK/missing-import/xkeen"
+tar -czf "$WORK/missing-import.tar.gz" -C "$WORK/missing-import" xkeen _xkeen
+if PREPARE_TEST_ARCHIVE="$WORK/missing-import.tar.gz" sh "$helper" xkeen "$WORK/bad-import" >/dev/null 2>&1; then
+ echo 'XKeen archive without import.sh accepted' >&2; exit 1
+fi
+[[ ! -e "$WORK/bad-import" ]]
 if PREPARE_TEST_ARCHIVE="$WORK/good-xkeen.tar.gz" sh "$helper" xkeen "$WORK/ok-xkeen" >/dev/null 2>&1; then
  echo 'existing prepared directory was overwritten' >&2; exit 1
 fi
