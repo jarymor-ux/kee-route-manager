@@ -47,6 +47,21 @@ owned_store(){
 owned_link(){
  [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]
 }
+# A published payload must remain a regular native entrypoint, with the
+# checksum recorded after verified extraction and before link publication.
+# Do not confirm a broken installation or erase an operator-edited binary.
+valid_payload(){
+ [ -f "$store/$kind" ] && [ -x "$store/$kind" ] && [ ! -L "$store/$kind" ] || return 1
+ [ -f "$store/provenance.sha256" ] && [ ! -L "$store/provenance.sha256" ] || return 1
+ if [ "$kind" = xkeen ]; then
+  [ -d "$store/_xkeen" ] && [ ! -L "$store/_xkeen" ] || return 1
+ fi
+ recorded=$(sed -n 's/^.*= //p' "$store/provenance.sha256")
+ case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
+ [ "${#recorded}" = 64 ] || return 1
+ computed=$(openssl dgst -sha256 "$store/$kind" | sed 's/^.*= //') || return 1
+ [ "$recorded" = "$computed" ]
+}
 # Refuse drift before removing anything: never delete a foreign path or
 # an occupied version store, even during an explicitly requested recovery.
 verify_recovery(){
@@ -54,6 +69,9 @@ verify_recovery(){
  [ -f "$journal/token" ] && [ ! -L "$journal/token" ] || fail 'pending journal has no ownership token; inspect manually'
  if [ -e "$store" ] || [ -L "$store" ]; then
   owned_store || fail 'unowned or ambiguous dependency version store; manual recovery required'
+ fi
+ if [ -e "$store/provenance.sha256" ] || [ -L "$store/provenance.sha256" ]; then
+  valid_payload || fail 'dependency payload changed or incomplete; manual recovery required'
  fi
  if [ -e "$path" ] || [ -L "$path" ]; then
   owned_link "$path" "$installed_target" || fail 'dependency entrypoint changed; manual recovery required'
@@ -69,7 +87,7 @@ recover_pending(){
  # Complete the existing transaction rather than uninstalling a working pair.
  if owned_link "$path" "$installed_target" &&
     { [ "$kind" != xkeen ] || owned_link "$module_path" "$module_target"; } &&
-    owned_store && [ -f "$store/provenance.sha256" ]; then
+    owned_store && valid_payload; then
   rm -rf -- "$journal"
   printf '%s\n' "Confirmed completed $kind provisioning; removed stale journal."
   return 0
