@@ -121,5 +121,15 @@ KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
 if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
  echo 'recovery of non-pending transaction should be refused' >&2; exit 1
 fi
+# A previously valid payload later changed by an operator must not be
+# silently accepted or removed simply because the old links still match.
+mkdir -m 0700 "$pbase/.pending-xkeen"
+printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
+printf '# modified\n' >> "$pbase/xkeen-2.1/xkeen"
+if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
+ echo 'tampered dependency was finalized or removed' >&2; exit 1
+fi
+[[ -d "$pbase/.pending-xkeen" && -f "$pbase/xkeen-2.1/xkeen" ]]
+[[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/_xkeen" ]]
 
 printf '%s\n' 'Isolated provisioning and interruption recovery verified.'
