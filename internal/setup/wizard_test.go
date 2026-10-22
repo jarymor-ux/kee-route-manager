@@ -452,10 +452,10 @@ func TestWizardDefaultsToStableSignedUpdateChecksWithoutApplying(t *testing.T) {
 		script := wizardScript(language, false, false, "y")
 		// The script normally opts out; Enter must now opt in, followed by
 		// another Enter accepting the stable channel.
-		if !strings.HasSuffix(script, "n\\ny\\n") {
+		if !strings.HasSuffix(script, "n\ny\n") {
 			t.Fatal("unexpected wizard fixture")
 		}
-		script = strings.TrimSuffix(script, "n\\ny\\n") + "\\n\\ny\\n"
+		script = strings.TrimSuffix(script, "n\ny\n") + "\n\ny\n"
 		cfg, _, _, err := runWizardToFile(t, script)
 		if err != nil {
 			t.Fatal(err)
