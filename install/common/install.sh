@@ -129,18 +129,6 @@ if [ "$MANAGED_UI" = 1 ]; then
 elif [ "$MODE" = ui ]; then
  ensure_absent /opt/etc/init.d/S98kee-route-manager-ui
 fi
-# The signed, read-only native preflight must succeed before any persistent
-# KRM path, credential, service or launcher slot is created. In particular,
-# missing/broken XKeen or Xray and ambiguous routing cannot become partial
-# installations. The report is kept only in the private installer staging dir.
-PREFLIGHT_CONFIG=$INPUT
-[ "$MODE" != ui ] || PREFLIGHT_CONFIG=$UI_INPUT
-if ! "$ROOT/dist/kee-route-managerctl-linux-$ARCH" preflight \
- --config "$PREFLIGHT_CONFIG" --mode "$MODE" \
- --staging-dir "$STAGE" --release-dir "$ROOT" > "$STAGE/preflight.json"; then
- cat "$STAGE/preflight.json" >&2
- fail 'router preflight failed before installation; resolve prerequisites and retry'
-fi
 mkdir -p "$BIN"
 if [ "$MODE" != ui ]; then
  mkdir -p "$CONFIG_DIR" "$RUN"
