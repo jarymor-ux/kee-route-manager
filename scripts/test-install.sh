@@ -276,12 +276,12 @@ platform=keenetic
  # any KRM config, credentials, service, launcher or managed binary is written.
  mv /opt/sbin/xray "$WORK/private/xray-fixture"
  if prepared_bootstrap > "$WORK/no-xray.stdout" 2>&1; then echo 'missing Xray accepted' >&2; exit 1; fi
- grep -Fq 'router preflight failed before installation' "$WORK/no-xray.stdout"
+ grep -Fq 'preflight failed; installation has not started' "$WORK/no-xray.stdout"
  [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
  mv "$WORK/private/xray-fixture" /opt/sbin/xray
  mv /opt/sbin/xkeen "$WORK/private/xkeen-fixture"
  if prepared_bootstrap > "$WORK/no-xkeen.stdout" 2>&1; then echo 'missing XKeen accepted' >&2; exit 1; fi
- grep -Fq 'router preflight failed before installation' "$WORK/no-xkeen.stdout"
+ grep -Fq 'preflight failed; installation has not started' "$WORK/no-xkeen.stdout"
  [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
  mv "$WORK/private/xkeen-fixture" /opt/sbin/xkeen
  mv /opt/sbin/xray "$WORK/private/xray-fixture"
