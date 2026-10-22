@@ -99,6 +99,19 @@ func TestRoutingPreflightRequiresUniqueUnconditionalRule(t *testing.T) {
 			rules: `[{"inboundTag":["redirect","tproxy"],"outboundTag":"direct"},{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
 		},
 		{
+			name:  "preceding unconditional balancer owner",
+			rules: `[{"inboundTag":["redirect","tproxy"],"balancerTag":"upstream-pool"},{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:  "preceding global DIRECT catch-all",
+			rules: `[{"outboundTag":"direct"},{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+		},
+		{
+			name:   "trailing global DIRECT fallback",
+			rules:  `[{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"},{"outboundTag":"direct"}]`,
+			accept: true,
+		},
+		{
 			name:  "malformed inbound tag",
 			rules: `[{"inboundTag":"redirect","outboundTag":"vless-reality"}]`,
 		},
