@@ -1,4 +1,9 @@
 name: CI
+# A PR update supersedes its earlier, now-stale runs. Tag/release jobs
+# are never cancelled by this optimization.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 on:
   push:
     branches: [main, release-candidate]
