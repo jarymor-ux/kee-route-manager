@@ -4,10 +4,10 @@ import "testing"
 
 func TestKeeneticPrivateLANHTTPUI(t *testing.T) {
 	ui, err := BuildUIConfig(UIOptions{
-		Platform: PlatformKeenetic,
-		PlainHTTP: true,
-		Listen: "192.168.1.1:9444",
-		Upstream: "https://127.0.0.1:9443",
+		Platform:       PlatformKeenetic,
+		PlainHTTP:      true,
+		Listen:         "192.168.1.1:9444",
+		Upstream:       "https://127.0.0.1:9443",
 		UpstreamCAFile: managedUIUpstreamCAPath(PlatformKeenetic),
 	})
 	if err != nil {
