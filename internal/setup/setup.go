@@ -69,6 +69,9 @@ type UpdateOptions struct {
 }
 
 type UIOptions struct {
+	// PlainHTTP is intended only for the browser-facing listener on the
+	// operator's trusted Keenetic LAN. The controller upstream remains TLS.
+	PlainHTTP          bool
 	Hostname           string
 	Platform           Platform
 	Listen             string
@@ -174,9 +177,14 @@ func BuildUIConfig(opts UIOptions) (config.Config, error) {
 		cfg.Web.Listen = opts.Listen
 	}
 	cfg.Web.CredentialsFile = ""
-	cfg.Web.TLS.Enabled = true
-	cfg.Web.TLS.AutoGenerate = true
-	cfg.Web.TLS.Hosts = []string{"localhost"}
+	cfg.Web.TLS.Enabled = !opts.PlainHTTP
+	cfg.Web.TLS.AutoGenerate = !opts.PlainHTTP
+	if !opts.PlainHTTP {
+		cfg.Web.TLS.Hosts = []string{"localhost"}
+	}
+	if opts.PlainHTTP && opts.Platform != PlatformKeenetic {
+		return config.Config{}, fmt.Errorf("HTTP LAN UI is only supported for Keenetic/Netcraze")
+	}
 	if opts.Hostname != "" {
 		if !validPanelHostname(opts.Hostname) {
 			return config.Config{}, fmt.Errorf("invalid local panel hostname")
