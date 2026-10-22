@@ -73,13 +73,13 @@ func TestRoutingPreflightRequiresUniqueUnconditionalRule(t *testing.T) {
 		accept bool
 	}{
 		{
-			name: "only selected unconditional route",
-			rules: `[{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+			name:   "only selected unconditional route",
+			rules:  `[{"inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
 			accept: true,
 		},
 		{
-			name: "conditional DIRECT exception preserved",
-			rules: `[{"inboundTag":["redirect","tproxy"],"domain":["domain:internal.example"],"outboundTag":"direct"},{"type":"field","inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
+			name:   "conditional DIRECT exception preserved",
+			rules:  `[{"inboundTag":["redirect","tproxy"],"domain":["domain:internal.example"],"outboundTag":"direct"},{"type":"field","inboundTag":["redirect","tproxy"],"outboundTag":"vless-reality"}]`,
 			accept: true,
 		},
 		{
