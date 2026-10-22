@@ -2,7 +2,7 @@
 
 Status: **partially implemented in Draft PR #31**; do not treat this plan as a working zero-touch installer or hardware acceptance.
 
-Implemented: conservative read-only routing ownership discovery, guarded LAN/loopback HTTP browser UI with verified loopback HTTPS upstream, stable signed update discovery without automatic application, and early overwrite/symlink rejection for installer-owned paths.
+Implemented: conservative read-only routing ownership discovery, guarded LAN/loopback HTTP browser UI with verified loopback HTTPS upstream, stable signed update discovery without automatic application, early overwrite/symlink rejection for installer-owned paths, and mandatory native Xray/XKeen/routing/resource preflight before persistent installer writes.
 
 Still required: verified and pinned XKeen/Xray assets for each supported ABI, safe provisioning and clean Xray/XKeen bootstrap, durable installation intent/rollback/resume, native service validation and exact-model router acceptance. The installed KRM workflow still needs working XKeen/Xray prerequisites. XKeen on newer KeeneticOS may require operator-supplied device configuration; do not run upstream mutable install scripts or automatically change DNS, WAN or interception policy.
 
