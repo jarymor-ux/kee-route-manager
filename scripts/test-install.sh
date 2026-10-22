@@ -245,6 +245,26 @@ platform=keenetic
  ui_config=$prefix/etc/kee-route-manager-ui/config.yaml
  export KRM_CONFIG_FILE="$WORK/private/$platform-tls.yaml" KRM_UI_CONFIG_FILE="$WORK/private/$platform-ui.yaml" KRM_PASSWORD_FILE="$WORK/private/password"
  export KRM_MODE=core
+ # An abandoned helper must not be replaced as an implicit reinstall.
+ mkdir -p "$prefix/etc/kee-route-manager"
+ printf 'operator-owned helper\n' > "$prefix/etc/kee-route-manager/xray-status.sh"
+ if prepared_bootstrap > "$WORK/orphan.stdout" 2>&1; then echo 'orphan helper overwritten' >&2; exit 1; fi
+ grep -Fq 'existing managed path detected' "$WORK/orphan.stdout"
+ [[ "$(cat "$prefix/etc/kee-route-manager/xray-status.sh")" = 'operator-owned helper' ]]
+ [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" ]]
+ rm "$prefix/etc/kee-route-manager/xray-status.sh"
+ # A dangling config symlink must not redirect installer writes outside /opt.
+ ln -s "$WORK/private/unowned.yaml" "$core_config"
+ if prepared_bootstrap > "$WORK/symlink.stdout" 2>&1; then echo 'dangling config symlink accepted' >&2; exit 1; fi
+ grep -Fq 'existing controller installation detected' "$WORK/symlink.stdout"
+ [[ ! -e "$WORK/private/unowned.yaml" && -L "$core_config" ]]
+ rm "$core_config"
+ # Service units are also part of the installer-owned namespace.
+ printf 'operator-owned init\n' > "$core_service"
+ if prepared_bootstrap > "$WORK/service.stdout" 2>&1; then echo 'existing init service overwritten' >&2; exit 1; fi
+ grep -Fq 'existing managed path detected' "$WORK/service.stdout"
+ [[ "$(cat "$core_service")" = 'operator-owned init' ]]
+ rm "$core_service"
  prepared_bootstrap
  [[ -L "$bin/kee-route-managerd" && -L "$bin/kee-route-managerctl" && -f "$bin/kee-route-manager-launcher" ]]
  [[ ! -e "$ui_service" ]]
