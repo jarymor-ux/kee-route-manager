@@ -136,20 +136,24 @@ func TestLocalUIWizardValidatesBindPortAndHostnameInBothLanguages(t *testing.T) 
 			if ui.Web.Listen != "192.168.1.1:443" || core.API.Listen != "127.0.0.1:9443" || core.Benchmark.FullInterval.Duration != 7*time.Minute || core.Subscriptions.CacheEnabled {
 				t.Fatal("UI options modified controller ownership or benchmark settings")
 			}
-			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || !ui.Web.TLS.AutoGenerate || !containsSetupHost(ui.Web.TLS.Hosts, "alice.jopa") {
-				t.Fatal("UI TLS trust or hostname SAN missing")
+			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.Web.TLS.Enabled || ui.Web.TLS.AutoGenerate {
+				t.Fatal("HTTP UI should retain verified TLS controller upstream")
 			}
 			messages := messagesEN
 			if lang == "1" {
 				messages = messagesRU
 			}
-			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, "https://alice.jopa", "alice.jopa → 192.168.1.1"} {
+			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, messages.UIHTTPWarning, "http://alice.jopa:443", "alice.jopa → 192.168.1.1"} {
 				if !strings.Contains(out.String(), message) {
 					t.Fatalf("missing prompt/summary %q", message)
 				}
 			}
-			// Generate exactly the configured UI identity in an isolated test directory.
-			uiTLS := ui.Web.TLS
+			// HTTPS remains available in an explicitly prepared UI config.
+			secureUI, err := BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Listen: ui.Web.Listen, Hostname: "alice.jopa"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			uiTLS := secureUI.Web.TLS
 			uiTLS.CertFile = filepath.Join(dir, "ui.crt")
 			uiTLS.KeyFile = filepath.Join(dir, "ui.key")
 			if err := tlsutil.EnsureTLS(uiTLS, ui.Web.Listen); err != nil {
