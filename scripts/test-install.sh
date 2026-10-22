@@ -272,6 +272,25 @@ platform=keenetic
  grep -Fq 'existing managed path detected' "$WORK/service.stdout"
  [[ "$(cat "$core_service")" = 'operator-owned init' ]]
  rm "$core_service"
+ # The native preflight must reject unavailable or broken Xray/XKeen before
+ # any KRM config, credentials, service, launcher or managed binary is written.
+ mv /opt/sbin/xray "$WORK/private/xray-fixture"
+ if prepared_bootstrap > "$WORK/no-xray.stdout" 2>&1; then echo 'missing Xray accepted' >&2; exit 1; fi
+ grep -Fq 'router preflight failed before installation' "$WORK/no-xray.stdout"
+ [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
+ mv "$WORK/private/xray-fixture" /opt/sbin/xray
+ mv /opt/sbin/xkeen "$WORK/private/xkeen-fixture"
+ if prepared_bootstrap > "$WORK/no-xkeen.stdout" 2>&1; then echo 'missing XKeen accepted' >&2; exit 1; fi
+ grep -Fq 'router preflight failed before installation' "$WORK/no-xkeen.stdout"
+ [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
+ mv "$WORK/private/xkeen-fixture" /opt/sbin/xkeen
+ mv /opt/sbin/xray "$WORK/private/xray-fixture"
+ printf '#!/bin/sh\nexit 1\n' > /opt/sbin/xray
+ chmod 0755 /opt/sbin/xray
+ if prepared_bootstrap > "$WORK/broken-xray.stdout" 2>&1; then echo 'invalid Xray accepted' >&2; exit 1; fi
+ grep -Fq 'Xray offline validation failed' "$WORK/broken-xray.stdout"
+ [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
+ mv "$WORK/private/xray-fixture" /opt/sbin/xray
  prepared_bootstrap
  [[ -L "$bin/kee-route-managerd" && -L "$bin/kee-route-managerctl" && -f "$bin/kee-route-manager-launcher" ]]
  [[ ! -e "$ui_service" ]]
