@@ -17,9 +17,8 @@ if [ "$prefix" = /opt ]; then
 fi
 [ -d "$prefix/sbin" ] && [ ! -L "$prefix/sbin" ] || fail 'missing or linked Entware sbin directory'
 [ -d "$prefix/var/lib" ] && [ ! -L "$prefix/var/lib" ] || fail 'missing or linked Entware var/lib directory'
-for path in "$prefix/sbin/$kind"; do
- [ ! -e "$path" ] && [ ! -L "$path" ] || fail "existing dependency path: $path"
-done
+path="$prefix/sbin/$kind"
+[ ! -e "$path" ] && [ ! -L "$path" ] || fail "existing dependency path: $path"
 if [ "$kind" = xkeen ]; then
  [ ! -e "$prefix/sbin/_xkeen" ] && [ ! -L "$prefix/sbin/_xkeen" ] || fail 'existing XKeen modules; refusing overwrite'
 fi
