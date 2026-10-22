@@ -115,3 +115,17 @@ func TestDiscoverRoutingRefusesConflictingUnconditionalOwners(t *testing.T) {
 		})
 	}
 }
+
+func TestDiscoverRoutingRejectsSymlinkedConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "external.json")
+	if err := os.WriteFile(target, []byte(`{"routing":{"rules":[]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "05_routing.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := discoverRouting(dir); err == nil {
+		t.Fatal("installer must not follow external configuration symlinks")
+	}
+}
