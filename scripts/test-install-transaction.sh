@@ -5,6 +5,9 @@ ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/entware/var/lib" "$WORK/entware/etc/kee-route-manager" "$WORK/entware/bin"
+# Model an existing public directory explicitly, including when the signing
+# job inherits umask 077. Recovery must restore this recorded baseline.
+chmod 0755 "$WORK/entware/etc/kee-route-manager"
 printf 'synthetic private configuration\n' > "$WORK/config"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/binary"
 chmod 0755 "$WORK/binary"

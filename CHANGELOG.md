@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.1.0-rc.1 — 2026-10-23
+## 2.1.0-rc.2 — 2026-10-23
+
+- First 2.1 candidate publication target after the immutable `v2.1.0-rc.1` tag stopped before asset upload. The signing job uses `umask 077`; explicitly initialize the transaction test's pre-existing 0755 directory so it tests permission recovery under both ordinary and private build masks. Run this regression under both ordinary and private masks in the check job. This changes tests, not application runtime behavior. Retain the failed tag without moving/reusing it.
+- Include the installer changes below with the same experimental hardware and HTTP/IPv4 limitations.
+
+## 2.1.0-rc.1 — 2026-10-23 (unpublished tag)
 
 Experimental candidate; exact-model native installation, LAN/UI, reboot and power-loss acceptance remain unrun. Published stable releases are unchanged.
 

@@ -1,6 +1,6 @@
-# Keenetic / Netcraze installer automation (2.1.0-rc.1)
+# Keenetic / Netcraze installer automation (2.1.0-rc.2)
 
-Status: candidate target **2.1.0-rc.1**, with publication authorized after software review and checks; **not hardware accepted**. Confirm the complete signed immutable RC release exists before installation. Published v2.0.1 assets remain unchanged. The maintained installation procedure is [AGENT_INSTALL.md](AGENT_INSTALL.md).
+Status: candidate target **2.1.0-rc.2**, with publication authorized after software review and checks; **not hardware accepted**. Confirm the complete signed immutable RC release exists before installation. Published v2.0.1 assets remain unchanged. The maintained installation procedure is [AGENT_INSTALL.md](AGENT_INSTALL.md).
 
 ## Supported workflow
 

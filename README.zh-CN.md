@@ -4,7 +4,7 @@
 
 **版本 2.0.1：**使用 Go 1.27.3 构建，包含 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)（`crypto/x509`）修复。仅使用完整且签名验证通过的 `v2.0.1` 发布文件；如尚未发布，应停止安装，不能改用可变分支。旧版 v1.3.3 使用受影响的 Go 1.27.2，文件保持不变。旧 Keenetic 自动生成配置中若有已移除的平台子项，必须先进行[离线迁移](docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets)。
 
-**候选版本 2.1.0-rc.1：**此候选版本增加经明确批准的固定版本 XKeen/Xray 安装、默认阻断的全新配置以及安装恢复。Entware、可信工具、现有原生 `xkeen` 策略和 RCI 授权仍需由操作者准备。浏览器界面默认在可信 LAN 使用带明确警告的 HTTP，控制器上游仍使用验证过的 HTTPS。参见[安装流程与待完成的硬件验收](docs/INSTALLER_AUTOMATION_PLAN.md)。先前发布文件保持不变；安装前必须确认此候选版本完整且签名验证通过。
+**候选版本 2.1.0-rc.2：**此候选版本增加经明确批准的固定版本 XKeen/Xray 安装、默认阻断的全新配置以及安装恢复。Entware、可信工具、现有原生 `xkeen` 策略和 RCI 授权仍需由操作者准备。浏览器界面默认在可信 LAN 使用带明确警告的 HTTP，控制器上游仍使用验证过的 HTTPS。参见[安装流程与待完成的硬件验收](docs/INSTALLER_AUTOMATION_PLAN.md)。先前发布文件保持不变；安装前必须确认此候选版本完整且签名验证通过。
 
 KRM 是**仅面向 Keenetic 和 Netcraze 路由器**的开源 Xray、VPN 订阅、路由健康与节点切换面板。统一的型号、架构与资源要求见[硬件兼容性](docs/HARDWARE.md)。目前仅支持 Xray，不支持 AmneziaWG 或其他 VPN 内核。**`v2.0.1` 面向 stable 渠道；Release 与 Release Candidate 仍独立发布。所有型号在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
