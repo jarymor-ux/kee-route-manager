@@ -182,6 +182,10 @@ chmod 0600 "$store/provenance.sha256"
 # Flush completed native payload before publishing any executable entrypoint.
 sync || fail 'cannot persist prepared dependency payload'
 if [ "$kind" = xkeen ]; then
+ # Another XKeen setup may create the legacy source module directory while
+ # we download and verify the archive. Refuse to publish a competing runtime
+ # after that change, even though the original preflight was clear.
+ [ ! -e "$legacy_module_path" ] && [ ! -L "$legacy_module_path" ] || fail 'legacy XKeen modules appeared during provisioning'
  ln -s "$module_target" "$module_path" || fail 'cannot publish XKeen module link'
 fi
 ln -s "$installed_target" "$path" || fail "cannot publish $kind binary link"
