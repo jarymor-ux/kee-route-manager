@@ -116,6 +116,45 @@ func TestDiscoverRoutingRefusesConflictingUnconditionalOwners(t *testing.T) {
 	}
 }
 
+func TestDiscoverRoutingRespectsGlobalCatchAllOrdering(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules string
+		accept bool
+	}{
+		{
+			name: "global DIRECT before VPN",
+			rules: `[{"outboundTag":"direct"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
+		},
+		{
+			name: "global balancer before VPN",
+			rules: `[{"balancerTag":"pool"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
+		},
+		{
+			name: "global DIRECT after VPN",
+			rules: `[{"inboundTag":["redirect"],"outboundTag":"proxy"},{"outboundTag":"direct"}]`,
+			accept: true,
+		},
+		{
+			name: "conditional DIRECT before VPN",
+			rules: `[{"domain":["domain:example.org"],"outboundTag":"direct"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
+			accept: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDiscoveryFile(t, dir, "01.json", `{"inbounds":[{"tag":"redirect"}],"outbounds":[{"tag":"proxy","protocol":"vless"},{"tag":"direct","protocol":"freedom"}]}`)
+			writeDiscoveryFile(t, dir, "05.json", `{"routing":{"rules":`+tc.rules+`}}`)
+			got, err := discoverRouting(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (len(got) == 1) != tc.accept {
+				t.Fatalf("catch-all ordering: candidates=%#v, expected adoption=%v", got, tc.accept)
+			}
+		})
+	}
+}
+
 func TestDiscoverRoutingRejectsSymlinkedConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(t.TempDir(), "external.json")
