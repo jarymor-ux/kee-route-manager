@@ -122,21 +122,21 @@ func TestDiscoverRoutingRespectsGlobalCatchAllOrdering(t *testing.T) {
 		accept      bool
 	}{
 		{
-			name: "global DIRECT before VPN",
+			name:  "global DIRECT before VPN",
 			rules: `[{"outboundTag":"direct"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
 		},
 		{
-			name: "global balancer before VPN",
+			name:  "global balancer before VPN",
 			rules: `[{"balancerTag":"pool"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
 		},
 		{
-			name: "global DIRECT after VPN",
-			rules: `[{"inboundTag":["redirect"],"outboundTag":"proxy"},{"outboundTag":"direct"}]`,
+			name:   "global DIRECT after VPN",
+			rules:  `[{"inboundTag":["redirect"],"outboundTag":"proxy"},{"outboundTag":"direct"}]`,
 			accept: true,
 		},
 		{
-			name: "conditional DIRECT before VPN",
-			rules: `[{"domain":["domain:example.org"],"outboundTag":"direct"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
+			name:   "conditional DIRECT before VPN",
+			rules:  `[{"domain":["domain:example.org"],"outboundTag":"direct"},{"inboundTag":["redirect"],"outboundTag":"proxy"}]`,
 			accept: true,
 		},
 	} {
