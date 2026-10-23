@@ -138,7 +138,11 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 	// Record all unconditional owners, not only VPN targets. An earlier
 	// catch-all DIRECT or balancer rule can make a VPN rule unreachable.
 	owners := map[string]map[string]bool{}
+	// A catch-all before a VPN rule shadows that rule even when it does not
+	// name an inbound explicitly. A trailing fallback does not shadow it.
+	globalOwnerSeen := false
 	for _, raw := range routingRules {
+		globalBefore := globalOwnerSeen
 		var rule discoveryRule
 		if err := json.Unmarshal(raw, &rule); err != nil {
 			return nil, fmt.Errorf("invalid xray routing rule")
@@ -158,7 +162,10 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 		}
 		if unconditional {
 			var tags []string
-			if err := json.Unmarshal(rule.InboundTag, &tags); err == nil && len(tags) > 0 {
+			if err := json.Unmarshal(rule.InboundTag, &tags); err == nil {
+				if len(tags) == 0 && (rule.OutboundTag != "" || rule.BalancerTag != "") {
+					globalOwnerSeen = true
+				}
 				owner := "outbound:" + rule.OutboundTag
 				if rule.BalancerTag != "" {
 					owner = "balancer:" + rule.BalancerTag
@@ -175,6 +182,10 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 			}
 		}
 		if !outboundVPN[rule.OutboundTag] || rule.BalancerTag != "" {
+			continue
+		}
+		if globalBefore {
+			unsafeOutbound[rule.OutboundTag] = true
 			continue
 		}
 		// Extra match clauses mean the rule may be an exception rather than
