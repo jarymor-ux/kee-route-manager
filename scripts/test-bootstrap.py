@@ -98,17 +98,26 @@ class BootstrapTests(unittest.TestCase):
     result=subprocess.run(['sh',str(d/'install/common/install.sh')],env=env,capture_output=True,text=True)
     self.assertEqual(result.returncode,want,result.stderr)
  def test_keenetic_status_helper_ignores_nonproduction_processes(self):
-  for kind in ('production','probe','wrong-executable','wrong-config','zombie','missing'):
+  for kind in ('production','provisioned','symlink-chain','probe','wrong-executable','wrong-config','zombie','missing'):
    with self.subTest(kind=kind):
-    proc=pathlib.Path(tempfile.mkdtemp(dir=self.root));entry=proc/'1234';entry.mkdir()
+    fixture=pathlib.Path(tempfile.mkdtemp(dir=self.root));proc=fixture/'proc';entry=proc/'1234';entry.mkdir(parents=True)
+    binary=fixture/'sbin/xray';binary.parent.mkdir()
+    payload=fixture/'store/xray';payload.parent.mkdir();payload.write_bytes(b'production executable')
+    if kind in ('provisioned','symlink-chain'):
+     target=payload
+     if kind=='symlink-chain':
+      target=fixture/'current';target.symlink_to(payload)
+     binary.symlink_to(target)
+    else:binary.write_bytes(b'production executable')
+    foreign=fixture/'probe/xray';foreign.parent.mkdir();foreign.write_bytes(binary.read_bytes())
     if kind!='missing':
      (entry/'comm').write_text('xray\n')
-     (entry/'exe').symlink_to('/other/xray' if kind=='wrong-executable' else '/opt/sbin/xray')
+     (entry/'exe').symlink_to(foreign if kind=='wrong-executable' else binary.resolve())
      (entry/'stat').write_text('1234 (xray) '+('Z' if kind=='zombie' else 'S')+' '+' '.join(['0']*18+['123456'])+'\n')
      (entry/'cmdline').write_bytes(b'xray\x00run\x00'+(b'-confdir\x00/tmp/krm-probe\x00' if kind=='probe' else b''))
      (entry/'environ').write_bytes(b'XRAY_LOCATION_CONFDIR='+ (b'/tmp/krm-probe' if kind=='wrong-config' else b'/opt/etc/xray/configs')+b'\x00')
-    result=subprocess.run(['sh',str(ROOT/'install/keenetic/xray-status.sh'),str(proc)],capture_output=True,text=True)
-    self.assertEqual(result.returncode,0 if kind=='production' else 1,result.stderr)
+    result=subprocess.run(['sh',str(ROOT/'install/keenetic/xray-status.sh'),str(proc),str(binary)],capture_output=True,text=True)
+    self.assertEqual(result.returncode,0 if kind in ('production','provisioned','symlink-chain') else 1,result.stderr)
  def test_prepare_release_pins_bootstraps_and_inventories_assets(self):
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));out=d/'dist';out.mkdir();(d/'install').mkdir()
   (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
