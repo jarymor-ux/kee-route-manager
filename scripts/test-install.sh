@@ -294,7 +294,24 @@ platform=keenetic
  grep -Fq 'Xray offline validation failed' "$WORK/broken-xray.stdout"
  [[ ! -e "$core_config" && ! -e "$bin/kee-route-manager-launcher" && ! -e "$core_service" ]]
  mv "$WORK/private/xray-fixture" /opt/sbin/xray
- prepared_bootstrap
+ # A service-start failure leaves a durable activation receipt. Recovery must
+ # retain it, while explicit resume reuses config and credentials without the
+ # original password/config input. This also catches inherited flock fds.
+ printf '#!/bin/sh\nexit 1\n' > "$WORK/fake/nohup"
+ chmod 0755 "$WORK/fake/nohup"
+ if prepared_bootstrap > "$WORK/start-failure.stdout" 2>&1; then echo 'failed service start was accepted' >&2; exit 1; fi
+ grep -Fq 'Supervisor did not start' "$WORK/start-failure.stdout"
+ [[ "$(cat "$prefix/var/lib/kee-route-manager-install/pending-core/phase")" = activating ]]
+ before=$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")
+ if KRM_INSTALL_ACTION=recover sh "install/$platform/install.sh" > "$WORK/active-recover.stdout" 2>&1; then
+  echo 'recovery erased an activated installation' >&2; exit 1
+ fi
+ grep -Fq 'use KRM_INSTALL_ACTION=resume' "$WORK/active-recover.stdout"
+ [[ "$before" = "$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")" ]]
+ rm "$WORK/fake/nohup"
+ env -u KRM_CONFIG_FILE -u KRM_UI_CONFIG_FILE -u KRM_PASSWORD_FILE KRM_INSTALL_ACTION=resume sh "install/$platform/install.sh"
+ [[ ! -e "$prefix/var/lib/kee-route-manager-install/pending-core" ]]
+ [[ "$before" = "$(sha256sum "$core_config" "$prefix/etc/kee-route-manager/credentials.json")" ]]
  [[ -L "$bin/kee-route-managerd" && -L "$bin/kee-route-managerctl" && -f "$bin/kee-route-manager-launcher" ]]
  [[ ! -e "$ui_service" ]]
  check_core

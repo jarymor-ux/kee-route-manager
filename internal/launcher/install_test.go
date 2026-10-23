@@ -91,3 +91,47 @@ func TestInstallRefusesLiveStateOrTunnelOwnerAndUntrustedExistingBinary(t *testi
 		})
 	}
 }
+
+func TestInstallResumesOnlyExactTemporaryLinkFromCommittedBootstrap(t *testing.T) {
+	for _, scenario := range []string{"matching", "foreign-link", "regular-file", "no-record"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newReleaseFixture(t)
+			if scenario != "no-record" {
+				if err := Install(f.configFile, "", f.seed, f.bin); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(f.bin, "kee-route-managerctl.launcher-new")
+			target := filepath.Join(f.c.Update.InstallDir, "current", "kee-route-managerctl")
+			if scenario == "foreign-link" {
+				target = filepath.Join(f.seed, "unrelated")
+			}
+			if scenario == "regular-file" {
+				if err := os.WriteFile(path, []byte("preserve"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			err := Install(f.configFile, "", f.seed, f.bin)
+			if scenario == "matching" {
+				if err != nil {
+					t.Fatal("matching interrupted publication cannot resume", err)
+				}
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Fatal("temporary publication not completed")
+				}
+				if actual, err := os.Readlink(filepath.Join(f.bin, "kee-route-managerctl")); err != nil || actual != target {
+					t.Fatal("wrong resumed link")
+				}
+			} else {
+				if err == nil {
+					t.Fatal("unowned temporary entry accepted")
+				}
+				if _, err := os.Lstat(path); err != nil {
+					t.Fatal("unowned temporary entry removed")
+				}
+			}
+		})
+	}
+}

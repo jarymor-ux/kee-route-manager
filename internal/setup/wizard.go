@@ -283,13 +283,14 @@ var messagesEN = Messages{
 }
 
 type wizard struct {
-	in  *bufio.Reader
-	out io.Writer
-	msg Messages
+	in           *bufio.Reader
+	out          io.Writer
+	msg          Messages
+	nativeOutput string
 }
 
 func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) error {
-	return initConfig(in, out, outputPath, overwrite, "", "", "")
+	return initConfig(in, out, outputPath, overwrite, "", "", "", "")
 }
 
 func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
@@ -298,7 +299,7 @@ func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overw
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
-	return initConfig(in, out, outputPath, overwrite, platform, "", "")
+	return initConfig(in, out, outputPath, overwrite, platform, "", "", "")
 }
 
 // InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
@@ -320,10 +321,10 @@ func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir s
 	if _, err := os.Lstat(tlsDir); !os.IsNotExist(err) {
 		return fmt.Errorf("TLS directory already exists or cannot be inspected")
 	}
-	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
+	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir, "")
 }
 
-func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) (resultErr error) {
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir, nativeOutput string) (resultErr error) {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -331,7 +332,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		return fmt.Errorf("output path is required")
 	}
 
-	w := &wizard{in: bufio.NewReader(in), out: out}
+	w := &wizard{in: bufio.NewReader(in), out: out, nativeOutput: nativeOutput}
 	if err := w.chooseLanguage(); err != nil {
 		return err
 	}
@@ -342,6 +343,17 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	cfg, err := BuildControllerConfig(opts)
 	if err != nil {
 		return err
+	}
+	if nativeOutput != "" {
+		cfg.Xray.AssetDir = "/opt/etc/xray/dat"
+		cfg.Platform.XrayRestartCommand = []string{"/opt/etc/kee-route-manager/xray-restart.sh"}
+		cfg.Benchmark.BatchSize = 2
+		cfg.Benchmark.LatencyWorkers = 2
+		cfg.Benchmark.Finalists = 2
+		cfg.Subscriptions.MaxSources = 2
+		cfg.Subscriptions.MaxNodes = 50
+		cfg.Subscriptions.MaxNodesPerSource = 50
+		cfg.Subscriptions.MaxResponseBytes = 512 << 10
 	}
 	if uiPath != "" {
 		prefix := ""
@@ -418,6 +430,11 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	if err := writeConfig(outputPath, cfg, allowOverwrite); err != nil {
 		return err
 	}
+	if nativeOutput != "" {
+		if err := writeNativeConfig(nativeOutput); err != nil {
+			return err
+		}
+	}
 	loaded, err := config.Load(outputPath)
 	if err != nil {
 		return fmt.Errorf("validate written config: %w", err)
@@ -481,20 +498,28 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		}
 	}
 	binaryDefault, configDirDefault, _ := platformDefaults(platform)
-
-	fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
-	binary, err := w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
-	configDir, err := w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	routing, inbound, outbound, err := w.selectRouting(configDir)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
+	binary, configDir := binaryDefault, configDirDefault
+	routing := filepath.Join(configDir, "05_routing.json")
+	inbound, outbound := []string{"redirect", "tproxy"}, "bootstrap-blocked"
+	if w.nativeOutput == "" {
+		fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
+		binary, err = w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
+		configDir, err = w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		routing, inbound, outbound, err = w.selectRouting(configDir)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+	} else if w.msg.Create == messagesRU.Create {
+		fmt.Fprintln(w.out, "Чистая конфигурация XKeen/Xray: до успешного бенчмарка маршрут заблокирован. Для запуска нужны существующая политика xkeen и доступ к RCI. Существующие DNS/WAN-политики не меняются.")
+	} else {
+		fmt.Fprintln(w.out, "Clean XKeen/Xray configuration: routing stays blocked until a successful benchmark. Activation requires an existing xkeen policy and authorized RCI access. Existing DNS/WAN policies are preserved.")
 	}
 
 	subscriptions, err := w.askSubscriptions()
@@ -804,13 +829,19 @@ func target(id, name, u string) config.Target {
 }
 
 func (w *wizard) askPool() (int, error) {
+	defaultSize := 5
+	prompt := w.msg.PoolPrompt
+	if w.nativeOutput != "" {
+		defaultSize = 2
+		prompt = strings.Replace(prompt, "[5]", "[2]", 1)
+	}
 	for {
-		answer, err := w.prompt(w.msg.PoolPrompt)
+		answer, err := w.prompt(prompt)
 		if err != nil {
 			return 0, err
 		}
 		if answer == "" {
-			return 5, nil
+			return defaultSize, nil
 		}
 		n, err := strconv.Atoi(answer)
 		if err == nil && n >= 1 && n <= 20 {

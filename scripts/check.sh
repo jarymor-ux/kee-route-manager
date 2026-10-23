@@ -16,6 +16,9 @@ bash scripts/test-architecture.sh
 bash scripts/test-dependency-assets.sh
 bash scripts/test-dependency-prepare.sh
 bash scripts/test-dependency-provision.sh
+bash scripts/test-native-bootstrap.sh
+bash scripts/test-installer-dependencies.sh
+bash scripts/test-install-transaction.sh
 bash scripts/test-preflight.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

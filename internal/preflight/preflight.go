@@ -23,6 +23,9 @@ type Options struct {
 	Mode       string
 	StageDir   string
 	ReleaseDir string
+	// ResourcesOnly gates provisioning before native components exist. The
+	// actual installer must still perform the complete preflight afterwards.
+	ResourcesOnly bool
 }
 type Report struct {
 	OK                   bool            `json:"ok"`
@@ -119,7 +122,7 @@ func run(ctx context.Context, c config.Config, o Options, p probes) Report {
 	if len(r.Errors) > 0 {
 		return r
 	}
-	if !ui {
+	if !ui && !o.ResourcesOnly {
 		for _, name := range []string{"/opt/bin/opkg", c.Xray.Binary, c.Platform.Keenetic.XKeenBinary, c.Platform.Keenetic.NDMCBinary} {
 			if err := p.dependency(name); err != nil {
 				add("required executable unavailable: " + name)

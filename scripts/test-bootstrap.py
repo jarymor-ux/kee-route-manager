@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Adversarial bootstrap tests: use real Ed25519 verification, fake downloads, harmless installer."""
-import base64,hashlib,io,json,os,pathlib,pty,subprocess,sys,tarfile,tempfile,unittest
+import base64,hashlib,io,json,os,pathlib,pty,shutil,subprocess,sys,tarfile,tempfile,unittest
 sys.dont_write_bytecode = True
 from release_channel import channel_for_version
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -62,6 +62,9 @@ class BootstrapTests(unittest.TestCase):
     d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
     (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
     (d/'install/common/architecture.sh').write_bytes((ROOT/'install/common/architecture.sh').read_bytes())
+    # These tests exercise early validation only. Locking has separate isolated
+    # filesystem coverage; never let this host-side fixture create /opt paths.
+    (d/'install/common/install-transaction.sh').write_text('txn_lock(){ :; }\n')
     for name,body in (('id','echo 0'),('uname','echo x86_64')):
      f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
     ui=d/'dist/kee-route-manager-ui-linux-amd64'
@@ -78,6 +81,9 @@ class BootstrapTests(unittest.TestCase):
     d=pathlib.Path(tempfile.mkdtemp(dir=self.root));(d/'install/common').mkdir(parents=True);(d/'dist').mkdir();fake=d/'fake';fake.mkdir()
     (d/'install/common/install.sh').write_bytes((ROOT/'install/common/install.sh').read_bytes())
     (d/'install/common/architecture.sh').write_bytes((ROOT/'install/common/architecture.sh').read_bytes())
+    # These tests exercise early validation only. Locking has separate isolated
+    # filesystem coverage; never let this host-side fixture create /opt paths.
+    (d/'install/common/install-transaction.sh').write_text('txn_lock(){ :; }\n')
     for name,body in (('id','echo 0'),('uname','echo x86_64')):
      f=fake/name;f.write_text('#!/bin/sh\n'+body+'\n');f.chmod(0o755)
     for component in ('kee-route-managerd','kee-route-managerctl','kee-route-manager-launcher'):
@@ -205,6 +211,11 @@ else
  test -x "$root/dist/kee-route-manager-ui-linux-amd64"
  test ! -e "$root/dist/kee-route-manager-launcher-linux-amd64"
 fi
+if [ "${KRM_INSTALL_ACTION:-install}" != install ]; then
+ printf 'installer:action:%s\n' "$KRM_INSTALL_ACTION" >> "$KRM_TEST_ORDER"
+ printf verified > "$KRM_TEST_MARKER"
+ exit 0
+fi
 test -s "$KRM_CONFIG_FILE"
 if [ "$KRM_MODE" = local-ui ]; then
  test -s "$KRM_UI_CONFIG_FILE"
@@ -218,6 +229,33 @@ printf verified > "$KRM_TEST_MARKER"
 '''
    content=content.replace(b'manifest-rc.json',manifest_name.encode()).replace(b'-linux-amd64',('-linux-'+arch).encode())
    info=tarfile.TarInfo('install/'+platform+'/install.sh');info.size=len(content);info.mode=0o755;tf.addfile(info,io.BytesIO(content))
+   dependencies=b'''#!/bin/sh
+set -eu
+printf 'dependency:%s\n' "$1" >> "$KRM_TEST_ORDER"
+case "$1" in
+ plan)
+  test "$#" = 2
+  case "${KRM_TEST_NATIVE_PLAN:-none}" in
+   none) ;;
+   clean|resume|adopt) printf '%s\n' "$KRM_TEST_NATIVE_PLAN" > "$2/native-plan";;
+   fail) exit 12;;
+   *) exit 2;;
+  esac
+  ;;
+ apply)
+  test "$#" = 5
+  test -s "$3"
+  test -x "$4"
+  case "$5" in core|local-ui) ;; *) exit 2;; esac
+  if [ "${KRM_TEST_NATIVE_PLAN:-none}" = clean ] || [ "${KRM_TEST_NATIVE_PLAN:-none}" = resume ]; then
+   test -d "$2/native"
+  fi
+  [ "${KRM_TEST_NATIVE_APPLY_FAIL:-0}" != 1 ] || exit 13
+  ;;
+ *) exit 2;;
+esac
+'''
+   info=tarfile.TarInfo('install/common/installer-dependencies.sh');info.size=len(dependencies);info.mode=0o755;tf.addfile(info,io.BytesIO(dependencies))
    for path,body in (('configs/ui-keenetic.yaml',b'fixture-ui: keenetic\n'),):
     info=tarfile.TarInfo(path);info.size=len(body);info.mode=0o600;tf.addfile(info,io.BytesIO(body))
    if unsafe:
@@ -235,17 +273,25 @@ case "${1:-}" in
   platform=
   ui_output=
   tls_dir=
+  native_output=
   while [ "$#" -gt 0 ]; do
    case "$1" in
     --output) output=$2; shift 2;;
     --platform) platform=$2; shift 2;;
     --ui-output) ui_output=$2; shift 2;;
     --tls-dir) tls_dir=$2; shift 2;;
-    *) shift;;
+    --native-output) native_output=$2; shift 2;;
+    *) exit 2;;
    esac
   done
   printf 'ctl:init-config-platform:%s\\n' "$platform" >> "$KRM_TEST_ORDER"
   [ -n "$output" ] || exit 2
+  if [ -n "$native_output" ]; then
+   printf 'ctl:init-config-native:yes\\n' >> "$KRM_TEST_ORDER"
+   mkdir "$native_output"
+  else
+   printf 'ctl:init-config-native:no\\n' >> "$KRM_TEST_ORDER"
+  fi
   if [ -n "$ui_output" ]; then
    printf 'fixture-ui: generated-https\\n' > "$ui_output"
    mkdir "$tls_dir"
@@ -274,7 +320,14 @@ exit 0
   pub=base64.b64decode((self.root/'public').read_text().strip()+'===');pem=base64.b64encode(bytes.fromhex('302a300506032b6570032100')+pub).decode()
   bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@',pinned_version).replace('@CHANNEL@',pinned_channel).replace('@PLATFORM@',platform).replace('@ARCH_DETECTION@',(ROOT/'install/common/architecture.sh').read_text()).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
   (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture');(d/'ui.yaml').write_text('private ui fixture')
-  scripts={'id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
+  scripts={'openssl':'''#!/bin/sh
+set -eu
+"$KRM_TEST_OPENSSL" "$@"
+case "$1" in
+ pkeyutl) printf 'signature:verified\\n' >> "$KRM_TEST_ORDER";;
+ dgst) printf 'hashed:%s\\n' "${3##*/}" >> "$KRM_TEST_ORDER";;
+esac
+''','id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
 while [ "$#" -gt 0 ]; do
  if [ "$1" = -o ]; then out=$2; shift 2; else url=$1; shift; fi
 done
@@ -282,7 +335,9 @@ printf 'fetch:%s\\n' "${url##*/}" >> "$KRM_TEST_ORDER"
 cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
 '''}
   for name,body in scripts.items():(fake/name).write_text(body);(fake/name).chmod(0o755)
-  env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_TEST_ASSETS=str(assets),KRM_TEST_MARKER=str(marker),KRM_TEST_ORDER=str(order),KRM_TEST_CONFIG_USED=str(config_used),KRM_TEST_CONFIG_PATH=str(config_path),KRM_TEST_UI_CONFIG_USED=str(ui_config_used),KRM_TEST_UI_CONFIG_PATH=str(ui_config_path),KRM_CONFIG_FILE=str(d/'config.yaml'),KRM_UI_CONFIG_FILE=str(d/'ui.yaml'),KRM_MODE='local-ui')
+  env=os.environ.copy();env.update(PATH=str(fake)+':'+env['PATH'],KRM_TEST_OPENSSL=shutil.which('openssl'),KRM_TEST_ASSETS=str(assets),KRM_TEST_MARKER=str(marker),KRM_TEST_ORDER=str(order),KRM_TEST_CONFIG_USED=str(config_used),KRM_TEST_CONFIG_PATH=str(config_path),KRM_TEST_UI_CONFIG_USED=str(ui_config_used),KRM_TEST_UI_CONFIG_PATH=str(ui_config_path),KRM_CONFIG_FILE=str(d/'config.yaml'),KRM_UI_CONFIG_FILE=str(d/'ui.yaml'),KRM_MODE='local-ui')
+  for name in ('KRM_INSTALL_ACTION','KRM_TEST_NATIVE_PLAN','KRM_TEST_NATIVE_APPLY_FAIL','KRM_TEST_WIZARD_RESULT','KRM_UPSTREAM_CA_FILE','KRM_GENERATED_TLS_DIR'):
+   env.pop(name,None)
   return d,assets,marker,env
  def sign_checksums(self,assets):
   sums=''.join(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n' for f in sorted(assets.iterdir()) if f.name not in {'SHA256SUMS','SHA256SUMS.sig'})
@@ -301,13 +356,67 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
  def test_existing_config_skips_wizard(self):
   d,a,m,e=self.fixture();r=self.run_bootstrap(d,e)
   self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'private fixture')
-  self.assertNotIn('ctl:init-config',(d/'order.log').read_text())
+  self.assertNotIn('ctl:init-config',(d/'order.log').read_text());self.assertNotIn('dependency:',(d/'order.log').read_text())
  def test_missing_config_runs_verified_wizard_before_installer(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap_tty(d,e)
   self.assertEqual(r.returncode,0,r.stderr);self.assertEqual((d/'config-used').read_text(),'fixture: valid\n')
   order=(d/'order.log').read_text().splitlines();wizard=order.index('ctl:init-config');installer=order.index('installer')
   self.assertGreater(wizard,max(i for i,v in enumerate(order) if v.startswith('fetch:')));self.assertLess(wizard,installer)
   self.assertIn('ctl:validate',order)
+  plan=order.index('dependency:plan');apply=order.index('dependency:apply')
+  self.assertEqual(order.count('signature:verified'),2)
+  self.assertLess(max(i for i,v in enumerate(order) if v=='signature:verified' or v.startswith(('fetch:','hashed:'))),plan)
+  self.assertLess(plan,wizard);self.assertLess(wizard,order.index('ctl:validate'))
+  self.assertLess(order.index('ctl:validate'),apply);self.assertLess(apply,installer)
+  self.assertIn('ctl:init-config-native:no',order)
+ def test_native_output_is_requested_only_for_clean_or_interrupted_native_setup(self):
+  for plan in ('none','adopt','clean','resume'):
+   with self.subTest(plan=plan):
+    d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';e['KRM_TEST_NATIVE_PLAN']=plan
+    r=self.run_bootstrap_tty(d,e)
+    self.assertEqual(r.returncode,0,r.stderr);self.assertTrue(m.exists())
+    order=(d/'order.log').read_text().splitlines()
+    self.assertIn('ctl:init-config-native:'+('yes' if plan in ('clean','resume') else 'no'),order)
+    self.assertLess(order.index('dependency:plan'),order.index('ctl:init-config'))
+    self.assertLess(order.index('ctl:validate'),order.index('dependency:apply'))
+    self.assertLess(order.index('dependency:apply'),order.index('installer'))
+ def test_native_planning_or_application_failure_never_starts_installer(self):
+  for phase in ('plan','apply'):
+   with self.subTest(phase=phase):
+    d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core'
+    if phase=='plan':e['KRM_TEST_NATIVE_PLAN']='fail'
+    else:e['KRM_TEST_NATIVE_APPLY_FAIL']='1'
+    r=self.run_bootstrap_tty(d,e)
+    self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists())
+    order=(d/'order.log').read_text().splitlines();self.assertNotIn('installer',order)
+    if phase=='plan':self.assertNotIn('ctl:init-config',order)
+    else:self.assertIn('ctl:validate',order);self.assertIn('dependency:apply',order)
+ def test_bootstrap_recovery_needs_no_original_config_or_wizard(self):
+  for action in ('resume','recover'):
+   for mode in ('core','local-ui','ui'):
+    with self.subTest(action=action,mode=mode):
+     d,a,m,e=self.fixture();e['KRM_INSTALL_ACTION']=action;e['KRM_MODE']=mode
+     e['KRM_CONFIG_FILE']=str(d/'original-config-no-longer-exists.yaml');e.pop('KRM_UI_CONFIG_FILE')
+     r=self.run_bootstrap(d,e)
+     self.assertEqual(r.returncode,0,r.stderr);self.assertTrue(m.exists())
+     order=(d/'order.log').read_text().splitlines()
+     self.assertIn('installer:action:'+action,order)
+     self.assertNotIn('dependency:plan',order);self.assertNotIn('dependency:apply',order)
+     self.assertNotIn('ctl:init-config',order);self.assertNotIn('ctl:validate',order)
+     self.assertEqual(order.count('signature:verified'),2)
+ def test_recovery_bootstrap_still_verifies_signed_payload(self):
+  for action in ('resume','recover'):
+   with self.subTest(action=action):
+    d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_INSTALL_ACTION']=action
+    payload=a/'release-files.tar.gz';payload.write_bytes(payload.read_bytes()+b'BAD')
+    r=self.run_bootstrap(d,e)
+    self.assertNotEqual(r.returncode,0);self.assertIn('checksum mismatch',r.stderr);self.assertFalse(m.exists())
+    order=(d/'order.log').read_text()
+    self.assertNotIn('installer:',order);self.assertNotIn('dependency:',order);self.assertNotIn('ctl:',order)
+ def test_bootstrap_rejects_unknown_recovery_action_before_downloads(self):
+  d,a,m,e=self.fixture();e['KRM_INSTALL_ACTION']='wipe'
+  r=self.run_bootstrap(d,e)
+  self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists());self.assertFalse((d/'order.log').exists())
  def test_missing_config_supports_relative_tmpdir(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';(d/'relative-tmp').mkdir();e['TMPDIR']='relative-tmp'
   r=self.run_bootstrap_tty(d,e,cwd=d)
@@ -355,7 +464,7 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
     d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';p=a/name;p.write_bytes(p.read_bytes()+b'BAD')
     r=self.run_bootstrap_tty(d,e);self.assertNotEqual(r.returncode,0);self.assertFalse(m.exists(),r.stderr)
     order=(d/'order.log').read_text() if (d/'order.log').exists() else ''
-    self.assertNotIn('ctl:init-config',order);self.assertNotIn('installer',order)
+    self.assertNotIn('ctl:init-config',order);self.assertNotIn('installer',order);self.assertNotIn('dependency:',order)
  def test_missing_config_without_tty_fails_after_verification(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap(d,e)
   self.assertNotEqual(r.returncode,0);self.assertIn('No configuration was provided and interactive terminal is unavailable.',r.stderr)
@@ -363,10 +472,10 @@ cp "$KRM_TEST_ASSETS/${url##*/}" "$out"
   order=(d/'order.log').read_text().splitlines();self.assertTrue(any(v=='fetch:kee-route-managerctl-linux-amd64' for v in order));self.assertNotIn('ctl:init-config',order);self.assertNotIn('installer',order)
  def test_cancelled_wizard_does_not_start_installer(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';e['KRM_TEST_WIZARD_RESULT']='cancel';r=self.run_bootstrap_tty(d,e)
-  self.assertNotEqual(r.returncode,0);order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertNotIn('installer',order);self.assertFalse(m.exists())
+  self.assertNotEqual(r.returncode,0);order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertNotIn('dependency:apply',order);self.assertNotIn('installer',order);self.assertFalse(m.exists())
  def test_invalid_generated_config_does_not_start_installer(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';e['KRM_TEST_WIZARD_RESULT']='invalid';r=self.run_bootstrap_tty(d,e)
-  self.assertNotEqual(r.returncode,0);order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertIn('ctl:validate',order);self.assertNotIn('installer',order);self.assertFalse(m.exists())
+  self.assertNotEqual(r.returncode,0);order=(d/'order.log').read_text().splitlines();self.assertIn('ctl:init-config',order);self.assertIn('ctl:validate',order);self.assertNotIn('dependency:apply',order);self.assertNotIn('installer',order);self.assertFalse(m.exists())
  def test_generated_config_is_removed_by_bootstrap_cleanup(self):
   d,a,m,e=self.fixture();e.pop('KRM_CONFIG_FILE');e['KRM_MODE']='core';r=self.run_bootstrap_tty(d,e)
   self.assertEqual(r.returncode,0,r.stderr);generated=pathlib.Path((d/'config-path').read_text().strip());self.assertFalse(generated.exists(),str(generated))

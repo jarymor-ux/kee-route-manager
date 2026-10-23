@@ -78,6 +78,21 @@ func TestStandaloneUIAvoidsRouterDependencies(t *testing.T) {
 	}
 }
 
+func TestProvisioningResourcesCheckCannotExecuteNativeDependencies(t *testing.T) {
+	p := healthyProbes()
+	p.dependency = func(string) error { t.Fatal("resource check inspected a dependency"); return nil }
+	p.routes = func(config.Config) error { t.Fatal("resource check inspected routes"); return nil }
+	p.validate = func(context.Context, config.Config) error { t.Fatal("resource check executed Xray"); return nil }
+	p.rci = func(context.Context, string) bool { t.Fatal("resource check accessed RCI"); return false }
+	if r := run(context.Background(), config.Default(), Options{Mode: "core", ResourcesOnly: true}, p); !r.OK {
+		t.Fatal(r)
+	}
+	p.memory = func() (memory, error) { return memory{Total: 128 * MiB, Available: 8 * MiB}, nil }
+	if r := run(context.Background(), config.Default(), Options{Mode: "core", ResourcesOnly: true}, p); r.OK {
+		t.Fatal("resource-only bypassed memory gate")
+	}
+}
+
 func TestMemoryParserHandlesOldKernelsAndRejectsOverflow(t *testing.T) {
 	for _, test := range []struct {
 		text      string

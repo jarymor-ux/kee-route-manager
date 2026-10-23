@@ -15,7 +15,11 @@ trap cleanup EXIT HUP INT TERM
 command -v openssl >/dev/null 2>&1 || fail 'OpenSSL with Ed25519 pkeyutl support is required; install it from your trusted package manager'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 command -v curl >/dev/null 2>&1 || fail 'curl with trusted CA certificates is required'
-if [ -n "${KRM_CONFIG_FILE:-}" ]; then
+ACTION=${KRM_INSTALL_ACTION:-install}
+case "$ACTION" in install|resume|recover);; *) fail 'KRM_INSTALL_ACTION must be install, resume or recover';; esac
+if [ "$ACTION" != install ]; then
+ NEED_CONFIG=0
+elif [ -n "${KRM_CONFIG_FILE:-}" ]; then
  [ -f "$KRM_CONFIG_FILE" ] || fail 'prepare a private controller/UI config first; set KRM_CONFIG_FILE=/absolute/path/config.yaml; see docs/AGENT_INSTALL.md'
  NEED_CONFIG=0
 else
@@ -113,7 +117,7 @@ for component in $components; do
 done
 # No downloaded program has been executed before signature and digest checks.
 # Ignore inherited internal staging state; only this verified wizard creates it.
-unset KRM_GENERATED_TLS_DIR
+unset KRM_GENERATED_TLS_DIR KRM_DEPENDENCY_PREFIX
 if [ "$NEED_CONFIG" = 1 ]; then
  if [ ! -t 0 ]; then
   cat >&2 <<'EOF'
@@ -126,19 +130,25 @@ EOF
  fi
  CTL="payload/dist/kee-route-managerctl-linux-$ARCH"
  GENERATED_CONFIG="$WORK/generated-config.yaml"
+ sh payload/install/common/installer-dependencies.sh plan "$WORK"
+ set -- --platform "$PLATFORM" --output "$GENERATED_CONFIG"
+ if [ -f "$WORK/native-plan" ]; then
+  case "$(cat "$WORK/native-plan")" in clean|resume) set -- "$@" --native-output "$WORK/native";; esac
+ fi
  if [ "$MODE" = local-ui ]; then
   [ -z "${KRM_UI_CONFIG_FILE:-}" ] && [ -z "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'configless local-ui generates its own UI config and local trust; use prepared controller/UI configs for custom settings'
   KRM_UI_CONFIG_FILE="$WORK/generated-ui.yaml"
   KRM_GENERATED_TLS_DIR="$WORK/controller-tls"
-  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" --ui-output "$KRM_UI_CONFIG_FILE" --tls-dir "$KRM_GENERATED_TLS_DIR" || fail 'configuration wizard was cancelled or failed'
+  "$CTL" init-config "$@" --ui-output "$KRM_UI_CONFIG_FILE" --tls-dir "$KRM_GENERATED_TLS_DIR" || fail 'configuration wizard was cancelled or failed'
   KRM_UPSTREAM_CA_FILE="$KRM_GENERATED_TLS_DIR/tls.crt"
   export KRM_UI_CONFIG_FILE KRM_GENERATED_TLS_DIR KRM_UPSTREAM_CA_FILE
  else
-  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
+  "$CTL" init-config "$@" || fail 'configuration wizard was cancelled or failed'
  fi
  [ -f "$GENERATED_CONFIG" ] || fail 'configuration wizard did not create a configuration'
  "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
+ sh payload/install/common/installer-dependencies.sh apply "$WORK" "$GENERATED_CONFIG" "$CTL" "$MODE"
  KRM_CONFIG_FILE=$GENERATED_CONFIG
  export KRM_CONFIG_FILE
 fi
-KRM_MODE=$MODE KRM_CONFIG_FILE="$KRM_CONFIG_FILE" sh "payload/install/$PLATFORM/install.sh"
+KRM_MODE=$MODE KRM_CONFIG_FILE="${KRM_CONFIG_FILE:-}" sh "payload/install/$PLATFORM/install.sh"

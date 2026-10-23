@@ -1,10 +1,33 @@
 # Полная установка Kee Route Manager для AI-агента
 
-Этот файл — инструкция от ссылки на репозиторий до проверенной установки **v2.0.1** (stable channel), собираемой Go 1.27.3. Прочитайте также корневой `AGENTS.md`. До начала установки подтвердите фактическую публикацию полного подписанного набора v2.0.1; отсутствие релиза/asset означает остановку, а не установку с main или старой версии. Все модели остаются experimental до аппаратной приёмки; контейнерные проверки её не заменяют. Старые assets неизменны. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
+Этот файл — инструкция от ссылки на репозиторий до проверенной установки **v2.0.1** (stable channel), собираемой Go 1.27.3. Прочитайте также корневой `AGENTS.md`. До начала установки подтвердите фактическую публикацию полного подписанного набора v2.0.1; отсутствие релиза/asset означает остановку, а не установку с main или старой версии. Все модели остаются experimental до аппаратной приёмки; контейнерные проверки её не заменяют. Старые assets неизменны. Опубликованный сценарий v2.0.1 требует существующий рабочий Xray и не устанавливает Entware/XKeen/Xray; изменения Draft PR #31 описаны отдельно ниже.
 
 **Прежний v1.0.0-rc.2 не использовать для новой установки:** его раздельные секции Xray `routing` перезаписывают друг друга. В новой версии routing объединён в выбранном base-файле и проверен с реальным Xray. Прежние опубликованные assets остаются неизменными.
 
 **Scope:** только Keenetic/Netcraze на совместимой стоковой KeeneticOS/NDMS; отдельный PC допускается только как management UI. Начните с [матрицы моделей, ABI, RAM и полного пути KN-2410](HARDWARE.md). В 2.0.1 добавлен MIPS BE; KN-2410/2510 остаются экспериментальными до аппаратной приёмки. Старый v1.3.3 не имеет BE assets. Перед обновлением старого generated Keenetic YAML обязательна [офлайн-миграция](BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets).
+
+## Изменения установщика в Draft PR #31 (ещё не выпущены)
+
+Следующий сценарий относится только к исходникам этой ветки и будущему полному подписанному релизу. Он не меняет опубликованные assets v2.0.1 и не разрешает устанавливать с ветки. Подробный контракт — [автоматизация установки](INSTALLER_AUTOMATION_PLAN.md).
+
+- Entware и доверенные инструменты (`curl`, CA/OpenSSL, `tar`, `unzip`, `jq`, `flock`, `timeout`, `ln`/`mv` с точной no-target-directory семантикой, native `ip`/iptables/ipset/conntrack и process utilities) устанавливаются вручную. При чистой системе wizard предлагает закреплённые XKeen 2.1 / Xray v26.10.21, проверяет размер/SHA-256/ABI и отдельно спрашивает согласие на активацию. Существующие конфликтующие сервисы, hooks, процессы и cron требуют ручного разбора до размещения executable.
+- Чистый Xray получает loopback inbounds и исходный blackhole-маршрут: до успешного бенчмарка VPN-трафик блокируется. Начальный профиль уменьшает pool/batch/workers/finalists до2 и отключает speed test. Автоматическое создание Entware, DNS, WAN-политик, назначение клиентов и форматирование отсутствуют. Чистый native-профиль перехватывает только IPv4; существующий IPv6 остаётся у оператора, без заявления о защите от IPv6-утечек и без отключения IPv6 в ядре.
+- До активации в штатном UI роутера должна существовать ровно одна политика `xkeen` с ненулевой mark. Для firmware с RCI-авторизацией подготовьте root-only JSON с единственным полем `rci_token` вне Git и передайте путь через `KRM_XKEEN_CONFIG_FILE`; токен не передавайте аргументом CLI. Недоступная политика/RCI оставляет native файлы неактивными. Для повторной попытки после этого можно повторить wizard: перед повторным использованием согласия проверяются native receipt, sibling links и неизменённый executable/config payload; изменённый токен обновляйте в приватном `/opt/etc/xkeen/xkeen.json` явно, без перезаписи чужих настроек.
+- Сервис запускается синхронно через проверяющую обёртку, без upstream `xkeen -i`/opkg self-heal. DSCP-перехват и `xkeen_full` выключены; при исчезновении policy mark fallback на всех клиентов запрещён. После отдельного согласия root-only receipt разрешает такой же защищённый запуск после reboot. Прочие native/config writers должны быть остановлены на время активации.
+- Browser UI по умолчанию HTTP на выбранном private LAN/loopback; пароль и cookies не шифруются. Предупреждение wizard обязательно, HTTPS остаётся доступным в prepared config. Upstream контроллера — проверенный loopback HTTPS. Stable update checks включены по умолчанию, auto-apply выключен.
+
+У прерванной установки три независимых журнала. До запуска/launcher import KRM откатывает только совпадающие собственные static files; после этого сохраняет состояние и разрешает проверенное продолжение. Используйте **тот же** проверенный immutable bootstrap и исходный mode, например:
+
+```sh
+KRM_MODE=local-ui KRM_INSTALL_ACTION=recover sh /tmp/krm-bootstrap.sh
+KRM_MODE=local-ui KRM_INSTALL_ACTION=resume sh /tmp/krm-bootstrap.sh
+```
+
+Это альтернативы по фазе журнала, не команды для последовательного слепого выполнения. После launcher/start intent `recover` откажет и укажет `resume`; исходные временные YAML/пароль для resume не нужны. Содержимое/права/идентичности должны совпадать; при drift нужен приватный разбор, не удаление журнала. До launcher intent восстановите partial static publication через `recover`, затем повторите новую установку. Резервные snapshot bytes и metadata хранятся в приватном журнале, чужие файлы не перезаписываются.
+
+Для незавершённой публикации зависимости из аутентифицированного payload: `sh install/common/dependency-provision.sh xray --recover` (либо `xkeen`). Для native setup: `sh install/common/native-bootstrap.sh /absolute/unused-stage --recover`; исходный stage при recovery не нужен. Совпадающая полная публикация подтверждается, partial inactive publication откатывается; изменённые данные сохраняются. Уже завершённые native зависимости не удаляются при ошибке установки KRM или его uninstall. Для полного удаления native interception сначала отдельно переведите клиентов с политики `xkeen` и проверьте WAN/recovery; процедура KRM restore/uninstall ниже не является uninstall XKeen. Не удаляйте native directories или hooks вслепую.
+
+Аппаратная приёмка чистого сценария, UI/LAN, reboot, power-loss и восстановления остаётся невыполненной; PR остаётся Draft.
 
 ## 1. Получить входные данные и подключиться
 
@@ -31,7 +54,7 @@ test -x /opt/sbin/xkeen
 /opt/sbin/xray run -test -confdir /opt/etc/xray/configs
 ```
 
-Пути примера относятся к типичной установке XKeen на Entware; проверьте фактические пути и API-команды установленной версии Xray. Используется только `platform.kind: keenetic`; interception остаётся у оператора/XKeen, отдельного поля firewall-mode нет; не устанавливать KRM поверх неизвестного scheduler. KRM не устанавливает Entware/XKeen/Xray автоматически.
+Пути примера относятся к типичной установке XKeen на Entware; проверьте фактические пути и API-команды установленной версии Xray. Используется только `platform.kind: keenetic`; interception остаётся у оператора/XKeen, отдельного поля firewall-mode нет; не устанавливать KRM поверх неизвестного scheduler. В опубликованном v2.0.1 KRM не устанавливает Entware/XKeen/Xray автоматически.
 
 Проверьте строгий JSON во всех файлах `*.json`, единственную пользовательскую секцию `routing` в выбранном base-файле, фактический asset directory и семантику команд XKeen. Перезапуск должен завершаться синхронно, а status возвращать ошибку при отсутствии основного Xray; временные процессы benchmark не подтверждают его работу. Подробности настройки — в [CONFIGURATION.md](CONFIGURATION.md).
 
@@ -87,7 +110,7 @@ python3 scripts/verify-release.py /PRIVATE/complete-release
 - `api.listen: 127.0.0.1:9443`, `api.unix_socket` внутри `paths.run_dir`, API TLS paths/hosts из шаблона.
 - `web.enabled: false`: core не раздаёт UI.
 - interception принадлежит оператору/XKeen; отдельный режим KRM-managed firewall не предлагается. Автоматический direct bypass при полной остановке Xray на Keenetic/Netcraze не поддерживается. Сохраните независимый SSH/recovery доступ.
-- `update.enabled: true` включает периодическую проверку GitHub releases; `auto_apply: false` обязателен. Укажите RC channel, закреплённый `public_key`, приватный `install_dir` и `launcher_socket` внутри `paths.run_dir`. Применение — только явной командой или кнопкой UI. Не переносите ключ из старой версии.
+- `update.enabled: true` включает периодическую проверку GitHub releases; `auto_apply: false` обязателен. Укажите выбранный канал (`stable` по умолчанию в новом wizard), закреплённый `public_key`, приватный `install_dir` и `launcher_socket` внутри `paths.run_dir`. Применение — только явной командой или кнопкой UI. Не переносите ключ из старой версии.
 
 Выберите routing rule без зависимости от названия старого outbound. Из заранее проверенных release assets используйте:
 
@@ -111,7 +134,7 @@ sh /tmp/krm-bootstrap.sh
 
 Без `KRM_MODE` используется `local-ui`. После полной проверки release assets bootstrap запускает подписанный `kee-route-managerctl init-config`, предлагает русский или английский язык, проверяет созданный временный config и только затем передаёт его installer. Нужен интерактивный TTY. Wizard настраивает Xray paths, реальные inbound/outbound tags, subscriptions/headers, score/health targets, размер пула, speed test и update discovery. Routing tags нельзя угадывать; при неоднозначности сначала используйте `route-candidates`. Health targets желательно выбирать на разных hostname у независимых операторов: при quorum 2 один сервер под двумя URL не даёт независимых свидетельств.
 
-Безопасные defaults: firewall `existing`, API на loopback, приватные config/credentials, speed test выключен, автоматическое применение обновлений выключено (`auto_apply: false`). Поиск обновлений — отдельная опция, не разрешение на их применение. При включении speed test нужен HTTPS URL-шаблон с `{bytes}`. Wizard пока не устанавливает XKeen/Xray. На существующей конфигурации он автоматически выбирает только один однозначный безусловный VPN-маршрут; несколько кандидатов требуют явного выбора. На чистой системе без Xray настройка зависимостей пока остаётся ручной.
+Безопасные defaults: firewall `existing`, API на loopback, приватные config/credentials, speed test выключен, автоматическое применение обновлений выключено (`auto_apply: false`). Поиск обновлений — отдельная опция, не разрешение на их применение. При включении speed test нужен HTTPS URL-шаблон с `{bytes}`. В опубликованном v2.0.1 wizard не устанавливает XKeen/Xray. На существующей конфигурации он автоматически выбирает только один однозначный безусловный VPN-маршрут; несколько кандидатов требуют явного выбора. На чистой системе без Xray настройка зависимостей пока остаётся ручной.
 
 Advanced/noninteractive сценарий сохраняется и пропускает wizard:
 

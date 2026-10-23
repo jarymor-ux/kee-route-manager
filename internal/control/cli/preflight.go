@@ -19,6 +19,7 @@ func preflightCommand(ctx context.Context, args []string, out io.Writer) error {
 	mode := f.String("mode", "core", "core, local-ui or ui")
 	stage := f.String("staging-dir", "", "existing staging directory (defaults to TMPDIR)")
 	release := f.String("release-dir", "", "verified extracted release root for exact binary disk accounting")
+	resources := f.Bool("resources-only", false, "only check resources before dependency provisioning; does not authorize installation")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -29,7 +30,7 @@ func preflightCommand(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	r := preflight.Run(ctx, c, preflight.Options{Mode: *mode, StageDir: *stage, ReleaseDir: *release})
+	r := preflight.Run(ctx, c, preflight.Options{Mode: *mode, StageDir: *stage, ReleaseDir: *release, ResourcesOnly: *resources})
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(r); err != nil {

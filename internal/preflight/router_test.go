@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -211,6 +212,9 @@ func TestRCIProbeIsReadOnlyBoundedAndRejectsRedirects(t *testing.T) {
 }
 
 func TestOfflineXrayValidationTimesOutAndKillsChildren(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process-tree assertion requires Linux /proc; run in the isolated Linux suite")
+	}
 	dir := t.TempDir()
 	c := config.Default()
 	c.Xray.Binary = filepath.Join(dir, "xray-fixture")
