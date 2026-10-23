@@ -17,6 +17,10 @@ case "$1" in
  xkeen) cp "$PROVISION_TEST_FIXTURE/xkeen" "$2/extracted/xkeen"; cp -R "$PROVISION_TEST_FIXTURE/_xkeen" "$2/extracted/_xkeen";;
  *) exit 1;;
 esac
+if [ -n "${PROVISION_TEST_PAUSE:-}" ]; then
+ : > "$PROVISION_TEST_PAUSE/started"
+ while [ ! -f "$PROVISION_TEST_PAUSE/continue" ]; do sleep 0.05; done
+fi
 # Simulate a concurrent actor changing destination names after preflight.
 if [ "${PROVISION_TEST_CONFLICT_XKEEN:-}" = 1 ]; then
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/xkeen"
@@ -27,6 +31,14 @@ fi
 if [ "${PROVISION_TEST_CONFLICT_LEGACY:-}" = 1 ]; then
  mkdir -m 0700 "$KRM_DEPENDENCY_PREFIX/sbin/_xkeen"
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/_xkeen/import.sh"
+fi
+if [ -n "${PROVISION_TEST_DIRECTORY:-}" ]; then
+ destination="$KRM_DEPENDENCY_PREFIX/sbin/$PROVISION_TEST_DIRECTORY"
+ mkdir "$destination"
+ printf 'operator-owned\n' > "$destination/sentinel"
+fi
+if [ -n "${PROVISION_TEST_DIRECTORY_LINK:-}" ]; then
+ ln -s "$PROVISION_TEST_DIRECTORY_LINK_TARGET" "$KRM_DEPENDENCY_PREFIX/sbin/$PROVISION_TEST_DIRECTORY_LINK"
 fi
 if [ "${PROVISION_TEST_CONFLICT_STORE:-}" = 1 ]; then
  mkdir -m 0700 "$KRM_DEPENDENCY_PREFIX/var/lib/kee-route-manager-deps/xray-v26.10.21"
@@ -120,6 +132,56 @@ if KRM_DEPENDENCY_PREFIX="$WORK/store-conflict" PROVISION_TEST_CONFLICT_STORE=1 
 fi
 [[ "$(cat "$WORK/store-conflict/var/lib/kee-route-manager-deps/xray-v26.10.21/sentinel")" = operator-owned ]]
 [[ ! -e "$WORK/store-conflict/sbin/xray" ]]
+# mkdir/symlink-to-directory races must not turn ln's destination into a
+# directory operand and write a nested link into an operator-owned directory.
+for destination in xray .xkeen xkeen; do
+ kind=xkeen
+ [[ "$destination" != xray ]] || kind=xray
+ conflict="$WORK/directory-$destination"
+ mkdir -p "$conflict/sbin" "$conflict/var/lib"
+ if KRM_DEPENDENCY_PREFIX="$conflict" PROVISION_TEST_DIRECTORY="$destination" sh "$helper" "$kind" --approve >/dev/null 2>&1; then
+  echo "directory collision accepted: $destination" >&2; exit 1
+ fi
+ [[ "$(cat "$conflict/sbin/$destination/sentinel")" = operator-owned ]]
+ [[ "$(find "$conflict/sbin/$destination" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]]
+ conflict="$WORK/directory-link-$destination"
+ mkdir -p "$conflict/sbin" "$conflict/var/lib" "$WORK/linked-operator-$destination"
+ printf 'operator-owned\n' > "$WORK/linked-operator-$destination/sentinel"
+ if KRM_DEPENDENCY_PREFIX="$conflict" PROVISION_TEST_DIRECTORY_LINK_TARGET="$WORK/linked-operator-$destination" PROVISION_TEST_DIRECTORY_LINK="$destination" sh "$helper" "$kind" --approve >/dev/null 2>&1; then
+  echo "directory symlink collision accepted: $destination" >&2; exit 1
+ fi
+ [[ "$(readlink "$conflict/sbin/$destination")" = "$WORK/linked-operator-$destination" ]]
+ [[ "$(cat "$WORK/linked-operator-$destination/sentinel")" = operator-owned ]]
+ [[ "$(find "$WORK/linked-operator-$destination" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]]
+done
+# Recovery and a second approval cannot enter an active transaction. Preserve
+# its journal and ownership token while the first process is still preparing.
+concurrent="$WORK/concurrent"
+mkdir -p "$concurrent/sbin" "$concurrent/var/lib" "$WORK/pause"
+KRM_DEPENDENCY_PREFIX="$concurrent" PROVISION_TEST_PAUSE="$WORK/pause" sh "$helper" xray --approve >"$WORK/active.log" 2>&1 &
+active=$!
+for ((attempt=0; attempt<100; attempt++)); do
+ [[ ! -e "$WORK/pause/started" ]] || break
+ sleep 0.05
+done
+[[ -e "$WORK/pause/started" ]]
+token=$(cat "$concurrent/var/lib/kee-route-manager-deps/.pending-xray/token")
+if KRM_DEPENDENCY_PREFIX="$concurrent" sh "$helper" xray --recover >/dev/null 2>&1; then
+ echo 'recovery raced an active approval' >&2; exit 1
+fi
+if KRM_DEPENDENCY_PREFIX="$concurrent" sh "$helper" xray --approve >/dev/null 2>&1; then
+ echo 'second approval raced an active approval' >&2; exit 1
+fi
+[[ "$(cat "$concurrent/var/lib/kee-route-manager-deps/.pending-xray/token")" = "$token" ]]
+touch "$WORK/pause/continue"
+wait "$active"
+[[ -L "$concurrent/sbin/xray" ]]
+# The ownership token is unique per attempt even with the same kind/path.
+rm "$concurrent/sbin/xray"
+rm -rf "$concurrent/var/lib/kee-route-manager-deps/xray-v26.10.21"
+sh_token_path="$concurrent/var/lib/kee-route-manager-deps/xray-v26.10.21/.krm-provision-token"
+KRM_DEPENDENCY_PREFIX="$concurrent" sh "$helper" xray --approve >/dev/null
+[[ "$(cat "$sh_token_path")" != "$token" ]]
 # Simulate SIGKILL/power loss after a version store and the first XKeen
 # symlink were published. Recovery must remove only owned writes.
 partial="$WORK/recovery"
@@ -159,6 +221,7 @@ mkdir -m 0700 "$pbase/xkeen-2.1/_xkeen"
 LC_ALL=C tar -cf - -C "$pbase/xkeen-2.1" _xkeen | openssl dgst -sha256 >> "$pbase/xkeen-2.1/provenance.sha256"
 ln -s "$pbase/xkeen-2.1/xkeen" "$partial/sbin/xkeen"
 ln -s "$pbase/xkeen-2.1/_xkeen" "$partial/sbin/.xkeen"
+cp "$pbase/xkeen-2.1/provenance.sha256" "$pbase/.pending-xkeen/payload.sha256"
 KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null
 [[ ! -e "$pbase/.pending-xkeen" && -d "$pbase/xkeen-2.1" ]]
 [[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/.xkeen" ]]
@@ -169,6 +232,7 @@ fi
 # contents while the entrypoint itself is unchanged.
 mkdir -m 0700 "$pbase/.pending-xkeen"
 printf '%s\n' "xkeen:2.1:$pbase/.pending-xkeen" > "$pbase/.pending-xkeen/token"
+cp "$pbase/xkeen-2.1/provenance.sha256" "$pbase/.pending-xkeen/payload.sha256"
 printf 'unexpected module\n' > "$pbase/xkeen-2.1/_xkeen/foreign"
 if KRM_DEPENDENCY_PREFIX="$partial" sh "$helper" xkeen --recover >/dev/null 2>&1; then
  echo 'modified XKeen modules were accepted during recovery' >&2; exit 1
@@ -184,4 +248,40 @@ fi
 [[ -d "$pbase/.pending-xkeen" && -f "$pbase/xkeen-2.1/xkeen" ]]
 [[ -L "$partial/sbin/xkeen" && -L "$partial/sbin/.xkeen" ]]
 
+# A crash before provenance creation must not authorize deleting files
+# changed after the crash. Payload identity lives in the journal first.
+pre="$WORK/pre-provenance"
+mkdir -p "$pre/sbin" "$pre/var/lib"
+base="$pre/var/lib/kee-route-manager-deps"
+mkdir -m 0700 "$base" "$base/.pending-xray" "$base/xray-v26.10.21"
+printf 'attempt-token\n' > "$base/.pending-xray/token"
+cp "$base/.pending-xray/token" "$base/xray-v26.10.21/.krm-provision-token"
+cp "$WORK/fixture/xray" "$base/xray-v26.10.21/xray"
+( cd "$base/xray-v26.10.21" && openssl dgst -sha256 xray ) > "$base/.pending-xray/payload.sha256"
+printf '# operator modification\n' >> "$base/xray-v26.10.21/xray"
+if KRM_DEPENDENCY_PREFIX="$pre" sh "$helper" xray --recover >/dev/null 2>&1; then
+ echo 'pre-provenance operator edits were deleted' >&2; exit 1
+fi
+[[ -f "$base/xray-v26.10.21/xray" && -f "$base/.pending-xray/token" ]]
+# Rewriting the colocated provenance to match edits cannot supersede the
+# independently recorded pre-effect identity in the journal.
+( cd "$base/xray-v26.10.21" && openssl dgst -sha256 xray ) > "$base/xray-v26.10.21/provenance.sha256"
+if KRM_DEPENDENCY_PREFIX="$pre" sh "$helper" xray --recover >/dev/null 2>&1; then
+ echo 'edited payload and rewritten provenance were accepted' >&2; exit 1
+fi
+rm "$base/xray-v26.10.21/provenance.sha256"
+# Unknown root entries are preserved even when the recognized payload hashes
+# still match (including a token-only partial store).
+rm "$base/xray-v26.10.21/xray"
+printf 'operator-owned\n' > "$base/xray-v26.10.21/operator-note"
+if KRM_DEPENDENCY_PREFIX="$pre" sh "$helper" xray --recover >/dev/null 2>&1; then
+ echo 'unknown root file was deleted during recovery' >&2; exit 1
+fi
+[[ "$(cat "$base/xray-v26.10.21/operator-note")" = operator-owned ]]
+# The same interrupted state with only the verified original payload can be
+# rolled back without requiring the post-copy provenance write to have run.
+rm "$base/xray-v26.10.21/operator-note"
+cp "$WORK/fixture/xray" "$base/xray-v26.10.21/xray"
+KRM_DEPENDENCY_PREFIX="$pre" sh "$helper" xray --recover >/dev/null
+[[ ! -e "$base/xray-v26.10.21" && ! -e "$base/.pending-xray" ]]
 printf '%s\n' 'Isolated provisioning and interruption recovery verified.'

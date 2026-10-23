@@ -20,6 +20,7 @@ if [ "$prefix" = /opt ]; then
 fi
 [ -d "$prefix/sbin" ] && [ ! -L "$prefix/sbin" ] || fail 'missing or linked Entware sbin directory'
 [ -d "$prefix/var/lib" ] && [ ! -L "$prefix/var/lib" ] || fail 'missing or linked Entware var/lib directory'
+command -v flock >/dev/null 2>&1 || fail 'flock is required for serialized provisioning and recovery'
 base="$prefix/var/lib/kee-route-manager-deps"
 if [ ! -d "$base" ]; then
  [ ! -e "$base" ] && [ ! -L "$base" ] || fail 'dependency storage path is occupied'
@@ -28,6 +29,12 @@ if [ ! -d "$base" ]; then
 fi
 [ ! -L "$base" ] || fail 'dependency storage is a symlink'
 [ "$(stat -c %a "$base")" = 700 ] || fail 'dependency storage permissions must be 0700'
+# Keep the lock inode after exit: unlinking it would allow another process
+# to lock a different inode while a current transaction still holds this one.
+lock="$base/.lock-$kind"
+[ ! -L "$lock" ] && { [ ! -e "$lock" ] || [ -f "$lock" ]; } || fail 'invalid dependency lock path'
+exec 9>"$lock"
+flock -n 9 || fail 'dependency provisioning or recovery is already running'
 store="$base/$kind-$version"
 journal="$base/.pending-$kind"
 path="$prefix/sbin/$kind"
@@ -52,34 +59,70 @@ owned_store(){
 owned_link(){
  [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]
 }
-# A published payload must remain a regular native entrypoint, with the
-# checksum recorded after verified extraction and before link publication.
-# Do not confirm a broken installation or erase an operator-edited binary.
+# Record payload identities in the journal BEFORE moving verified files into
+# the version store. Recovery cannot trust provenance stored beside a payload
+# that may have been edited after interruption.
+identity_digest(){
+ recorded=$(sed -n "$1"'s/^.*= //p' "$journal/payload.sha256")
+ case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
+ [ "${#recorded}" = 64 ]
+}
+tree_digest(){
+ # Do not hide tar errors behind a successful openssl pipeline.
+ LC_ALL=C tar -cf "$journal/.checking-tree.tar" -C "$1" _xkeen 2>/dev/null || return 1
+ computed=$(openssl dgst -sha256 "$journal/.checking-tree.tar" | sed 's/^.*= //') || return 1
+ rm -f "$journal/.checking-tree.tar"
+}
+valid_partial_store(){
+ owned_store || return 1
+ # A token authorizes only known files, never recursive deletion of later
+ # operator additions. Inspect dotfiles as well as ordinary root entries.
+ for entry in "$store"/* "$store"/.[!.]* "$store"/..?*; do
+  [ -e "$entry" ] || [ -L "$entry" ] || continue
+  case "${entry##*/}" in
+   .krm-provision-token|provenance.sha256) ;;
+   "$kind") ;;
+   _xkeen) [ "$kind" = xkeen ] || return 1;;
+   *) return 1;;
+  esac
+ done
+ # A crash just after the token was copied leaves an empty owned store. It
+ # is safe to remove that store even for older token-only journals.
+ if [ ! -e "$store/$kind" ] && [ ! -L "$store/$kind" ] &&
+    [ ! -e "$store/_xkeen" ] && [ ! -L "$store/_xkeen" ] &&
+    [ ! -e "$store/provenance.sha256" ] && [ ! -L "$store/provenance.sha256" ]; then
+  return 0
+ fi
+ [ -f "$journal/payload.sha256" ] && [ ! -L "$journal/payload.sha256" ] || return 1
+ expected_lines=1
+ [ "$kind" != xkeen ] || expected_lines=2
+ [ "$(wc -l < "$journal/payload.sha256" | tr -d '[:space:]')" = "$expected_lines" ] || return 1
+ identity_digest 1 || return 1
+ if [ -e "$store/$kind" ] || [ -L "$store/$kind" ]; then
+  [ -f "$store/$kind" ] && [ -x "$store/$kind" ] && [ ! -L "$store/$kind" ] || return 1
+  computed=$(openssl dgst -sha256 "$store/$kind" | sed 's/^.*= //') || return 1
+  [ "$recorded" = "$computed" ] || return 1
+ fi
+ if [ "$kind" = xkeen ]; then
+  identity_digest 2 || return 1
+  if [ -e "$store/_xkeen" ] || [ -L "$store/_xkeen" ]; then
+   [ -d "$store/_xkeen" ] && [ ! -L "$store/_xkeen" ] || return 1
+   tree_digest "$store" || return 1
+   [ "$recorded" = "$computed" ] || return 1
+  fi
+ fi
+ if [ -e "$store/provenance.sha256" ] || [ -L "$store/provenance.sha256" ]; then
+  [ -f "$store/provenance.sha256" ] && [ ! -L "$store/provenance.sha256" ] || return 1
+  cmp -s "$journal/payload.sha256" "$store/provenance.sha256" || return 1
+ fi
+}
 valid_payload(){
  [ -f "$store/$kind" ] && [ -x "$store/$kind" ] && [ ! -L "$store/$kind" ] || return 1
  [ -f "$store/provenance.sha256" ] && [ ! -L "$store/provenance.sha256" ] || return 1
- expected_lines=1
  if [ "$kind" = xkeen ]; then
   [ -d "$store/_xkeen" ] && [ ! -L "$store/_xkeen" ] || return 1
-  expected_lines=2
  fi
- [ "$(wc -l < "$store/provenance.sha256" | tr -d '[:space:]')" = "$expected_lines" ] || return 1
- recorded=$(sed -n '1s/^.*= //p' "$store/provenance.sha256")
- case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
- [ "${#recorded}" = 64 ] || return 1
- computed=$(openssl dgst -sha256 "$store/$kind" | sed 's/^.*= //') || return 1
- [ "$recorded" = "$computed" ] || return 1
- if [ "$kind" = xkeen ]; then
-  # The executable is only a launcher. XKeen's modules are executable
-  # installation material too, so a stale journal must not certify changed
-  # modules or unexpected new paths under _xkeen.
-  recorded=$(sed -n '2s/^.*= //p' "$store/provenance.sha256")
-  case "$recorded" in ''|*[!0123456789abcdef]*) return 1;; esac
-  [ "${#recorded}" = 64 ] || return 1
-  computed=$(LC_ALL=C tar -cf - -C "$store" _xkeen 2>/dev/null | openssl dgst -sha256 | sed 's/^.*= //') || return 1
-  [ "$recorded" = "$computed" ] || return 1
- fi
- return 0
+ valid_partial_store
 }
 # Refuse drift before removing anything: never delete a foreign path or
 # an occupied version store, even during an explicitly requested recovery.
@@ -87,10 +130,7 @@ verify_recovery(){
  [ -d "$journal" ] && [ ! -L "$journal" ] || fail 'invalid pending transaction journal'
  [ -f "$journal/token" ] && [ ! -L "$journal/token" ] || fail 'pending journal has no ownership token; inspect manually'
  if [ -e "$store" ] || [ -L "$store" ]; then
-  owned_store || fail 'unowned or ambiguous dependency version store; manual recovery required'
- fi
- if [ -e "$store/provenance.sha256" ] || [ -L "$store/provenance.sha256" ]; then
-  valid_payload || fail 'dependency payload changed or incomplete; manual recovery required'
+  valid_partial_store || fail 'unowned, changed or ambiguous dependency version store; manual recovery required'
  fi
  if [ -e "$path" ] || [ -L "$path" ]; then
   owned_link "$path" "$installed_target" || fail 'dependency entrypoint changed; manual recovery required'
@@ -136,19 +176,30 @@ fi
 mkdir -m 0700 "$journal" || fail 'cannot reserve provisioning journal'
 # The journal contains no subscription credentials, authentication data, or
 # remote URLs. Private permissions and sync keep the intent durable first.
-printf '%s\n' "$kind:$version:$journal" > "$journal/token"
+token=$(openssl rand -hex 32) || fail 'cannot create dependency ownership token'
+[ "${#token}" = 64 ] || fail 'invalid dependency ownership token'
+printf '%s\n' "$token" > "$journal/token"
 sync || fail 'cannot persist dependency transaction intent'
 committed=0
 cleanup(){
  if [ "$committed" = 0 ]; then
-  # During THIS process's failed attempt we know which paths it published.
-  # A concurrently created foreign entrypoint must be preserved, but must
-  # not prevent cleanup of our own XKeen module link or version store.
-  if owned_link "$path" "$installed_target"; then rm -- "$path" || true; fi
-  if [ "$kind" = xkeen ] && owned_link "$module_path" "$module_target"; then
-   rm -- "$module_path" || true
+  # Preserve foreign replacements. Only clean up known writes after the
+  # complete partial store still matches the independent journal identity.
+  safe_cleanup=0
+  if [ ! -e "$store" ] && [ ! -L "$store" ]; then
+   safe_cleanup=1
+  elif valid_partial_store; then
+   safe_cleanup=1
   fi
-  if owned_store; then rm -rf -- "$store" || true; fi
+  if [ "$safe_cleanup" = 1 ]; then
+   if owned_link "$path" "$installed_target"; then rm -- "$path" || true; fi
+   if [ "$kind" = xkeen ] && owned_link "$module_path" "$module_target"; then
+    rm -- "$module_path" || true
+   fi
+  fi
+  if owned_store && valid_partial_store; then
+   rm -rf -- "$store" || true
+  fi
   if [ ! -e "$store" ] && [ ! -L "$store" ]; then
    rm -rf -- "$journal"
   else
@@ -162,6 +213,14 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 sh "$ROOT/install/common/dependency-prepare.sh" "$kind" "$journal/prepared"
+chmod 0700 "$journal/prepared/extracted/$kind"
+( cd "$journal/prepared/extracted" && openssl dgst -sha256 "$kind" ) > "$journal/payload.sha256"
+if [ "$kind" = xkeen ]; then
+ tree_digest "$journal/prepared/extracted" || fail 'cannot record verified XKeen module identity'
+ printf '%s\n' "SHA256(_xkeen)= $computed" >> "$journal/payload.sha256"
+fi
+chmod 0600 "$journal/payload.sha256"
+sync || fail 'cannot persist verified dependency identity'
 mkdir -m 0700 "$store" || fail 'cannot reserve immutable dependency directory'
 cp "$journal/token" "$store/.krm-provision-token" || fail 'cannot mark owned dependency store'
 chmod 0600 "$store/.krm-provision-token"
@@ -173,12 +232,9 @@ else
  mv "$journal/prepared/extracted/_xkeen" "$store/_xkeen"
  chmod 0700 "$store/xkeen"
 fi
-( cd "$store" && if [ "$kind" = xray ]; then openssl dgst -sha256 xray; else openssl dgst -sha256 xkeen; fi ) > "$store/provenance.sha256"
-if [ "$kind" = xkeen ]; then
- # Pin the complete verified XKeen module tree, not just its entrypoint.
- LC_ALL=C tar -cf - -C "$store" _xkeen | openssl dgst -sha256 >> "$store/provenance.sha256"
-fi
+cp "$journal/payload.sha256" "$store/provenance.sha256"
 chmod 0600 "$store/provenance.sha256"
+valid_payload || fail 'installed dependency differs from verified prepared payload'
 # Flush completed native payload before publishing any executable entrypoint.
 sync || fail 'cannot persist prepared dependency payload'
 if [ "$kind" = xkeen ]; then
@@ -186,9 +242,9 @@ if [ "$kind" = xkeen ]; then
  # we download and verify the archive. Refuse to publish a competing runtime
  # after that change, even though the original preflight was clear.
  [ ! -e "$legacy_module_path" ] && [ ! -L "$legacy_module_path" ] || fail 'legacy XKeen modules appeared during provisioning'
- ln -s "$module_target" "$module_path" || fail 'cannot publish XKeen module link'
+ ln -sT "$module_target" "$module_path" || fail 'cannot publish XKeen module link'
 fi
-ln -s "$installed_target" "$path" || fail "cannot publish $kind binary link"
+ln -sT "$installed_target" "$path" || fail "cannot publish $kind binary link"
 sync || fail 'cannot persist dependency entrypoints'
 committed=1
 printf '%s\n' "Provisioned $kind $version at $path. No services, router interception, firewall, or configuration were activated."
