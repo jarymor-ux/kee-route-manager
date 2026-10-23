@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0-rc.1 — 2026-10-23
+
+Experimental candidate; exact-model native installation, LAN/UI, reboot and power-loss acceptance remain unrun. Published stable releases are unchanged.
+
+- Integrate approved pinned XKeen 2.1 / Xray v26.10.21 provisioning with the signed wizard. Preserve manually installed Entware, existing native owners, DNS and WAN policies; require an existing unique xkeen policy and authorized RCI before activation.
+- Prepare loopback-only clean Xray configuration with initial blackhole routing and conservative resource defaults. Guard synchronous native startup, disable global DSCP/xkeen_full interception, preserve operator-owned IPv6 and reject missing/invalid policy marks instead of proxying all clients.
+- Add durable dependency/native/application installation journals, verified retries, no-overwrite publication and ownership-aware rollback before activation; resume matching signed launcher/start intent without overwriting config or credentials.
+- Discover unambiguous native VPN routes, offer a guarded private-LAN/loopback HTTP browser UI with an unencrypted-transport warning and verified HTTPS upstream, and enable stable signed update checks while keeping auto-apply disabled.
+- Correct native Xray status recognition for symlink-installed executables while retaining production-process/probe isolation.
+
 ## 2.0.1 — 2026-10-22
 
 - First 2.0 release target: the public `v2.0.0` tag failed CI and produced no release assets; that tag is retained without moving it. Correct the Linux process-lifecycle test to treat ESRCH (PID already gone) as successful process exit, with a regression. This fixes a false test failure, not application runtime behavior.

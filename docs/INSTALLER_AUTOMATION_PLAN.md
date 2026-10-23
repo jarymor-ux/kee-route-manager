@@ -1,6 +1,6 @@
-# Keenetic / Netcraze installer automation (unreleased)
+# Keenetic / Netcraze installer automation (2.1.0-rc.1)
 
-Status: software implementation in Draft PR #31; **not released and not hardware accepted**. Published v2.0.1 assets remain unchanged. Use only a future complete signed immutable release containing these changes. The maintained installation procedure is [AGENT_INSTALL.md](AGENT_INSTALL.md).
+Status: candidate target **2.1.0-rc.1**, with publication authorized after software review and checks; **not hardware accepted**. Confirm the complete signed immutable RC release exists before installation. Published v2.0.1 assets remain unchanged. The maintained installation procedure is [AGENT_INSTALL.md](AGENT_INSTALL.md).
 
 ## Supported workflow
 
@@ -26,4 +26,4 @@ KRM static installation has its own private journal under `/opt/var/lib/kee-rout
 
 ## Remaining acceptance gate
 
-Actual exact-model Keenetic/Netcraze installation, LAN traffic, UI login, reboot, abrupt power loss, native policy/interception and recovery are **unrun**. Container fixtures, genuine Xray offline validation, signed fixtures and cross-builds do not establish router hardware acceptance. PR remains Draft; no merge, tags or release publication is authorized by this implementation.
+Actual exact-model Keenetic/Netcraze installation, LAN traffic, UI login, reboot, abrupt power loss, native policy/interception and recovery are **unrun**. Container fixtures, genuine Xray offline validation, signed fixtures and cross-builds do not establish router hardware acceptance. RC publication is authorized after software acceptance with these limits visible. Stable promotion and hardware qualification remain separate decisions.
