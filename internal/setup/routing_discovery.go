@@ -162,7 +162,13 @@ func discoverRouting(dir string) ([]routeCandidate, error) {
 		}
 		if unconditional {
 			var tags []string
-			if err := json.Unmarshal(rule.InboundTag, &tags); err == nil {
+			// Omitted inboundTag is a valid Xray global fallback. A nil
+			// RawMessage must not be passed to json.Unmarshal as JSON bytes.
+			var tagsErr error
+			if len(rule.InboundTag) != 0 {
+				tagsErr = json.Unmarshal(rule.InboundTag, &tags)
+			}
+			if tagsErr == nil {
 				if len(tags) == 0 && (rule.OutboundTag != "" || rule.BalancerTag != "") {
 					globalOwnerSeen = true
 				}
