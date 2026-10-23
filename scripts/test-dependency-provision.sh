@@ -21,6 +21,9 @@ esac
 if [ "${PROVISION_TEST_CONFLICT_XKEEN:-}" = 1 ]; then
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/xkeen"
 fi
+if [ "${PROVISION_TEST_CONFLICT_MODULE:-}" = 1 ]; then
+ printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/.xkeen"
+fi
 if [ "${PROVISION_TEST_CONFLICT_STORE:-}" = 1 ]; then
  mkdir -m 0700 "$KRM_DEPENDENCY_PREFIX/var/lib/kee-route-manager-deps/xray-v26.10.21"
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/var/lib/kee-route-manager-deps/xray-v26.10.21/sentinel"
@@ -84,6 +87,15 @@ fi
 [[ "$(cat "$WORK/conflict/sbin/xkeen")" = operator-owned ]]
 [[ ! -e "$WORK/conflict/sbin/.xkeen" && ! -L "$WORK/conflict/sbin/.xkeen" ]]
 [[ ! -e "$WORK/conflict/var/lib/kee-route-manager-deps/xkeen-2.1" ]]
+# An operator-owned runtime module path arriving after preflight must survive
+# the failed no-overwrite symlink publication.
+mkdir -p "$WORK/module-conflict/sbin" "$WORK/module-conflict/var/lib"
+if KRM_DEPENDENCY_PREFIX="$WORK/module-conflict" PROVISION_TEST_CONFLICT_MODULE=1 sh "$helper" xkeen --approve >/dev/null 2>&1; then
+ echo 'XKeen module-path collision was not detected' >&2; exit 1
+fi
+[[ "$(cat "$WORK/module-conflict/sbin/.xkeen")" = operator-owned ]]
+[[ ! -e "$WORK/module-conflict/sbin/xkeen" ]]
+[[ ! -e "$WORK/module-conflict/var/lib/kee-route-manager-deps/xkeen-2.1" ]]
 # A concurrent reservation of the private version store is never cleaned up
 # as if it were owned by this attempted transaction.
 mkdir -p "$WORK/store-conflict/sbin" "$WORK/store-conflict/var/lib"
