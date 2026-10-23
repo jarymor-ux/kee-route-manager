@@ -24,6 +24,10 @@ fi
 if [ "${PROVISION_TEST_CONFLICT_MODULE:-}" = 1 ]; then
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/.xkeen"
 fi
+if [ "${PROVISION_TEST_CONFLICT_LEGACY:-}" = 1 ]; then
+ mkdir -m 0700 "$KRM_DEPENDENCY_PREFIX/sbin/_xkeen"
+ printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/sbin/_xkeen/import.sh"
+fi
 if [ "${PROVISION_TEST_CONFLICT_STORE:-}" = 1 ]; then
  mkdir -m 0700 "$KRM_DEPENDENCY_PREFIX/var/lib/kee-route-manager-deps/xray-v26.10.21"
  printf 'operator-owned\n' > "$KRM_DEPENDENCY_PREFIX/var/lib/kee-route-manager-deps/xray-v26.10.21/sentinel"
@@ -96,6 +100,18 @@ fi
 [[ "$(cat "$WORK/module-conflict/sbin/.xkeen")" = operator-owned ]]
 [[ ! -e "$WORK/module-conflict/sbin/xkeen" ]]
 [[ ! -e "$WORK/module-conflict/var/lib/kee-route-manager-deps/xkeen-2.1" ]]
+# A competing XKeen installation can populate the legacy module directory
+# during archive preparation, after the initial no-overwrite preflight. It must
+# not be activated next to our new .xkeen runtime path.
+mkdir -p "$WORK/legacy-race/sbin" "$WORK/legacy-race/var/lib"
+if KRM_DEPENDENCY_PREFIX="$WORK/legacy-race" PROVISION_TEST_CONFLICT_LEGACY=1 sh "$helper" xkeen --approve >/dev/null 2>&1; then
+ echo 'late XKeen legacy module collision was accepted' >&2; exit 1
+fi
+[[ "$(cat "$WORK/legacy-race/sbin/_xkeen/import.sh")" = operator-owned ]]
+[[ ! -e "$WORK/legacy-race/sbin/.xkeen" && ! -L "$WORK/legacy-race/sbin/.xkeen" ]]
+[[ ! -e "$WORK/legacy-race/sbin/xkeen" && ! -L "$WORK/legacy-race/sbin/xkeen" ]]
+[[ ! -e "$WORK/legacy-race/var/lib/kee-route-manager-deps/xkeen-2.1" ]]
+[[ ! -e "$WORK/legacy-race/var/lib/kee-route-manager-deps/.pending-xkeen" ]]
 # A concurrent reservation of the private version store is never cleaned up
 # as if it were owned by this attempted transaction.
 mkdir -p "$WORK/store-conflict/sbin" "$WORK/store-conflict/var/lib"
