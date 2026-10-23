@@ -40,6 +40,7 @@ type Messages struct {
 	SummaryUI                string
 	UIDNSInstruction         string
 	UITLSInstruction         string
+	UIHTTPWarning            string
 
 	PlatformTitle          string
 	PlatformHelp           string
@@ -49,6 +50,11 @@ type Messages struct {
 	XrayConfigDirPrompt    string
 	BaseRoutingHelp        string
 	BaseRoutingPrompt      string
+	AutoRoutingFound       string
+	AutoRoutingChoices     string
+	AutoRoutingSelect      string
+	AutoRoutingManual      string
+	AutoRoutingInvalid     string
 	InboundTagsHelp        string
 	InboundTagsPrompt      string
 	OutboundTagHelp        string
@@ -109,7 +115,7 @@ var messagesRU = Messages{
 	SubscriptionCachePrompt:  "Использовать кеш подписок? [д/Н]",
 	UILocalHelp:              "Панель доступна только на выбранном адресе: укажите существующий IPv4-адрес LAN, либо оставьте 127.0.0.1 для SSH-туннеля. Порт должен быть свободен; 443 может занимать админка роутера.",
 	UIBindPrompt:             "IPv4-адрес панели",
-	UIPortPrompt:             "HTTPS-порт панели",
+	UIPortPrompt:             "Порт панели",
 	UIHostnameHelp:           "Необязательное локальное DNS-имя, например alice.home.arpa или alice.jopa. Не используйте .local: для него нужен mDNS. DNS-запись установщик не создаёт.",
 	UIHostnamePrompt:         "Локальное имя панели (Enter — только IP)",
 	InvalidBenchmarkInterval: "Введите интервал от 1m до 720h, например 5m или 6h.",
@@ -121,6 +127,7 @@ var messagesRU = Messages{
 	SummaryUI:                "Адрес панели",
 	UIDNSInstruction:         "В локальном DNS настройте запись A: %s → %s. Для этого имени используйте DNS роутера; установщик не меняет DNS.",
 	UITLSInstruction:         "Для HTTPS импортируйте сертификат панели в доверенные сертификаты браузера/устройства.",
+	UIHTTPWarning:            "Внимание: браузерная панель будет работать по HTTP. Пароль и сессии не шифруются — используйте только доверенную LAN.",
 
 	PlatformTitle:          "Платформа:",
 	PlatformHelp:           "Выберите платформу, на которой будет работать Kee Route Manager.",
@@ -130,6 +137,11 @@ var messagesRU = Messages{
 	XrayConfigDirPrompt:    "Каталог конфигурации Xray",
 	BaseRoutingHelp:        "Базовый routing-файл Xray, содержащий правило, которое будет заменяться управляемым outbound.",
 	BaseRoutingPrompt:      "Базовый routing-файл",
+	AutoRoutingFound:       "Автоматически определена маршрутизация: %s (inbound: %s, outbound: %s)\n",
+	AutoRoutingChoices:     "Найдено несколько возможных VPN-маршрутов. Выберите нужный:",
+	AutoRoutingSelect:      "Номер маршрута (0 — ручная настройка)",
+	AutoRoutingManual:      "0. Настроить вручную",
+	AutoRoutingInvalid:     "Выберите номер из списка.",
 	InboundTagsHelp:        "Inbound tags правила маршрутизации. Укажите через запятую.",
 	InboundTagsPrompt:      "Inbound tags",
 	OutboundTagHelp:        "Outbound tag правила, которое Kee Route Manager должен заменять. Если tag неочевиден, используйте: kee-route-managerctl route-candidates --file PATH. При неоднозначности tag автоматически не выбирается.",
@@ -151,8 +163,8 @@ var messagesRU = Messages{
 	SpeedEnable:            "Включить проверку скорости? [д/Н]",
 	SpeedURLHelp:           "HTTPS URL-шаблон для download benchmark. Обязателен placeholder {bytes}.",
 	SpeedURLPrompt:         "HTTPS URL-шаблон проверки скорости",
-	UpdatesEnable:          "Включить обновления? [д/Н]",
-	UpdateChannel:          "Канал обновлений [rc]",
+	UpdatesEnable:          "Включить обновления? [Д/н] (только проверка, установка вручную)",
+	UpdateChannel:          "Канал обновлений [stable]",
 	SummaryTitle:           "Итог:",
 	SummaryPlatform:        "Платформа",
 	SummaryXrayBinary:      "Xray binary",
@@ -190,7 +202,7 @@ var messagesEN = Messages{
 	SubscriptionCachePrompt:  "Use subscription cache? [y/N]",
 	UILocalHelp:              "The panel binds only to the chosen address: enter an existing private LAN IPv4 address, or keep 127.0.0.1 for an SSH tunnel. The port must be free; 443 may be used by the router admin panel.",
 	UIBindPrompt:             "Panel IPv4 address",
-	UIPortPrompt:             "Panel HTTPS port",
+	UIPortPrompt:             "Panel port",
 	UIHostnameHelp:           "Optional local DNS name, for example alice.home.arpa or alice.jopa. Avoid .local: it requires mDNS. The installer does not create DNS records.",
 	UIHostnamePrompt:         "Local panel hostname (Enter for IP only)",
 	InvalidBenchmarkInterval: "Enter an interval from 1m to 720h, for example 5m or 6h.",
@@ -202,6 +214,7 @@ var messagesEN = Messages{
 	SummaryUI:                "Panel address",
 	UIDNSInstruction:         "Configure a local DNS A record: %s → %s. Use the router DNS for this name; the installer does not change DNS.",
 	UITLSInstruction:         "For HTTPS, trust the panel certificate in your browser/device certificate store.",
+	UIHTTPWarning:            "WARNING: browser UI will use plain HTTP. Passwords and sessions are unencrypted; use trusted LAN only.",
 
 	PlatformTitle:          "Platform:",
 	PlatformHelp:           "Choose the platform where Kee Route Manager will run.",
@@ -211,6 +224,11 @@ var messagesEN = Messages{
 	XrayConfigDirPrompt:    "Xray config directory",
 	BaseRoutingHelp:        "Base Xray routing file containing the rule whose outbound will be managed.",
 	BaseRoutingPrompt:      "Base routing file",
+	AutoRoutingFound:       "Detected Xray routing: %s (inbound: %s, outbound: %s)\n",
+	AutoRoutingChoices:     "Multiple possible VPN routes found. Choose the correct one:",
+	AutoRoutingSelect:      "Route number (0 for manual setup)",
+	AutoRoutingManual:      "0. Configure manually",
+	AutoRoutingInvalid:     "Choose a listed route number.",
 	InboundTagsHelp:        "Inbound tags for the routing rule. Separate multiple tags with commas.",
 	InboundTagsPrompt:      "Inbound tags",
 	OutboundTagHelp:        "Outbound tag of the rule Kee Route Manager should replace. If it is unclear, use: kee-route-managerctl route-candidates --file PATH. Ambiguous routing tags are never selected automatically.",
@@ -232,8 +250,8 @@ var messagesEN = Messages{
 	SpeedEnable:            "Enable speed test? [y/N]",
 	SpeedURLHelp:           "Download benchmark URL template. It must contain the {bytes} placeholder.",
 	SpeedURLPrompt:         "Speed test URL template",
-	UpdatesEnable:          "Enable updates? [y/N]",
-	UpdateChannel:          "Update channel [rc]",
+	UpdatesEnable:          "Enable updates? [Y/n] (check only, apply manually)",
+	UpdateChannel:          "Update channel [stable]",
 	SummaryTitle:           "Summary:",
 	SummaryPlatform:        "Platform",
 	SummaryXrayBinary:      "Xray binary",
@@ -265,28 +283,29 @@ var messagesEN = Messages{
 }
 
 type wizard struct {
-	in  *bufio.Reader
-	out io.Writer
-	msg Messages
+	in           *bufio.Reader
+	out          io.Writer
+	msg          Messages
+	nativeOutput string
 }
 
 func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) error {
-	return initConfig(in, out, outputPath, overwrite, "", "", "")
+	return initConfig(in, out, outputPath, overwrite, "", "", "", "")
 }
 
 func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
 	switch platform {
-	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	case PlatformKeenetic:
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
-	return initConfig(in, out, outputPath, overwrite, platform, "", "")
+	return initConfig(in, out, outputPath, overwrite, platform, "", "", "")
 }
 
 // InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
 func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
 	switch platform {
-	case PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd:
+	case PlatformKeenetic:
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
@@ -302,10 +321,10 @@ func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir s
 	if _, err := os.Lstat(tlsDir); !os.IsNotExist(err) {
 		return fmt.Errorf("TLS directory already exists or cannot be inspected")
 	}
-	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
+	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir, "")
 }
 
-func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) (resultErr error) {
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir, nativeOutput string) (resultErr error) {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -313,7 +332,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		return fmt.Errorf("output path is required")
 	}
 
-	w := &wizard{in: bufio.NewReader(in), out: out}
+	w := &wizard{in: bufio.NewReader(in), out: out, nativeOutput: nativeOutput}
 	if err := w.chooseLanguage(); err != nil {
 		return err
 	}
@@ -324,6 +343,17 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	cfg, err := BuildControllerConfig(opts)
 	if err != nil {
 		return err
+	}
+	if nativeOutput != "" {
+		cfg.Xray.AssetDir = "/opt/etc/xray/dat"
+		cfg.Platform.XrayRestartCommand = []string{"/opt/etc/kee-route-manager/xray-restart.sh"}
+		cfg.Benchmark.BatchSize = 2
+		cfg.Benchmark.LatencyWorkers = 2
+		cfg.Benchmark.Finalists = 2
+		cfg.Subscriptions.MaxSources = 2
+		cfg.Subscriptions.MaxNodes = 50
+		cfg.Subscriptions.MaxNodesPerSource = 50
+		cfg.Subscriptions.MaxResponseBytes = 512 << 10
 	}
 	if uiPath != "" {
 		prefix := ""
@@ -339,6 +369,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 			return err
 		}
 		summary.uiListen, summary.uiHostname = uiOptions.Listen, uiOptions.Hostname
+		summary.uiHTTP = uiOptions.PlainHTTP
 	}
 	w.printSummary(summary)
 	ok, err := w.askBool(w.msg.Create, true)
@@ -399,6 +430,11 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	if err := writeConfig(outputPath, cfg, allowOverwrite); err != nil {
 		return err
 	}
+	if nativeOutput != "" {
+		if err := writeNativeConfig(nativeOutput); err != nil {
+			return err
+		}
+	}
 	loaded, err := config.Load(outputPath)
 	if err != nil {
 		return fmt.Errorf("validate written config: %w", err)
@@ -450,6 +486,7 @@ type wizardSummary struct {
 	benchmarkInterval    config.Duration
 	cacheEnabled         bool
 	uiListen, uiHostname string
+	uiHTTP               bool
 }
 
 func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error) {
@@ -461,36 +498,28 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		}
 	}
 	binaryDefault, configDirDefault, _ := platformDefaults(platform)
-
-	fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
-	binary, err := w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
-	configDir, err := w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	routingDefault := filepath.Join(configDir, "05_routing.json")
-	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
-	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
-	inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	inbound := splitTags(inboundRaw)
-	if len(inbound) == 0 {
-		return SetupOptions{}, wizardSummary{}, fmt.Errorf("inbound tags are required")
-	}
-	fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
-	outbound, err := w.askRequired(w.msg.OutboundTagPrompt)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
+	binary, configDir := binaryDefault, configDirDefault
+	routing := filepath.Join(configDir, "05_routing.json")
+	inbound, outbound := []string{"redirect", "tproxy"}, "bootstrap-blocked"
+	if w.nativeOutput == "" {
+		fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
+		binary, err = w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
+		configDir, err = w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		routing, inbound, outbound, err = w.selectRouting(configDir)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+	} else if w.msg.Create == messagesRU.Create {
+		fmt.Fprintln(w.out, "Чистая конфигурация XKeen/Xray: до успешного бенчмарка маршрут заблокирован. Для запуска нужны существующая политика xkeen и доступ к RCI. Существующие DNS/WAN-политики не меняются.")
+	} else {
+		fmt.Fprintln(w.out, "Clean XKeen/Xray configuration: routing stays blocked until a successful benchmark. Activation requires an existing xkeen policy and authorized RCI access. Existing DNS/WAN policies are preserved.")
 	}
 
 	subscriptions, err := w.askSubscriptions()
@@ -540,7 +569,7 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		}
 	}
 
-	updatesEnabled, err := w.askBool(w.msg.UpdatesEnable, false)
+	updatesEnabled, err := w.askBool(w.msg.UpdatesEnable, true)
 	if err != nil {
 		return SetupOptions{}, wizardSummary{}, err
 	}
@@ -602,13 +631,67 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 	return opts, summary, nil
 }
 
+// selectRouting uses read-only discovery before falling back to manual input.
+func (w *wizard) selectRouting(dir string) (string, []string, string, error) {
+	candidates, err := discoverRouting(dir)
+	if err != nil {
+		return "", nil, "", err
+	}
+	if len(candidates) == 1 {
+		c := candidates[0]
+		fmt.Fprintf(w.out, w.msg.AutoRoutingFound, c.File, strings.Join(c.InboundTags, ","), c.OutboundTag)
+		return c.File, c.InboundTags, c.OutboundTag, nil
+	}
+	if len(candidates) > 1 {
+		fmt.Fprintln(w.out, w.msg.AutoRoutingChoices)
+		for i, c := range candidates {
+			fmt.Fprintf(w.out, "%d. %s ← %s (%s)\n", i+1, strings.Join(c.InboundTags, ","), c.OutboundTag, filepath.Base(c.File))
+		}
+		fmt.Fprintln(w.out, w.msg.AutoRoutingManual)
+		for {
+			answer, err := w.prompt(w.msg.AutoRoutingSelect)
+			if err != nil {
+				return "", nil, "", err
+			}
+			selected, err := strconv.Atoi(answer)
+			if err == nil && selected == 0 {
+				break
+			}
+			if err == nil && selected > 0 && selected <= len(candidates) {
+				c := candidates[selected-1]
+				return c.File, c.InboundTags, c.OutboundTag, nil
+			}
+			fmt.Fprintln(w.out, w.msg.AutoRoutingInvalid)
+		}
+	}
+	routingDefault := filepath.Join(dir, "05_routing.json")
+	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
+	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
+	if err != nil {
+		return "", nil, "", err
+	}
+	fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
+	inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
+	if err != nil {
+		return "", nil, "", err
+	}
+	inbound := splitTags(inboundRaw)
+	if len(inbound) == 0 {
+		return "", nil, "", fmt.Errorf("inbound tags are required")
+	}
+	fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
+	outbound, err := w.askRequired(w.msg.OutboundTagPrompt)
+	if err != nil {
+		return "", nil, "", err
+	}
+	return routing, inbound, outbound, nil
+}
+
 func (w *wizard) askPlatform() (Platform, error) {
 	for {
 		fmt.Fprintln(w.out, w.msg.PlatformHelp)
 		fmt.Fprintln(w.out, w.msg.PlatformTitle)
-		fmt.Fprintln(w.out, "1. Keenetic")
-		fmt.Fprintln(w.out, "2. OpenWrt")
-		fmt.Fprintln(w.out, "3. Linux/systemd")
+		fmt.Fprintln(w.out, "1. Keenetic / Netcraze")
 		answer, err := w.read()
 		if err != nil {
 			return "", err
@@ -616,35 +699,16 @@ func (w *wizard) askPlatform() (Platform, error) {
 		switch answer {
 		case "1":
 			return PlatformKeenetic, nil
-		case "2":
-			return PlatformOpenWrt, nil
-		case "3":
-			return PlatformLinuxSystemd, nil
 		default:
 			fmt.Fprintln(w.out, w.msg.InvalidChoice)
 		}
 	}
 }
 
-func platformDefaults(p Platform) (string, string, string) {
-	switch p {
-	case PlatformKeenetic:
-		return "/opt/sbin/xray", "/opt/etc/xray/configs", "/opt/etc/xray/configs/05_routing.json"
-	default:
-		return "/usr/bin/xray", "/etc/xray/configs", "/etc/xray/configs/05_routing.json"
-	}
+func platformDefaults(_ Platform) (string, string, string) {
+	return "/opt/sbin/xray", "/opt/etc/xray/configs", "/opt/etc/xray/configs/05_routing.json"
 }
-
-func platformName(p Platform) string {
-	switch p {
-	case PlatformKeenetic:
-		return "Keenetic"
-	case PlatformOpenWrt:
-		return "OpenWrt"
-	default:
-		return "Linux/systemd"
-	}
-}
+func platformName(_ Platform) string { return "Keenetic / Netcraze" }
 
 func (w *wizard) askSubscriptions() ([]config.Source, error) {
 	var out []config.Source
@@ -765,13 +829,19 @@ func target(id, name, u string) config.Target {
 }
 
 func (w *wizard) askPool() (int, error) {
+	defaultSize := 5
+	prompt := w.msg.PoolPrompt
+	if w.nativeOutput != "" {
+		defaultSize = 2
+		prompt = strings.Replace(prompt, "[5]", "[2]", 1)
+	}
 	for {
-		answer, err := w.prompt(w.msg.PoolPrompt)
+		answer, err := w.prompt(prompt)
 		if err != nil {
 			return 0, err
 		}
 		if answer == "" {
-			return 5, nil
+			return defaultSize, nil
 		}
 		n, err := strconv.Atoi(answer)
 		if err == nil && n >= 1 && n <= 20 {
@@ -801,7 +871,7 @@ func (w *wizard) askChannel() (string, error) {
 			return "", err
 		}
 		if answer == "" {
-			return "rc", nil
+			return defaultUpdateChannel, nil
 		}
 		if answer == "rc" || answer == "stable" {
 			return answer, nil
@@ -963,12 +1033,14 @@ func (w *wizard) printSummary(s wizardSummary) {
 	}
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryCache, cache)
 	if s.uiListen != "" {
-		fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUI, panelURL(s.uiListen, s.uiHostname))
+		fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUI, panelURLScheme(s.uiListen, s.uiHostname, s.uiHTTP))
 		if s.uiHostname != "" {
 			host, _, _ := net.SplitHostPort(s.uiListen)
 			fmt.Fprintf(w.out, w.msg.UIDNSInstruction+"\n", s.uiHostname, host)
 		}
-		fmt.Fprintln(w.out, w.msg.UITLSInstruction)
+		if !s.uiHTTP {
+			fmt.Fprintln(w.out, w.msg.UITLSInstruction)
+		}
 	}
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummarySpeed, speed)
 	fmt.Fprintf(w.out, "%s: %s\n", w.msg.SummaryUpdates, updates)

@@ -27,7 +27,7 @@ web:
     cert_file: tls.crt
     key_file: tls.key
 platform:
-  kind: linux-systemd
+  kind: keenetic
 xray:
   binary: /bin/true
   config_dir: /tmp/xray
@@ -172,7 +172,7 @@ func TestLoadPreservesLegacyPlainScalarColonSpace(t *testing.T) {
 }
 
 func TestShippedControllerTemplatesUseRepositoryDiscovery(t *testing.T) {
-	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
+	for _, name := range []string{"keenetic.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			cfg, err := Load(filepath.Join("..", "..", "configs", name))
 			if err != nil {

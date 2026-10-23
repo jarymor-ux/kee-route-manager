@@ -78,7 +78,12 @@ func (c Config) validateCommon() []error {
 		if err != nil {
 			es = append(es, fmt.Errorf("web.listen: %w", err))
 		} else if !c.Web.TLS.Enabled && !loopback(host) {
-			es = append(es, fmt.Errorf("TLS-off web listener must be loopback"))
+			// Plain HTTP is an explicit LAN-only concession for local router UI.
+			// Never permit wildcard, public or WAN-facing listeners.
+			ip := net.ParseIP(host)
+			if c.Instance.Role != "ui" || c.Platform.Kind != "keenetic" || ip == nil || ip.To4() == nil || !ip.IsPrivate() {
+				es = append(es, fmt.Errorf("TLS-off web listener must be loopback or a Keenetic UI bound to a specific private IPv4 address"))
+			}
 		}
 		es = append(es, tlsErrors("web.tls", c.Web.TLS)...)
 	}
@@ -322,16 +327,6 @@ func (c Config) validateController() []error {
 		_, p, e := listenPort(c.Web.Listen)
 		if e == nil {
 			register("web.listen", p)
-		}
-	}
-	fwMode, tcpPort, udpPort := c.Platform.Linux.FirewallMode, c.Platform.Linux.TCPRedirectPort, c.Platform.Linux.UDPTProxyPort
-	if c.Platform.Kind == "openwrt" {
-		fwMode, tcpPort, udpPort = c.Platform.OpenWrt.FirewallMode, c.Platform.OpenWrt.TCPRedirectPort, c.Platform.OpenWrt.UDPTProxyPort
-	}
-	if fwMode == "managed" {
-		register("platform.tcp_redirect", tcpPort)
-		if udpPort != tcpPort {
-			register("platform.udp_tproxy", udpPort)
 		}
 	}
 	tagRE := regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)

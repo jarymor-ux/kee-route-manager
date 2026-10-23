@@ -1,6 +1,20 @@
 # Breaking changes
 
-## Current: v1.3.3 / v1.3.3-rc.1
+## 2.0.1: Keenetic/Netcraze-only router targets
+
+The earlier `v2.0.0` tag failed CI without publishing release assets. It stays unchanged; use only the complete verified `v2.0.1` release once published. The extra Linux process-test regression fixes a false ESRCH/alive classification and does not change runtime behavior.
+
+Current source targets only Keenetic and Netcraze running compatible stock KeeneticOS/NDMS with Entware and Xray. The shared platform is `keenetic`; interception remains owned by the operator/XKeen. OpenWrt and standalone Linux/systemd router adapters, services, templates and installers are discontinued starting with 2.0.1. Linux/Go build infrastructure, amd64 development tools and a manually maintained remote management UI remain. Published releases and their signed inventory remain immutable and verifiable. See [the hardware and ABI catalogue](HARDWARE.md); MIPS BE `mips` is included in 2.0.1, **not an asset in v1.3.3**.
+
+Older wizard-generated **Keenetic** YAML may contain unused `platform.openwrt` and `platform.linux` default subsections. New strict config decoding rejects those retired fields; an unmodified configuration will fail validation and an update trial will refuse/roll back before activation. Do not enable unknown-field parsing or remove the entire platform block.
+
+Before an upgrade, retain independent SSH and private mode0600 backups of controller/UI YAML, credentials/users, subscriptions and launcher metadata. Stop the launcher service during the reviewed offline edit. Verify `platform.kind: keenetic`; remove only the two retired nested subsections `platform.openwrt` and `platform.linux` (including their children), keeping `platform.keenetic`, Xray commands, paths and all other settings unchanged. Do not add a replacement firewall-mode field: interception stays operator-owned. Review a private diff without publishing it. Validate the edited YAML with the **signature-verified new** CLI before restarting; retain the old CLI/config for maintenance recovery. `preflight --config PATH --mode core|local-ui` then checks actual dependencies/resources without changing routing. An unsupported old router installation is not migrated by changing its `kind` string.
+
+This configuration cleanup is an explicit operator maintenance action, not a silent schema migration. If validation/preflight fails, restore the backed-up YAML and old compatible launcher/application before resuming; do not restore stale mutable controller state after a committed update. Local panel addressing still needs a compatible separately maintained launcher; a remote UI needs its own manual verified update. No automatic Xray-outage direct bypass is added for Keenetic/Netcraze.
+
+## Historical: v1.3.3 / v1.3.3-rc.1
+
+The following describes immutable previously published builds, including their then-supported targets. It is not current installation guidance.
 
 The current application adds a persistent subscription HWID/header preset and bounded Xray JSON node extraction. These do not make an arbitrary Xray JSON configuration or VPN engine importable. Saving an enabled source may register a provider device. Back up its private subscription sidecars before downgrading; see [configuration details](CONFIGURATION.md#subscription-formats-and-device-identity). No AmneziaWG runtime is part of these releases.
 

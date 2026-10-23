@@ -5,10 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,15 +15,14 @@ import (
 )
 
 type Capabilities struct {
-	Metrics         bool `json:"metrics"`
-	Clients         bool `json:"clients"`
-	ClientPolicy    bool `json:"client_policy"`
-	WakeOnLAN       bool `json:"wake_on_lan"`
-	Reboot          bool `json:"reboot"`
-	SystemLogs      bool `json:"system_logs"`
-	Diagnostics     bool `json:"diagnostics"`
-	ManagedFirewall bool `json:"managed_firewall"`
-	DirectBypass    bool `json:"direct_bypass"`
+	Metrics      bool `json:"metrics"`
+	Clients      bool `json:"clients"`
+	ClientPolicy bool `json:"client_policy"`
+	WakeOnLAN    bool `json:"wake_on_lan"`
+	Reboot       bool `json:"reboot"`
+	SystemLogs   bool `json:"system_logs"`
+	Diagnostics  bool `json:"diagnostics"`
+	DirectBypass bool `json:"direct_bypass"`
 }
 type Port struct {
 	ID    string `json:"id"`
@@ -179,64 +176,7 @@ func New(cfg config.Config) (Adapter, Runner, error) {
 	switch cfg.Platform.Kind {
 	case "keenetic":
 		return newKeenetic(cfg, r), r, nil
-	case "openwrt":
-		return newGeneric(cfg, r, "openwrt", cfg.Platform.OpenWrt.AllowReboot, cfg.Platform.OpenWrt.FirewallMode == "managed"), r, nil
-	case "linux-systemd":
-		return newGeneric(cfg, r, "linux-systemd", cfg.Platform.Linux.AllowReboot, cfg.Platform.Linux.FirewallMode == "managed"), r, nil
 	default:
 		return nil, r, fmt.Errorf("unsupported platform %q", cfg.Platform.Kind)
 	}
 }
-
-func linuxMetrics() (Metrics, error) {
-	m := Metrics{UpdatedAt: time.Now().UTC()}
-	if b, err := os.ReadFile("/proc/uptime"); err == nil {
-		f := strings.Fields(string(b))
-		if len(f) > 0 {
-			v, _ := strconv.ParseFloat(f[0], 64)
-			m.UptimeSeconds = int64(v)
-		}
-	}
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return m, err
-	}
-	vals := map[string]int64{}
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) >= 2 {
-			v, _ := strconv.ParseInt(f[1], 10, 64)
-			vals[strings.TrimSuffix(f[0], ":")] = v
-		}
-	}
-	total := vals["MemTotal"]
-	available := vals["MemAvailable"]
-	if available == 0 {
-		available = vals["MemFree"] + vals["Buffers"] + vals["Cached"]
-	}
-	used := total - available
-	m.RAMTotalMB = total / 1024
-	m.RAMUsedMB = used / 1024
-	if total > 0 {
-		v := 100 * float64(used) / float64(total)
-		m.RAMPercent = &v
-	}
-	if b, err = os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {
-		if v, valid := telemetryNumber(strings.TrimSpace(string(b))); valid {
-			if v > 1000 {
-				v /= 1000
-			}
-			m.TemperatureC = &v
-		}
-	}
-	return m, nil
-}
-func remoteIP(addr string) string {
-	h, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
-	}
-	return h
-}
-
-var _ = remoteIP

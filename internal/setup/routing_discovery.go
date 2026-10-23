@@ -1,0 +1,253 @@
+package setup
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"syscall"
+)
+
+// routeCandidate is a read-only proposal. The installer must still run its
+// existing strict Xray validation and preflight before adopting routing.
+type routeCandidate struct {
+	File        string
+	InboundTags []string
+	OutboundTag string
+}
+
+type discoveryRule struct {
+	Type        string          `json:"type"`
+	InboundTag  json.RawMessage `json:"inboundTag"`
+	OutboundTag string          `json:"outboundTag"`
+	BalancerTag string          `json:"balancerTag"`
+}
+
+type discoveryDocument struct {
+	Inbounds []struct {
+		Tag string `json:"tag"`
+	} `json:"inbounds"`
+	Outbounds []struct {
+		Tag      string `json:"tag"`
+		Protocol string `json:"protocol"`
+	} `json:"outbounds"`
+	Routing *struct {
+		Rules  []json.RawMessage `json:"rules"`
+		Script string            `json:"script"`
+	} `json:"routing"`
+}
+
+// discoverRouting scans only local regular strict-JSON files. It does not
+// execute Xray, modify configuration, or inspect/print subscription secrets.
+// Only unconditioned rules targeting an explicitly defined VPN outbound can
+// be selected automatically. Ambiguous targets are returned for user choice.
+func discoverRouting(dir string) ([]routeCandidate, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		// Xray provisioning can happen later; retain the manual wizard flow.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot inspect Xray config directory: %w", err)
+	}
+
+	outboundVPN := map[string]bool{}
+	inbounds := map[string]bool{}
+	var routingFile string
+	var routingRules []json.RawMessage
+	var routingScript string
+	var total int64
+	files := 0
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		// Symlinks and non-regular files need deliberate operator review.
+		if !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("non-regular Xray config entry: %s", entry.Name())
+		}
+		files++
+		if files > 128 {
+			return nil, fmt.Errorf("too many xray JSON configuration files")
+		}
+		path := filepath.Join(dir, entry.Name())
+		// Prevent a FIFO hang or symlink substitution between ReadDir and
+		// opening the file. The descriptor, not the directory entry, is checked.
+		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+		if err != nil {
+			return nil, fmt.Errorf("xray configuration cannot be read: %w", err)
+		}
+		info, err := f.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > 4<<20 {
+			f.Close()
+			return nil, fmt.Errorf("xray config file cannot be inspected or exceeds 4 MiB")
+		}
+		b, readErr := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+		f.Close()
+		if readErr != nil || len(b) > 4<<20 {
+			return nil, fmt.Errorf("xray configuration is unreadable or exceeds 4 MiB")
+		}
+		total += int64(len(b))
+		if total > 16<<20 {
+			return nil, fmt.Errorf("xray configuration exceeds 16 MiB total")
+		}
+		var doc discoveryDocument
+		dec := json.NewDecoder(bytes.NewReader(b))
+		if err := dec.Decode(&doc); err != nil {
+			return nil, fmt.Errorf("xray configuration must be strict JSON")
+		}
+		if err := dec.Decode(new(any)); err != io.EOF {
+			return nil, fmt.Errorf("xray configuration has trailing JSON")
+		}
+		for _, inbound := range doc.Inbounds {
+			if inbound.Tag != "" {
+				inbounds[inbound.Tag] = true
+			}
+		}
+		for _, outbound := range doc.Outbounds {
+			switch outbound.Protocol {
+			case "vless", "vmess", "trojan", "shadowsocks":
+				if outbound.Tag != "" {
+					outboundVPN[outbound.Tag] = true
+				}
+			}
+		}
+		if doc.Routing != nil {
+			if routingFile != "" {
+				return nil, fmt.Errorf("multiple xray routing sections: explicit review required")
+			}
+			routingFile = path
+			routingRules = doc.Routing.Rules
+			routingScript = doc.Routing.Script
+		}
+	}
+	if routingFile == "" {
+		return nil, nil
+	}
+	if routingScript != "" {
+		return nil, fmt.Errorf("scripted Xray routing requires explicit operator review")
+	}
+
+	byOutbound := map[string]map[string]bool{}
+	unsafeOutbound := map[string]bool{}
+	// Record all unconditional owners, not only VPN targets. An earlier
+	// catch-all DIRECT or balancer rule can make a VPN rule unreachable.
+	owners := map[string]map[string]bool{}
+	// A catch-all before a VPN rule shadows that rule even when it does not
+	// name an inbound explicitly. A trailing fallback does not shadow it.
+	globalOwnerSeen := false
+	for _, raw := range routingRules {
+		globalBefore := globalOwnerSeen
+		var rule discoveryRule
+		if err := json.Unmarshal(raw, &rule); err != nil {
+			return nil, fmt.Errorf("invalid xray routing rule")
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, fmt.Errorf("invalid xray routing fields")
+		}
+		// Newer Xray routing schemas omit the legacy "type: field" key.
+		unconditional := rule.Type == "" || rule.Type == "field"
+		for key := range fields {
+			switch key {
+			case "type", "inboundTag", "outboundTag", "balancerTag":
+			default:
+				unconditional = false
+			}
+		}
+		if unconditional {
+			var tags []string
+			// Omitted inboundTag is a valid Xray global fallback. A nil
+			// RawMessage must not be passed to json.Unmarshal as JSON bytes.
+			var tagsErr error
+			if len(rule.InboundTag) != 0 {
+				tagsErr = json.Unmarshal(rule.InboundTag, &tags)
+			}
+			if tagsErr == nil {
+				if len(tags) == 0 && (rule.OutboundTag != "" || rule.BalancerTag != "") {
+					globalOwnerSeen = true
+				}
+				owner := "outbound:" + rule.OutboundTag
+				if rule.BalancerTag != "" {
+					owner = "balancer:" + rule.BalancerTag
+				}
+				for _, tag := range tags {
+					if !inbounds[tag] || strings.HasPrefix(tag, "krm-") {
+						continue
+					}
+					if owners[tag] == nil {
+						owners[tag] = map[string]bool{}
+					}
+					owners[tag][owner] = true
+				}
+			}
+		}
+		if !outboundVPN[rule.OutboundTag] || rule.BalancerTag != "" {
+			continue
+		}
+		if globalBefore {
+			unsafeOutbound[rule.OutboundTag] = true
+			continue
+		}
+		// Extra match clauses mean the rule may be an exception rather than
+		// the default traffic route. Never silently adopt such policies.
+		for key := range fields {
+			switch key {
+			case "type", "inboundTag", "outboundTag":
+			default:
+				unsafeOutbound[rule.OutboundTag] = true
+			}
+		}
+		if rule.Type != "" && rule.Type != "field" {
+			unsafeOutbound[rule.OutboundTag] = true
+			continue
+		}
+		var tags []string
+		if err := json.Unmarshal(rule.InboundTag, &tags); err != nil || len(tags) == 0 {
+			unsafeOutbound[rule.OutboundTag] = true
+			continue
+		}
+		for _, tag := range tags {
+			if !inbounds[tag] || strings.HasPrefix(tag, "krm-") {
+				unsafeOutbound[rule.OutboundTag] = true
+			}
+		}
+		if byOutbound[rule.OutboundTag] == nil {
+			byOutbound[rule.OutboundTag] = map[string]bool{}
+		}
+		for _, tag := range tags {
+			byOutbound[rule.OutboundTag][tag] = true
+		}
+	}
+
+	candidates := make([]routeCandidate, 0, len(byOutbound))
+	for outbound, tags := range byOutbound {
+		if unsafeOutbound[outbound] {
+			continue
+		}
+		// A tag with multiple unconditional owners is not safe to adopt.
+		conflict := false
+		for tag := range tags {
+			if len(owners[tag]) != 1 || !owners[tag]["outbound:"+outbound] {
+				conflict = true
+				break
+			}
+		}
+		if conflict {
+			continue
+		}
+		inboundTags := make([]string, 0, len(tags))
+		for tag := range tags {
+			inboundTags = append(inboundTags, tag)
+		}
+		sort.Strings(inboundTags)
+		candidates = append(candidates, routeCandidate{File: routingFile, InboundTags: inboundTags, OutboundTag: outbound})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].OutboundTag < candidates[j].OutboundTag })
+	return candidates, nil
+}

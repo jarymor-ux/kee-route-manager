@@ -26,7 +26,7 @@ func (f *fakeManagedFetcher) ReplaceSources(sources []config.Source) error {
 
 func subscriptionManagerConfig() config.Config {
 	c := config.Default()
-	c.Platform.Kind = "linux-systemd"
+	c.Platform.Kind = "keenetic"
 	c.ApplyPlatformDefaults()
 	c.Subscriptions.Sources = []config.Source{{
 		ID: "primary", Name: "Primary", URL: "https://primary.example.invalid/sub", Enabled: true,

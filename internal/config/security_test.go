@@ -187,7 +187,7 @@ func TestControllerAuthValidatedWithoutEmbeddedWeb(t *testing.T) {
 	}
 }
 func TestMinimalUIDefaultsHaveSeparateNamespace(t *testing.T) {
-	for _, kind := range []string{"linux-systemd", "keenetic"} {
+	for _, kind := range []string{"keenetic"} {
 		body := "instance:\n  role: ui\nplatform:\n  kind: " + kind + "\nui:\n  upstream: https://127.0.0.1:9443\n"
 		p := filepath.Join(t.TempDir(), "ui.yaml")
 		os.WriteFile(p, []byte(body), 0600)

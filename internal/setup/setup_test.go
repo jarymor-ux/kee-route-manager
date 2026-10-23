@@ -99,39 +99,6 @@ func TestBuildControllerConfigPlatforms(t *testing.T) {
 				}
 			},
 		},
-		{
-			name:     "openwrt",
-			platform: PlatformOpenWrt,
-			want: func(c config.Config) {
-				if c.Paths.StateDir != "/var/lib/kee-route-manager" {
-					t.Fatalf("state_dir = %q", c.Paths.StateDir)
-				}
-				if c.Paths.RunDir != "/var/run/kee-route-manager" {
-					t.Fatalf("run_dir = %q", c.Paths.RunDir)
-				}
-				if c.Xray.AssetDir != "/usr/share/xray" || c.Xray.BaseRoutingFile != "/etc/xray/configs/05_routing.json" {
-					t.Fatalf("unexpected xray paths: %#v", c.Xray)
-				}
-				if !c.Platform.OpenWrt.AllowReboot {
-					t.Fatal("openwrt allow_reboot must match shipped template")
-				}
-			},
-		},
-		{
-			name:     "linux-systemd",
-			platform: PlatformLinuxSystemd,
-			want: func(c config.Config) {
-				if c.Paths.StateDir != "/var/lib/kee-route-manager" {
-					t.Fatalf("state_dir = %q", c.Paths.StateDir)
-				}
-				if c.Paths.RunDir != "/run/kee-route-manager" {
-					t.Fatalf("run_dir = %q", c.Paths.RunDir)
-				}
-				if c.Xray.AssetDir != "/usr/share/xray" || c.Xray.BaseRoutingFile != "/etc/xray/configs/05_routing.json" {
-					t.Fatalf("unexpected xray paths: %#v", c.Xray)
-				}
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -214,7 +181,7 @@ func roundTrip(t *testing.T, cfg config.Config) {
 }
 
 func TestBuildControllerConfigMultipleSourcesAndHealthTargets(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	opts.Subscriptions = append(opts.Subscriptions, config.Source{
 		ID:      "backup",
 		Name:    "Backup subscription",
@@ -245,7 +212,7 @@ func TestBuildControllerConfigMultipleSourcesAndHealthTargets(t *testing.T) {
 }
 
 func TestWriteConfigEscapesUserData(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	special := "name: # ' \" & ?"
 	secret := "token: # ' \" & ?"
 	headerName := "X-Test-Token"
@@ -276,7 +243,7 @@ func TestWriteConfigEscapesUserData(t *testing.T) {
 }
 
 func TestWriteConfigRoundTripsMultilineStrings(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	name := "first line\nsecond line"
 	opts.Subscriptions[0].Name = name
 
@@ -298,7 +265,7 @@ func TestWriteConfigRoundTripsMultilineStrings(t *testing.T) {
 }
 
 func TestBuildControllerConfigAllowsExplicitZeroSpeedWarmup(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	opts.Benchmark.SpeedWarmupBytes = byteSizePtr(0)
 
 	cfg, err := BuildControllerConfig(opts)
@@ -312,7 +279,7 @@ func TestBuildControllerConfigAllowsExplicitZeroSpeedWarmup(t *testing.T) {
 }
 
 func TestInvalidOptionsUseConfigValidation(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	opts.Pool.Size = 0
 
 	_, err := BuildControllerConfig(opts)
@@ -344,7 +311,7 @@ func TestBuildControllerConfigRejectsEmptyRoutingTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := validOptions(PlatformLinuxSystemd)
+			opts := validOptions(PlatformKeenetic)
 			tt.edit(&opts)
 			_, err := BuildControllerConfig(opts)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -355,7 +322,7 @@ func TestBuildControllerConfigRejectsEmptyRoutingTags(t *testing.T) {
 }
 
 func TestAutoApplyIsNeverImplicitlyEnabled(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	cfg, err := BuildControllerConfig(opts)
 	if err != nil {
 		t.Fatalf("BuildControllerConfig: %v", err)
@@ -372,7 +339,7 @@ func TestAutoApplyIsNeverImplicitlyEnabled(t *testing.T) {
 }
 
 func TestValidationErrorsDoNotLeakSubscriptionSecrets(t *testing.T) {
-	opts := validOptions(PlatformLinuxSystemd)
+	opts := validOptions(PlatformKeenetic)
 	secretURL := "https://user:super-secret@example.test/sub"
 	secretHeader := "super-secret-header"
 	opts.Subscriptions[0].URL = secretURL
@@ -390,7 +357,7 @@ func TestValidationErrorsDoNotLeakSubscriptionSecrets(t *testing.T) {
 }
 
 func TestBuildUIConfig(t *testing.T) {
-	for _, platform := range []Platform{PlatformKeenetic, PlatformOpenWrt, PlatformLinuxSystemd} {
+	for _, platform := range []Platform{PlatformKeenetic} {
 		t.Run(string(platform), func(t *testing.T) {
 			cfg, err := BuildUIConfig(UIOptions{
 				Platform: platform,
@@ -413,7 +380,7 @@ func TestBuildUIConfig(t *testing.T) {
 
 func TestBuildUIConfigDefaultsToLoopbackHTTPUpstream(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
-		Platform: PlatformLinuxSystemd,
+		Platform: PlatformKeenetic,
 		Listen:   "0.0.0.0:9444",
 	})
 	if err != nil {
@@ -433,9 +400,9 @@ func TestBuildUIConfigDefaultsToLoopbackHTTPUpstream(t *testing.T) {
 
 func TestBuildUIConfigRejectsTLSOptionsForHTTPUpstream(t *testing.T) {
 	tests := []UIOptions{
-		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", UpstreamCAFile: "/tmp/ca.crt"},
-		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", UpstreamSPKISHA256: strings.Repeat("00", 32)},
-		{Platform: PlatformLinuxSystemd, Upstream: "http://127.0.0.1:9443", InsecureTLS: true},
+		{Platform: PlatformKeenetic, Upstream: "http://127.0.0.1:9443", UpstreamCAFile: "/tmp/ca.crt"},
+		{Platform: PlatformKeenetic, Upstream: "http://127.0.0.1:9443", UpstreamSPKISHA256: strings.Repeat("00", 32)},
+		{Platform: PlatformKeenetic, Upstream: "http://127.0.0.1:9443", InsecureTLS: true},
 	}
 	for _, opts := range tests {
 		if _, err := BuildUIConfig(opts); err == nil {
@@ -445,7 +412,7 @@ func TestBuildUIConfigRejectsTLSOptionsForHTTPUpstream(t *testing.T) {
 }
 
 func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
-	for _, name := range []string{"keenetic.yaml", "openwrt.yaml", "linux-systemd.yaml"} {
+	for _, name := range []string{"keenetic.yaml"} {
 		t.Run("controller/"+name, func(t *testing.T) {
 			cfg, err := config.Load(filepath.Join("..", "..", "configs", name))
 			if err != nil {
@@ -459,7 +426,7 @@ func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"ui-keenetic.yaml", "ui-linux-openwrt.yaml"} {
+	for _, name := range []string{"ui-keenetic.yaml"} {
 		t.Run("ui/"+name, func(t *testing.T) {
 			cfg, err := config.Load(filepath.Join("..", "..", "configs", name))
 			if err != nil {
@@ -480,7 +447,7 @@ func TestShippedSplitConfigsUseHTTPSOnlyAtBrowserBoundary(t *testing.T) {
 
 func TestBuildUIConfigHTTPSUsesSystemTrustByDefault(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
-		Platform: PlatformLinuxSystemd,
+		Platform: PlatformKeenetic,
 		Upstream: "https://controller.example.com",
 	})
 	if err != nil {
@@ -493,21 +460,21 @@ func TestBuildUIConfigHTTPSUsesSystemTrustByDefault(t *testing.T) {
 
 func TestBuildUIConfigPreservesExplicitHTTPSCA(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
-		Platform:       PlatformLinuxSystemd,
+		Platform:       PlatformKeenetic,
 		Upstream:       "https://controller.example.com",
-		UpstreamCAFile: "/etc/kee-route-manager-ui/controller-ca.crt",
+		UpstreamCAFile: "/opt/etc/kee-route-manager-ui/controller-ca.crt",
 	})
 	if err != nil {
 		t.Fatalf("BuildUIConfig: %v", err)
 	}
-	if cfg.UIProxy.UpstreamCAFile != "/etc/kee-route-manager-ui/controller-ca.crt" {
+	if cfg.UIProxy.UpstreamCAFile != "/opt/etc/kee-route-manager-ui/controller-ca.crt" {
 		t.Fatalf("custom CA = %q", cfg.UIProxy.UpstreamCAFile)
 	}
 }
 
 func TestBuildUIConfigRejectsUnmanagedHTTPSCAPath(t *testing.T) {
 	_, err := BuildUIConfig(UIOptions{
-		Platform:       PlatformLinuxSystemd,
+		Platform:       PlatformKeenetic,
 		Upstream:       "https://controller.example.com",
 		UpstreamCAFile: "/etc/ssl/private/controller-ca.crt",
 	})
@@ -518,7 +485,7 @@ func TestBuildUIConfigRejectsUnmanagedHTTPSCAPath(t *testing.T) {
 
 func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
-		Platform:    PlatformLinuxSystemd,
+		Platform:    PlatformKeenetic,
 		Listen:      "0.0.0.0:9444",
 		Upstream:    "https://127.0.0.1:9443",
 		InsecureTLS: true,
@@ -541,13 +508,13 @@ func TestBuildUIConfigAllowsExplicitInsecureTLS(t *testing.T) {
 func TestBuildUIConfigRejectsInsecureTLSWithExplicitTrust(t *testing.T) {
 	tests := []UIOptions{
 		{
-			Platform:       PlatformLinuxSystemd,
+			Platform:       PlatformKeenetic,
 			Upstream:       "https://controller.example.com",
 			InsecureTLS:    true,
-			UpstreamCAFile: "/etc/kee-route-manager-ui/controller-ca.crt",
+			UpstreamCAFile: "/opt/etc/kee-route-manager-ui/controller-ca.crt",
 		},
 		{
-			Platform:           PlatformLinuxSystemd,
+			Platform:           PlatformKeenetic,
 			Upstream:           "https://controller.example.com",
 			InsecureTLS:        true,
 			UpstreamSPKISHA256: strings.Repeat("00", 32),
@@ -576,7 +543,7 @@ func TestBuildUIConfigRejectsUnsupportedPlatform(t *testing.T) {
 
 func TestWriteUIConfigOmitsControllerOnlySections(t *testing.T) {
 	cfg, err := BuildUIConfig(UIOptions{
-		Platform: PlatformLinuxSystemd,
+		Platform: PlatformKeenetic,
 		Listen:   "0.0.0.0:9444",
 		Upstream: "https://127.0.0.1:9443",
 	})
@@ -622,7 +589,7 @@ func TestWriteUIConfigOmitsControllerOnlySections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load: %v\n%s", err, text)
 	}
-	if loaded.Instance.Role != "ui" || loaded.Platform.Kind != string(PlatformLinuxSystemd) {
+	if loaded.Instance.Role != "ui" || loaded.Platform.Kind != string(PlatformKeenetic) {
 		t.Fatalf("loaded UI identity = role %q platform %q", loaded.Instance.Role, loaded.Platform.Kind)
 	}
 }

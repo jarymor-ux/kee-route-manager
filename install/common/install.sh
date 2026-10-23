@@ -7,35 +7,77 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 PLATFORM=${KRM_PLATFORM:?platform wrapper is required}
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
-case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; armv7l|armv7*) ARCH=armv7;; mipsel|mipsle) ARCH=mipsle;; mips)
-  endian=$(od -An -t u1 -j5 -N1 /bin/sh | tr -d '[:space:]')
-  [ "$endian" = 1 ] || fail 'only little-endian MIPS is supported'
-  ARCH=mipsle;; *) fail 'unsupported architecture';; esac
+. "$ROOT/install/common/architecture.sh"
+ARCH=$(krm_detect_arch) || fail "unsupported native CPU/ABI"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/krm-install.XXXXXX")
 TTY_HIDDEN=0
 cleanup(){ [ "$TTY_HIDDEN" = 0 ] || stty echo < /dev/tty 2>/dev/null || true; rm -rf "$STAGE"; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-case "$PLATFORM" in
- keenetic) PREFIX=/opt; BIN=/opt/bin; RUN=/opt/var/run/kee-route-manager; [ -d /opt ] || fail 'Entware /opt is not mounted';;
- openwrt) PREFIX=; BIN=/usr/bin; RUN=/var/run/kee-route-manager;;
- linux-systemd) PREFIX=; BIN=/usr/local/bin; RUN=/run/kee-route-manager;;
- *) fail 'unsupported platform';;
-esac
-case "$PLATFORM" in
- linux-systemd) command -v systemctl >/dev/null 2>&1 || fail 'systemd is required';;
- openwrt) [ -f /etc/rc.common ] || fail 'OpenWrt rc.common/procd is required';;
-esac
+[ "$PLATFORM" = keenetic ] || fail 'only Keenetic/Netcraze installations are supported'
+PREFIX=/opt; BIN=/opt/bin; RUN=/opt/var/run/kee-route-manager
+[ -d /opt ] || fail 'Entware /opt is not mounted'
 CONFIG_DIR=$PREFIX/etc/kee-route-manager
 UI_DIR=$PREFIX/etc/kee-route-manager-ui
 CONFIG=$CONFIG_DIR/config.yaml
 UI_CONFIG=$UI_DIR/config.yaml
-# Linux UI keeps its DynamicUser service; only router platforms already running
-# the UI as root combine it with the launcher-owned controller process tree.
+# Local UI shares the controller launcher; standalone UI remains separate.
 MANAGED_UI=0
 if [ "$MODE" = local-ui ]; then
- case "$PLATFORM" in keenetic|openwrt) MANAGED_UI=1;; esac
+ MANAGED_UI=1
+fi
+# The signed transaction helper owns newly published static files only.
+. "$ROOT/install/common/install-transaction.sh"
+ACTION=${KRM_INSTALL_ACTION:-install}
+case "$ACTION" in install|resume|recover) ;; *) fail 'KRM_INSTALL_ACTION must be install, resume or recover';; esac
+txn_lock "$PREFIX" "$MODE"
+start_and_verify(){
+ # A long-lived supervisor must not inherit the install flock descriptor.
+ if [ "$MODE" = ui ]; then
+  (exec 9>&-; /opt/etc/init.d/S98kee-route-manager-ui start)
+ else
+  (exec 9>&-; /opt/etc/init.d/S99kee-route-manager start)
+ fi
+ if [ "$MODE" != ui ]; then
+  ready=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+   : "$attempt"
+   if "$BIN/kee-route-managerctl" ready --config "$CONFIG" > "$STAGE/status.json"; then ready=1; break; fi
+   sleep 2
+  done
+  [ "$ready" = 1 ] || fail 'daemon did not become reachable; installation retained for explicit resume; do not assume routing is ready'
+  cat "$STAGE/status.json"
+ fi
+ if [ "$MODE" != core ]; then
+  ui_ready=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+   : "$attempt"
+   if "$BIN/kee-route-manager-ui" ready --config "$UI_CONFIG"; then ui_ready=1; break; fi
+   sleep 2
+  done
+  [ "$ui_ready" = 1 ] || fail 'UI/upstream not ready; installation retained for explicit resume'
+ fi
+}
+install_launcher(){
+ if [ "$MANAGED_UI" = 1 ]; then
+  "$BIN/kee-route-manager-launcher" install --config "$CONFIG" --ui-config "$UI_CONFIG" --release-dir "$ROOT/dist"
+ else
+  "$BIN/kee-route-manager-launcher" install --config "$CONFIG" --release-dir "$ROOT/dist"
+ fi
+}
+if [ "$ACTION" = recover ]; then
+ txn_recover
+ exit 0
+elif [ "$ACTION" = resume ]; then
+ txn_verify_resume
+ if [ "$TXN_PHASE" = launcher ]; then install_launcher; fi
+ txn_capture_links
+ txn_phase activating
+ start_and_verify
+ txn_commit
+ printf 'Resumed installation mode=%s; config, credentials and controller state retained.\n' "$MODE"
+ exit 0
 fi
 INPUT=${KRM_CONFIG_FILE:-}
 [ -n "$INPUT" ] && [ -f "$INPUT" ] || fail 'KRM_CONFIG_FILE must point to a prepared, private YAML configuration'
@@ -111,81 +153,88 @@ if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
  [ ! -e "$CONFIG_DIR/tls.crt" ] && [ ! -L "$CONFIG_DIR/tls.crt" ] && [ ! -e "$CONFIG_DIR/tls.key" ] && [ ! -L "$CONFIG_DIR/tls.key" ] || fail 'existing controller TLS identity detected'
  openssl x509 -in "$KRM_GENERATED_TLS_DIR/tls.crt" -noout >/dev/null || fail 'invalid generated controller certificate'
 fi
-# Preserve existing installations; reinstall requires explicit uninstall first.
-if [ "$MODE" != ui ]; then [ ! -e "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'; fi
-if [ "$MODE" != core ]; then [ ! -e "$UI_CONFIG" ] && [ ! -e "$BIN/kee-route-manager-ui" ] || fail 'existing UI installation detected'; fi
-if [ "$MANAGED_UI" = 1 ]; then
- case "$PLATFORM" in keenetic) UI_SERVICE=/opt/etc/init.d/S98kee-route-manager-ui;; openwrt) UI_SERVICE=/etc/init.d/kee-route-manager-ui;; esac
- [ ! -e "$UI_SERVICE" ] || fail 'existing standalone UI service detected; stop and uninstall it before a launcher-managed local-ui installation'
-fi
-mkdir -p "$BIN"
+# Refuse stale partial installs, pre-existing service scripts, symlinks and
+# private credentials BEFORE writing anything. Even a dangling symlink can
+# redirect cp/passwd into files not owned by KRM.
+ensure_absent(){
+ [ ! -e "$1" ] && [ ! -L "$1" ] || fail "existing managed path detected (do not overwrite): $1"
+}
 if [ "$MODE" != ui ]; then
- mkdir -p "$CONFIG_DIR" "$RUN"
- chmod 0700 "$CONFIG_DIR" "$RUN"
- cp "$STAGE/core.yaml" "$CONFIG"; chmod 0600 "$CONFIG"
+ [ ! -e "$CONFIG" ] && [ ! -L "$CONFIG" ] && [ ! -e "$BIN/kee-route-managerd" ] && [ ! -L "$BIN/kee-route-managerd" ] && [ ! -e "$BIN/kee-route-manager-launcher" ] && [ ! -L "$BIN/kee-route-manager-launcher" ] || fail 'existing controller installation detected; use documented backup/uninstall/rollback procedure'
+ [ ! -L "$CONFIG_DIR" ] || fail 'controller configuration directory must not be a symlink'
+ for path in "$BIN/kee-route-managerctl" "$CONFIG_DIR/credentials.json" "$CONFIG_DIR/xray-status.sh" "$CONFIG_DIR/xray-restart.sh" /opt/etc/init.d/S99kee-route-manager; do
+  ensure_absent "$path"
+ done
  if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
-  cp "$KRM_GENERATED_TLS_DIR/tls.crt" "$CONFIG_DIR/tls.crt"
-  cp "$KRM_GENERATED_TLS_DIR/tls.key" "$CONFIG_DIR/tls.key"
-  chmod 0644 "$CONFIG_DIR/tls.crt"; chmod 0600 "$CONFIG_DIR/tls.key"
+  ensure_absent "$CONFIG_DIR/tls.crt"
+  ensure_absent "$CONFIG_DIR/tls.key"
+ fi
+fi
+if [ "$MODE" != core ]; then
+ [ ! -e "$UI_CONFIG" ] && [ ! -L "$UI_CONFIG" ] && [ ! -e "$BIN/kee-route-manager-ui" ] && [ ! -L "$BIN/kee-route-manager-ui" ] || fail 'existing UI installation detected'
+ [ ! -L "$UI_DIR" ] || fail 'UI configuration directory must not be a symlink'
+ ensure_absent "$UI_DIR/controller-ca.crt"
+fi
+if [ "$MANAGED_UI" = 1 ]; then
+ UI_SERVICE=/opt/etc/init.d/S98kee-route-manager-ui
+ [ ! -e "$UI_SERVICE" ] && [ ! -L "$UI_SERVICE" ] || fail 'existing standalone UI service detected; stop and uninstall it before a launcher-managed local-ui installation'
+elif [ "$MODE" = ui ]; then
+ ensure_absent /opt/etc/init.d/S98kee-route-manager-ui
+fi
+# Create password material privately before any publication. The expected-path
+# assertion prevents a prepared YAML from redirecting the installer credential
+# write into an operator-owned location.
+if [ "$MODE" != ui ]; then
+ "$ROOT/dist/kee-route-managerctl-linux-$ARCH" passwd --config "$STAGE/core.yaml" --username "$admin_user" --password-stdin --expected-credentials-file "$CONFIG_DIR/credentials.json" --credentials-output "$STAGE/credentials.json" < "$STAGE/password"
+fi
+txn_begin
+txn_directory "$BIN" 0755
+if [ "$MODE" != ui ]; then
+ txn_directory "$CONFIG_DIR" 0700
+ txn_directory "$RUN" 0700
+ txn_file "$STAGE/core.yaml" "$CONFIG" 0600
+ txn_file "$STAGE/credentials.json" "$CONFIG_DIR/credentials.json" 0600
+ if [ -n "${KRM_GENERATED_TLS_DIR:-}" ]; then
+  txn_file "$KRM_GENERATED_TLS_DIR/tls.crt" "$CONFIG_DIR/tls.crt" 0644
+  txn_file "$KRM_GENERATED_TLS_DIR/tls.key" "$CONFIG_DIR/tls.key" 0600
  fi
  if [ "$PLATFORM" = keenetic ]; then
-  cp "$ROOT/install/keenetic/xray-status.sh" "$CONFIG_DIR/xray-status.sh"
-  chmod 0755 "$CONFIG_DIR/xray-status.sh"
+  txn_file "$ROOT/install/keenetic/xray-status.sh" "$CONFIG_DIR/xray-status.sh" 0755
+  txn_file "$ROOT/install/keenetic/xray-restart.sh" "$CONFIG_DIR/xray-restart.sh" 0755
  fi
- for name in kee-route-managerd kee-route-managerctl kee-route-manager-launcher; do cp "$ROOT/dist/$name-linux-$ARCH" "$BIN/$name"; chmod 0755 "$BIN/$name"; done
- "$BIN/kee-route-managerctl" passwd --config "$CONFIG" --username "$admin_user" --password-stdin < "$STAGE/password"
+ for name in kee-route-managerd kee-route-managerctl kee-route-manager-launcher; do
+  txn_file "$ROOT/dist/$name-linux-$ARCH" "$BIN/$name" 0755
+ done
 fi
 if [ "$MODE" != core ]; then
- mkdir -p "$UI_DIR"; chmod 0755 "$UI_DIR"
- cp "$STAGE/ui.yaml" "$UI_CONFIG"; chmod 0644 "$UI_CONFIG"
- cp "$ROOT/dist/kee-route-manager-ui-linux-$ARCH" "$BIN/kee-route-manager-ui"; chmod 0755 "$BIN/kee-route-manager-ui"
+ txn_directory "$UI_DIR" 0755
+ txn_file "$STAGE/ui.yaml" "$UI_CONFIG" 0644
+ txn_file "$ROOT/dist/kee-route-manager-ui-linux-$ARCH" "$BIN/kee-route-manager-ui" 0755
 fi
 if [ "$MODE" != ui ]; then
- mkdir -p "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
- chmod 0700 "$PREFIX/var/lib/kee-route-manager" "$PREFIX/var/cache/kee-route-manager"
+ txn_directory "$PREFIX/var/lib/kee-route-manager" 0700
+ txn_directory "$PREFIX/var/cache/kee-route-manager" 0700
 fi
 if [ "$MODE" != core ] && [ -n "$UI_UPSTREAM_CA_PATH" ]; then
- cp "$KRM_UPSTREAM_CA_FILE" "$UI_UPSTREAM_CA_PATH"; chmod 0644 "$UI_UPSTREAM_CA_PATH"
+ txn_file "$KRM_UPSTREAM_CA_FILE" "$UI_UPSTREAM_CA_PATH" 0644
 fi
-if [ "$MODE" != ui ]; then
- if [ "$MANAGED_UI" = 1 ]; then
-  "$BIN/kee-route-manager-launcher" install --config "$CONFIG" --ui-config "$UI_CONFIG" --release-dir "$ROOT/dist"
- else
-  "$BIN/kee-route-manager-launcher" install --config "$CONFIG" --release-dir "$ROOT/dist"
- fi
+txn_directory /opt/etc/init.d 0755
+if [ "$MODE" = ui ]; then
+ txn_file "$ROOT/install/keenetic/S98kee-route-manager-ui" /opt/etc/init.d/S98kee-route-manager-ui 0755
+else
+ txn_file "$ROOT/install/keenetic/S99kee-route-manager" /opt/etc/init.d/S99kee-route-manager 0755
+ for name in kee-route-managerd kee-route-managerctl; do txn_launcher_binary "$BIN/$name"; done
+ if [ "$MANAGED_UI" = 1 ]; then txn_launcher_binary "$BIN/kee-route-manager-ui"; fi
+ # Launcher import can create signed slots, lock files and metadata at paths
+ # selected by the validated YAML. From this intent onward recovery must keep
+ # runtime/state and retry the idempotent launcher instead of deleting it.
+ txn_phase launcher
+ install_launcher
+ txn_capture_links
 fi
-case "$PLATFORM" in
- linux-systemd)
-  if [ "$MODE" != ui ]; then cp "$ROOT/install/linux-systemd/kee-route-manager.service" /etc/systemd/system/; fi
-  if [ "$MODE" != core ]; then cp "$ROOT/install/linux-systemd/kee-route-manager-ui.service" /etc/systemd/system/; fi
-  systemctl daemon-reload
-  [ "$MODE" = ui ] || systemctl enable --now kee-route-manager
-  [ "$MODE" = core ] || systemctl enable --now kee-route-manager-ui;;
- openwrt)
-  [ "$MODE" = ui ] || { cp "$ROOT/install/openwrt/kee-route-manager.init" /etc/init.d/kee-route-manager; chmod 0755 /etc/init.d/kee-route-manager; /etc/init.d/kee-route-manager enable; /etc/init.d/kee-route-manager start; }
-  [ "$MODE" != ui ] || { cp "$ROOT/install/openwrt/kee-route-manager-ui.init" /etc/init.d/kee-route-manager-ui; chmod 0755 /etc/init.d/kee-route-manager-ui; /etc/init.d/kee-route-manager-ui enable; /etc/init.d/kee-route-manager-ui start; };;
- keenetic)
-  mkdir -p /opt/etc/init.d
-  [ "$MODE" = ui ] || { cp "$ROOT/install/keenetic/S99kee-route-manager" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S99kee-route-manager; /opt/etc/init.d/S99kee-route-manager start; }
-  [ "$MODE" != ui ] || { cp "$ROOT/install/keenetic/S98kee-route-manager-ui" /opt/etc/init.d/; chmod 0755 /opt/etc/init.d/S98kee-route-manager-ui; /opt/etc/init.d/S98kee-route-manager-ui start; };;
-esac
-if [ "$MODE" != ui ]; then
- ready=0
- for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  : "$attempt"
-  if "$BIN/kee-route-managerctl" ready --config "$CONFIG" > "$STAGE/status.json"; then ready=1; break; fi
-  sleep 2
- done
- [ "$ready" = 1 ] || fail 'daemon did not become reachable; installation retained for diagnosis; do not assume routing is ready'
- cat "$STAGE/status.json"
-fi
-if [ "$MODE" != core ]; then
- ui_ready=0
- for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  : "$attempt"
-  if "$BIN/kee-route-manager-ui" ready --config "$UI_CONFIG"; then ui_ready=1; break; fi
-  sleep 2
- done
- [ "$ui_ready" = 1 ] || fail 'UI/upstream not ready; installation retained for diagnosis'
-fi
-printf 'Installed mode=%s. Check readiness, initial benchmark, HTTPS login and router recovery using docs/AGENT_INSTALL.md.\n' "$MODE"
+# Persist the start boundary before a supervisor can mutate controller/Xray
+# state. Failed readiness retains this journal for explicit, verified resume.
+txn_phase activating
+start_and_verify
+txn_commit
+printf 'Installed mode=%s. Check readiness, initial benchmark, HTTP(S) login according to UI config and router recovery using docs/AGENT_INSTALL.md.\n' "$MODE"

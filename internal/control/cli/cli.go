@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/auth"
@@ -37,7 +38,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 
 func runWithIO(ctx context.Context, args []string, version, commit, buildTime string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kee-route-managerctl <init-config|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
+		return fmt.Errorf("usage: kee-route-managerctl <init-config|preflight|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|native-policy-check|route-candidates|version> [--config PATH] [--socket PATH]")
 	}
 	command, args := args[0], args[1:]
 	switch command {
@@ -46,12 +47,16 @@ func runWithIO(ctx context.Context, args []string, version, commit, buildTime st
 		return nil
 	case "validate":
 		return Validate(args)
+	case "preflight":
+		return preflightCommand(ctx, args, out)
 	case "passwd":
 		return password(args)
 	case "route-candidates":
 		return routeCandidates(args)
 	case "init-config":
 		return initConfig(args, in, out)
+	case "native-policy-check":
+		return nativePolicyCheck(ctx, args, out)
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	p := f.String("config", configflag.DefaultPath(), "configuration path")
@@ -127,6 +132,8 @@ func password(args []string) error {
 	p := f.String("config", configflag.DefaultPath(), "configuration path")
 	username := f.String("username", "", "administrator username")
 	stdin := f.Bool("password-stdin", false, "read password from standard input")
+	credentialsOutput := f.String("credentials-output", "", "stage credentials at a new absolute path without changing configured credentials")
+	expectedCredentials := f.String("expected-credentials-file", "", "require this configured credentials path before staging")
 	if e := f.Parse(args); e != nil {
 		return e
 	}
@@ -140,6 +147,17 @@ func password(args []string) error {
 	if e != nil {
 		return e
 	}
+	if *expectedCredentials != "" && c.Web.CredentialsFile != *expectedCredentials {
+		return fmt.Errorf("configured credentials path differs from the installer destination")
+	}
+	if *credentialsOutput != "" {
+		if !filepath.IsAbs(*credentialsOutput) {
+			return fmt.Errorf("credentials output must be absolute")
+		}
+		if _, e := os.Lstat(*credentialsOutput); !os.IsNotExist(e) {
+			return fmt.Errorf("credentials output already exists or cannot be inspected")
+		}
+	}
 	b, e := io.ReadAll(io.LimitReader(os.Stdin, 1027))
 	if e != nil {
 		return e
@@ -148,6 +166,29 @@ func password(args []string) error {
 		return fmt.Errorf("password too long")
 	}
 	password := strings.TrimRight(string(b), "\r\n")
+	if *credentialsOutput != "" {
+		tmp, e := os.CreateTemp(filepath.Dir(*credentialsOutput), ".krm-credentials-*")
+		if e != nil {
+			return e
+		}
+		name := tmp.Name()
+		if e = tmp.Close(); e != nil {
+			return e
+		}
+		defer os.Remove(name)
+		if e = auth.CreateCredentials(name, *username, password); e != nil {
+			return e
+		}
+		if e = os.Link(name, *credentialsOutput); e != nil {
+			return fmt.Errorf("publish staged credentials without overwrite: %w", e)
+		}
+		dir, e := os.Open(filepath.Dir(*credentialsOutput))
+		if e != nil {
+			return e
+		}
+		defer dir.Close()
+		return dir.Sync()
+	}
 	return auth.CreateCredentials(c.Web.CredentialsFile, *username, password)
 }
 func routeCandidates(args []string) error {
@@ -209,14 +250,21 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	f.SetOutput(out)
 	output := f.String("output", configflag.DefaultPath(), "output configuration path")
 	overwrite := f.Bool("overwrite", false, "allow replacing an existing output file")
-	platform := f.String("platform", "", "target platform (keenetic|openwrt|linux-systemd)")
-	uiOutput := f.String("ui-output", "", "create a local HTTPS UI configuration alongside the controller")
+	platform := f.String("platform", "", "target router family (keenetic for Keenetic/Netcraze)")
+	uiOutput := f.String("ui-output", "", "create a local UI configuration with verified TLS upstream alongside the controller")
 	tlsDir := f.String("tls-dir", "", "new private directory for the local controller TLS identity")
+	nativeOutput := f.String("native-output", "", "prepare blocked clean XKeen/Xray configuration in a new private directory; never activate it")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", f.Arg(0))
+	}
+	if *nativeOutput != "" {
+		if *overwrite {
+			return fmt.Errorf("native installer cannot overwrite existing files")
+		}
+		return setup.InitNativeInstallerConfig(in, out, *output, *uiOutput, *tlsDir, *nativeOutput, setup.Platform(*platform))
 	}
 	if *uiOutput != "" || *tlsDir != "" {
 		if *overwrite {

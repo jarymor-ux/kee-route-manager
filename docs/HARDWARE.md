@@ -1,0 +1,118 @@
+# Keenetic / Netcraze compatibility and resource planning
+
+This is the maintained source of truth for KRM deployment scope. The router must be a **Keenetic or Netcraze running its compatible stock KeeneticOS/NDMS, Entware and a working Xray installation**. The shared adapter is `platform.kind: keenetic`. Linux/macOS build hosts, Linux ELF binaries, containers and QEMU are development infrastructure. A separate UI host may manage that router over an authenticated SSH tunnel; it is not a second controller or a generic router target. OpenWrt and standalone Linux/systemd router deployments are discontinued in 2.0.1. Published tags, assets and historical release descriptions remain immutable.
+
+**Hardware verification pending.** None of the model rows below has been qualified by this change. Earlier acceptance on one unidentified Keenetic cannot certify these models. A compiled binary, an emulator run and a signed fixture are separate software gates, not physical router acceptance. In particular, **Keenetic/Netcraze automatic direct bypass when the main Xray dies is unsupported**.
+
+## Model and architecture catalogue
+
+Sources checked 2026-10-22. Product names vary by region: Giga SE / Hero DSL **KN-2410**, Ultra SE / Peak DSL **KN-2510**, Giga / Hero **KN-1011/1012**, Ultra / Titan **KN-1810/1811**, and Viva / Skipper **KN-1910/1912** are genuine regional names. Match the complete label index, not the sales name. Later revisions in a series can change CPU, byte order and RAM.
+
+RAM/flash figures below are manufacturers' nominal MB, not measured free memory. Flash capacity includes firmware and dual-image partitions and is **not** free Entware storage. The installation gate uses actual free bytes. USB drives need a supported filesystem, stable power and sufficient space for Xray data, KRM state and two signed update slots plus staging. Use externally powered storage/hubs when necessary; do not assume USB line speed is achievable application throughput.
+
+| RAM class | Exact model / regional alias | SoC, CPU, cores / threads | Native userspace / Go target | Flash; USB | Hardware sources | KRM status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 128 MB | Viva / Skipper KN-1910 | MT7621AT, MIPS 1004KEc, 880 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; 2 × USB 2.0 | [product](https://keenetic.com/en/keenetic-skipper-kn-1910), [CLI](https://docs.help.keenetic.com/cli/3.1/en/cli_manual_kn-1910_tr.pdf) | Experimental, resource constrained; no 128 MB capacity promise |
+| 256 MB | Giga SE / Hero DSL KN-2410 | EN7516GT, MIPS 1004Kc, 900 MHz, 2 / 4 | 32-bit MIPS **BE**, O32 soft-float; `mips` | 128 MB SPI-NAND; USB 2.0 | [CLI 3.8 §1.1](https://docs.help.keenetic.com/cli/3.8/ru/cli_manual_kn-2410_ru.pdf), [official BE Entware](https://support.keenetic.com/hero-dsl/kn-2410/en/18482-installing-opkg-entware-in-the-router-s-internal-memory.html) | Experimental; 2.0.1 includes BE; absent from v1.3.3 |
+| 256 MB | Ultra SE / Peak DSL KN-2510 | EN7516GT, MIPS 1004Kc, 900 MHz, 2 / 4 | 32-bit MIPS BE, O32 soft-float; `mips` | 128 MB SPI-NAND; USB 2.0 + 3.0 | [CLI 3.8 §1.1](https://docs.help.keenetic.com/cli/3.8/ru/cli_manual_kn-2510_ru.pdf), [XKeen architecture map](https://github.com/jameszeroX/XKeen/wiki/Routers-Info) | Experimental; 2.0.1 includes BE, hardware verification pending |
+| 256 MB | Giga KN-1010 | MT7621AT, MIPS 1004KEc, 880 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; USB 2.0 + 3.0 | [CLI §1.1](https://docs.help.keenetic.com/cli/3.1/en/cli_manual_kn-1010_tr.pdf) | Experimental; hardware verification pending |
+| 256 MB | Ultra / Titan KN-1810 | MT7621AT, MIPS 1004Kc, 880 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; USB 2.0 + 3.0 | [product](https://keenetic.com/en/keenetic-titan-kn-1810), [CLI §1.1](https://docs.help.keenetic.com/cli/3.1/en/cli_manual_kn-1810.pdf) | Experimental; hardware verification pending |
+| 256 MB | Viva / Skipper KN-1912 | EN7528DU, MIPS 1004Kc, 900 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB flash, type not specified by linked datasheet; USB 2.0 | [datasheet](https://help.keenetic.com/hc/article_attachments/14068698716956), [architecture map](https://github.com/jameszeroX/XKeen/wiki/Routers-Info) | Experimental; do not confuse EN7528 with BE EN7516 |
+| 256 MB | Hopper KN-3810 | EN7528DU/DA, MIPS 1004Kc, 900 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; USB 3.0 | [product](https://keenetic.com/en/keenetic-hopper-kn-3810), [CLI 3.8 §1.1](https://docs.help.keenetic.com/cli/3.8/ru/cli_manual_kn-3810_ru.pdf) | Experimental; hardware verification pending |
+| 256 MB | Giant KN-2610 | MT7621AT, MIPS 1004Kc, 880 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; USB 2.0 + 3.0 | [CLI 3.8 §1.1](https://docs.help.keenetic.com/cli/3.8/ru/cli_manual_kn-2610_ru.pdf) | Experimental; hardware verification pending |
+| 256 MB | Viva / Skipper KN-1913 | MT7621A, 880 MHz, 2 cores | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB flash, type not specified; USB 2.0 | [official comparison](https://keenetic.com/en/compare/routers?diff=1&products=keenetic-skipper%2Ckeenetic-skipper-kn-1912) | Experimental; listed as coming soon in some regional catalogues |
+| 512 MB | Giga / Hero KN-1011 | MT7621AT, MIPS 1004KEc, 880 MHz, 2 / 4 | 32-bit MIPS LE, O32 soft-float; `mipsle` | 128 MB NAND; USB 2.0 + 3.0 | [product](https://keenetic.com/en/keenetic-hero-kn-1011), [CLI §1.1](https://docs.help.keenetic.com/cli/4.0/en/cli_manual_kn-1011.pdf) | Experimental; hardware verification pending |
+| 512 MB | Ultra / Titan KN-1811 | MT7622B, ARM Cortex-A53, 1350 MHz, 2 cores | AArch64 LE; `arm64` | 256 MB flash; USB 2.0 + 3.0 | [product](https://keenetic.com/en/keenetic-titan-kn-1811), [manufacturer CPU article](https://blog.keenetic.ru/ultra-kn-1811/) | Experimental; hardware verification pending |
+| 512 MB | Peak KN-2710 | MT7622B, ARM Cortex-A53, 1350 MHz, 2 / 2 | AArch64 LE; `arm64` | 256 MB NAND; USB 2.0 + 3.0 | [CLI 3.8 §1.1](https://docs.help.keenetic.com/cli/3.8/ru/cli_manual_kn-2710_ru.pdf) | Experimental; hardware verification pending |
+| 512 MB | Giga / Hero KN-1012 | MT7981B, ARM Cortex-A53, 1300 MHz, 2 cores | AArch64 LE; `arm64` | 256 MB flash; USB 2.0 + 3.0 | [official comparison](https://keenetic.com/en/compare/routers?diff=1&products=keenetic-hero%2Ckeenetic-hero-kn-1011), [manufacturer article](https://blog.keenetic.ru/giga-kn-1012/) | Experimental; hardware verification pending |
+| 512 MB | Hopper KN-3811 | MT7981B, ARM Cortex-A53, 1300 MHz, 2 cores | AArch64 LE; `arm64` | 256 MB flash; USB 3.0 | [official generation comparison](https://keenetic.com/pl/compare/routers?diff=1&products=keenetic-hopper%2Ckeenetic-hopper-kn-3810) | Experimental; hardware verification pending |
+| 512 MB | Hopper SE KN-3812 | MT7981B, ARM Cortex-A53, 1300 MHz, 2 cores | AArch64 LE; `arm64` | 256 MB flash; USB 3.0 | [product](https://keenetic.com/en/keenetic-hopper-se) | Experimental; hardware verification pending |
+| 512 MB | Netcraze Giga NC-1012 | MT7981 family, ARM, 1300 MHz, 2 cores; vendor does not specify B suffix | AArch64 LE; `arm64` | 256 MB flash; USB 2.0 + 3.0 | [official store](https://shop.netcraze.ru/product/netcraze-giga), [official AArch64 list](https://support.netcraze.ru/ultra/nc-1812/ru/69806-installation-of-the-asterisk-ip-pbx-opkg-package.html) | Experimental; verify exact SoC revision on device |
+| 512 MB | Netcraze Hopper NC-3811 | ARM, 1300 MHz, 2 cores; exact SoC not disclosed by linked product page | AArch64 LE; `arm64` | 256 MB flash; USB 3.0 | [product](https://netcraze.ru/ru/netcraze-hopper), [official AArch64 list](https://support.netcraze.ru/ultra/nc-1812/ru/69806-installation-of-the-asterisk-ip-pbx-opkg-package.html) | Experimental; verify SoC on device |
+| 1024 MB | Netcraze Ultra NC-1812 | 1800 MHz, 3 cores; exact SoC not disclosed by vendor page (MT7988D in upstream device-tree contribution) | AArch64 LE; `arm64` | 256 MB flash; USB 2.0 + 3.2 | [product](https://netcraze.ru/ru/netcraze-ultra), [official AArch64 Entware](https://support.netcraze.ru/ultra/nc-1812/en/18482-installing-opkg-entware-in-the-router-s-internal-memory.html), [device-tree contribution](https://lists.infradead.org/pipermail/lede-commits/2025-December/028425.html) | Experimental; hardware verification pending |
+| 1024 MB | Keenetic Titan KN-1812 | MT7988D, ARM, 1800 MHz, 3 cores | AArch64 LE; `arm64` | 256 MB flash; USB 2.0 + 3.2 | [official comparison](https://keenetic.com/en/compare/routers?diff=1&products=keenetic-titan%2Ckeenetic-titan-kn-1810) | Experimental; hardware verification pending |
+
+DDR3 applies to the 128/256 MB rows and KN-1011/1811/2710; MT7981 and MT7988 product rows use DDR4. Exact flash technology is left unspecified when the vendor only states capacity; obtain the hardware revision before depending on a flash type. The KN-2410 CLI total says 256 MB while one listed Winbond component says 128 MB; its alternative Nanya chip and the official datasheet total do not justify silently changing the total. Confirm `/proc/meminfo` and label/hardware revision on the actual device. No listed model index was found to be fictitious, but the English regional aliases differ substantially from the Russian names.
+
+### Firmware, Entware, Xray and Go contracts
+
+KRM does not have a certified per-model KeeneticOS release range. The linked older CLI manuals document 3.1/3.8/4.0 firmware, **not** a KRM minimum or certification. Use the vendor-supported Main channel for the exact label; record the complete running KeeneticOS/NDMS version, kernel, package feed and XKeen/Xray versions during acceptance. Do not downgrade or enable a development channel merely for KRM. Internal UBIFS Entware installation is documented from KeeneticOS 3.7 **on eligible models**; this is not a promise that every 3.7 model has writable internal storage. See [vendor USB instructions](https://support.keenetic.com/titan/kn-1812/en/20980-installing-the-entware-repository-on-a-usb-drive.html) and the exact model's internal-storage page. Ext4 USB storage avoids assuming dual-image flash is free application storage. Do not reformat a disk with user data.
+
+| Userspace class | Entware feed / installer | KRM compilation | Xray / XKeen prerequisite |
+| --- | --- | --- | --- |
+| MIPS BE O32 | `mipssf-k3.4`, `mips-installer.tar.gz` | `CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat` | Xray `linux-mips32` and an XKeen version supporting BE; KN-2410/2510 listed in [maintainer's router map](https://github.com/jameszeroX/XKeen/wiki/Routers-Info) |
+| MIPS LE O32 | `mipselsf-k3.4`, `mipsel-installer.tar.gz` | `CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat` | Xray `linux-mips32le`; matched XKeen version |
+| AArch64 LE | `aarch64-k3.10`, `aarch64-installer.tar.gz` | `CGO_ENABLED=0 GOOS=linux GOARCH=arm64` | Xray `linux-arm64-v8a`; matched XKeen version |
+| ARMv7 LE | only if actual supported router userspace is verified | `CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7` | Kept as a build target, no model in this catalogue qualified |
+| amd64 | development tools / separate management UI host | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` | Not a supported router installation target |
+
+[Go's supported architecture names](https://go.dev/doc/install/source#environment) distinguish BE `mips` from LE `mipsle`. [Go minimum requirements](https://go.dev/wiki/MinimumRequirements) include MIPS32r1 and Linux kernel ≥3.2 for modern Go; kernel syscall support and the actual O32 ELF must still be checked. Static `CGO_ENABLED=0` avoids depending on Entware's libc ABI, but cannot fix missing kernel features or wrong byte order. Reject MIPS64, N32/N64, r6-only/incompatible binaries and ambiguous ELF before modifying the installation. `uname -m=mips` alone is insufficient. Availability of [official Xray releases](https://github.com/XTLS/Xray-core/releases) for MIPS32/LE and ARM64 does not qualify the installed XKeen commands or KRM routing integration; prove a clean production-config test and API readiness locally.
+
+Software status labels are independent: **builds** means cross-compilation of each required component; **automated tests** means host/fixture or emulator checks for the stated behavior; **hardware verified** requires a recorded exact model/firmware acceptance. All catalogue rows remain **experimental** until the last gate. A different OS, insufficient resources, an unverified ABI or a missing working Xray environment is **unsupported**, even when its marketing name appears above. v1.3.3 has no BE binary; never install an LE binary or alter a published bundle to work around that.
+
+Software verification for the Go 1.27.3 source changes (2026-10-22) is recorded separately from the model catalogue:
+
+| Build architecture | Builds | Automated architecture checks | Physical model status |
+| --- | --- | --- | --- |
+| `amd64` | All five components | Native host tests and signed installer/release fixtures | Development/management host, not a router target |
+| `arm64` | All five components | Cross-build and signed inventory/selection fixtures | Experimental; hardware verification pending |
+| `armv7` | All five components | Cross-build and signed inventory/selection fixtures | No catalogue model qualified |
+| `mipsle` | All five components, soft-float | Five QEMU user-mode component version checks; BE/LE/ABI selection and refusal fixtures | Experimental; hardware verification pending |
+| `mips` BE | All five components, soft-float | Five QEMU user-mode component version checks; BE/LE/ABI selection and refusal fixtures | Experimental in 2.0.1; KN-2410/2510 hardware verification pending |
+
+The five components are daemon, UI, CLI, stable launcher and release tool: 25 cross-build outputs and 10 BE/LE emulator startup checks. New RC/stable signed fixtures list 28 payload files in the manifest plus four manifest/signature/checksum files (32 release assets total). The actual immutable v1.3.3 legacy bundle lists 25 payload files plus those four files (29 release assets total). Both verify without rewriting their inventories. Emulator version checks establish startup only, not a full native router test suite or Xray/RCI operation. Published v1.3.3 remains affected by its older Go toolchain as described in [security](SECURITY.md).
+
+## Resource planning on 128/256 MB routers
+
+Physical RAM is shared by KeeneticOS, Entware, production Xray, packet processing, page cache, other applications, KRM and temporary probe/update processes. A 256 MB label is not a 256 MB KRM budget. There is no measured guarantee that KN-2410 can run this entire chain under every workload. More RAM or a faster vendor routing benchmark is not a VPN throughput guarantee.
+
+Use existing limits before inventing a second mode: bound `subscriptions.max_nodes` and per-source input size; reduce `pool.size`, `benchmark.batch_size`, `benchmark.latency_workers` and finalist count; keep `benchmark.speed.enabled: false`. One temporary Xray batch can still dominate memory. Speed tests consume real traffic and share CPU/WAN with users. A longer refresh interval reduces repeated parsing/probes; keep enough independent VPN/WAN targets and the required health/failover quorum. Do not disable production Xray or emergency monitoring to save memory. These are operator-selected limits; existing configurations are not silently rewritten. See [configuration](CONFIGURATION.md).
+
+For a first **experimental** 256 MB trial, consider core-only, pool 2, max nodes 50 (per-source 50, at most 2 sources, response limit 512 KiB), batch 2, latency workers 2, finalists 2 and speed off. These are conservative starting limits, **not measured safe thresholds or defaults**; validate the full configuration and measure actual headroom before accepting it. On 128 MB, first establish that production Xray itself has reserve; core-only does not guarantee fit. Prefer ARM64/512 MB+ for more capacity, while still measuring the actual workload. A remote UI can remove its resident process from the router; keep it as a management-only client with verified TLS, never a second core.
+
+Subscription caches trade downloads for private disk I/O; keep them on suitable Entware storage and choose cadence deliberately. Telemetry history is bounded to 720 in-memory samples and does not periodically write flash. Rolling updates briefly need launcher, current/candidate components and signed staging; a successful steady-state trial does not prove update peak memory. Do not install a debug HTTP/pprof listener in production.
+
+### Reproducible software resource checks
+
+Run `./scripts/measure-low-memory.sh /ABSOLUTE/OUTSIDE-CHECKOUT/krm-memory` after building the isolated `krm-test` Docker image. It cross-checks Linux/amd64 **synthetic offline fixtures**, with networking disabled, two CPUs, 128 processes maximum and Docker memory/swap limits of 128/256/512/1024 MiB. It builds daemon/UI and subscription/benchmark/Xray test binaries; a fake local API/config replaces production Xray and no provider or router is contacted. It records sampled RSS/PSS/threads at 20 ms, cgroup peak/events, child CPU time and private heap profiles outside the checkout. Short-lived processes can fall between samples; the Xray-labelled test process is **not a real forwarding Xray process**.
+
+A Linux/amd64 development run with Go 1.27.3 on 2026-10-22 produced the following values. They are a reproducible methodology baseline, not a router sizing requirement:
+
+| Container limit MiB | Daemon peak RSS / PSS MiB | UI peak RSS / PSS MiB | Whole-fixture cgroup peak MiB | Peak process count | OOM / kills | Elapsed s / child CPU s |
+| --- | --- | --- | --- | --- | --- | --- |
+| 128 | 14.88 / 14.87 | 13.56 / 13.55 | 90.99 | 6 | 0 / 0 | 3.764 / 0.618 |
+| 256 | 14.90 / 14.89 | 16.08 / 16.07 | 105.64 | 6 | 0 / 0 | 3.748 / 0.624 |
+| 512 | 14.89 / 14.88 | 15.56 / 15.55 | 101.53 | 6 | 0 / 0 | 3.614 / 0.559 |
+| 1024 | 16.90 / 16.89 | 13.56 / 13.55 | 102.06 | 6 | 0 / 0 | 3.745 / 0.539 |
+
+These short runs omit KeeneticOS, real Xray resident/peak memory, actual WAN/VPN traffic, storage stalls and real update-trial overlap. The 67.9–76.8 MiB subscription **test process** includes the full unit suite and 50/500-node benchmarks; it is not KRM daemon steady-state usage. Near-zero per-process sampled CPU values reflect the short sampling window, not zero CPU cost. Core-only avoids the UI process, but RSS/PSS cannot simply be added to predict physical-device capacity or update peaks. Continuous hardware sampling under real traffic remains mandatory.
+
+The base64 VLESS parser's 500-node allocation benchmark reduced allocated bytes per operation from 3,489,916 to 1,801,959 (about 48%); compare with `go test -run '^$' -bench BenchmarkParse -benchmem ./internal/subscription` on the same host/toolchain/fixture. Allocation reduction is not an RSS/latency/CPU guarantee, and those numbers do not describe arbitrary Xray JSON imports. CPU/throughput optimization claims require controlled repeated runs, particularly on MIPS soft-float. Heap profiles are local offline artifacts; use `go tool pprof` on those files, never expose an HTTP profiling endpoint in production.
+
+Upstream [Xray issue #5926](https://github.com/XTLS/Xray-core/issues/5926) reports a pre-configuration MIPS runtime crash for v26.3.27 on an unspecified Keenetic/Linux4.9 installation. The report does not establish the exact ABI or a KRM defect; do not follow its speculative BE/LE substitution advice. It reinforces why `xray version`, strict-config validation and native KRM readiness must pass on the exact firmware before device acceptance.
+
+## KN-2410: stock firmware to an accepted installation
+
+1. Record label/hardware revision and supported Main KeeneticOS version. Back up firmware settings and Xray/Entware data privately; retain an independent SSH/recovery connection. Do not change the router address, WAN or firewall to establish KRM access.
+2. Prepare powered ext4 USB storage or the model's supported internal UBIFS using the official instructions. Install **BE** `mipssf-k3.4` Entware, enable only the necessary OPKG service access and verify `/opt`. Router CLI and Entware shell are different; verify SSH port/fingerprint rather than assuming them.
+3. Install a compatible XKeen/Xray separately. Prove its production strict-JSON config, actual routing tags, main process identity and API commands. Do not run multiple schedulers controlling the same Xray. Do not print subscription credentials/config contents into logs.
+4. Run the read-only preflight below, then the verified release's installer preflight. Verify native O32 BE, RAM, free `/opt` and staging space, Entware, Xray configuration and real RCI/NDMC capabilities. Missing prerequisites or ambiguous ABI must stop before service/config mutations.
+5. **Use the complete signature-verified v2.0.1 release containing `linux-mips`**, only after verifying its actual publication; stop if any asset is absent. v1.3.3 cannot install on this BE model. Use that one immutable release's `bootstrap-keenetic.sh`, matching pinned Ed25519 key, manifest/signatures and checksums. Follow [the full install runbook](AGENT_INSTALL.md). Start with an explicitly validated reduced configuration/core-only trial; fresh installer refuses overwrite.
+6. Observe readiness/reconciliation and test the selected client route, not just HTTP200. Measure steady idle, subscription parse/pool refresh, benchmark/probe, UI, update trial and restart peaks while real client traffic continues. Retain the route on ambiguous target/WAN results. A dead main Xray needs operator recovery; automatic direct bypass is unavailable.
+7. Before routine deployment, exercise reboot, process crash and trial failure/rollback on an authorized test router with independent access. Do not deliberately break production routing or interrupt flash writes. See [recovery procedure](AGENT_INSTALL.md#10-удаление-reinstall-и-rollback).
+
+Read-only diagnostics in the **Entware shell** (keep outputs local; do not dump full process arguments or config):
+
+```sh
+uname -srm
+opkg print-architecture
+od -An -tu1 -N8 /bin/sh
+cat /proc/meminfo
+df -Pk /opt /tmp
+/opt/sbin/xray version
+/opt/sbin/xray run -test -confdir /opt/etc/xray/configs
+```
+
+Paths are examples: substitute those of the actual production Xray. ELF byte5 must identify ELF32 and byte6 must identify BE (`2`) on KN-2410; the installer additionally checks machine/ABI. `run -test` validates configuration without starting a forwarding process; its diagnostics may reveal private details, so review/redact before sharing. Memory sampling should record `VmRSS`, `/proc/PID/smaps_rollup` PSS if available, peak RSS, Go heap/allocations, CPU time and child process count. Sample before and during each scenario and after cancellation; cancel must join temporary Xray/workers. Keep measurements and backups outside Git. Containers limited to 128/256/512/1024 MiB and QEMU are useful for controlled regressions but do not reproduce KeeneticOS, physical RAM contention, the router kernel or actual Xray traffic.
+
+Recovery before commit uses the launcher's verified prior slot. After commit, use the running controller's ownership-aware restore, then stop/uninstall, verify client WAN/Xray and reinstall a separately verified compatible release if required. Never point `current` at a random old binary or restore stale controller state over a committed update. Preserve config/state unless an explicit reviewed purge is wanted; drift must refuse automatic overwrite. Full commands and private backup requirements remain in the installation runbook.

@@ -34,7 +34,7 @@ web:
   enabled: false
   credentials_file: /tmp/krm-linux-runtime/credentials.json
 platform:
-  kind: linux-systemd
+  kind: keenetic
   xray_status_command: [/tmp/krm-linux-runtime/status]
 xray:
   config_dir: /tmp/krm-linux-runtime/xray

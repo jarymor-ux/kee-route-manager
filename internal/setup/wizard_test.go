@@ -66,7 +66,7 @@ func TestInitConfigRussianScenarioProducesValidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Platform.Kind != "keenetic" || cfg.Pool.Size != 5 || cfg.Update.Channel != "rc" || cfg.Update.AutoApply {
+	if cfg.Platform.Kind != "keenetic" || cfg.Pool.Size != 5 || cfg.Update.Channel != "stable" || cfg.Update.AutoApply {
 		t.Fatalf("unexpected generated config: platform=%q pool=%d update=%#v", cfg.Platform.Kind, cfg.Pool.Size, cfg.Update)
 	}
 	if !strings.Contains(out, "Выберите язык") || !strings.Contains(out, "Создать конфигурацию?") {
@@ -443,6 +443,25 @@ func TestTranslationParity(t *testing.T) {
 		name := rt.Field(i).Name
 		if rv.Field(i).String() == "" || ev.Field(i).String() == "" {
 			t.Fatalf("translation key %s missing in RU or EN", name)
+		}
+	}
+}
+
+func TestWizardDefaultsToStableSignedUpdateChecksWithoutApplying(t *testing.T) {
+	for _, language := range []string{"1", "2"} {
+		script := wizardScript(language, false, false, "y")
+		// The script normally opts out; Enter must now opt in, followed by
+		// another Enter accepting the stable channel.
+		if !strings.HasSuffix(script, "n\ny\n") {
+			t.Fatal("unexpected wizard fixture")
+		}
+		script = strings.TrimSuffix(script, "n\ny\n") + "\n\ny\n"
+		cfg, _, _, err := runWizardToFile(t, script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Update.Enabled || cfg.Update.Channel != "stable" || cfg.Update.AutoApply {
+			t.Fatalf("unsafe default update options: %#v", cfg.Update)
 		}
 	}
 }

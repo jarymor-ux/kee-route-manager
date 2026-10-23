@@ -18,7 +18,7 @@ func TestRegressionSingleSlotReplacement(t *testing.T) {
 	for _, size := range []int{1, 2} {
 		t.Run(string(rune('0'+size)), func(t *testing.T) {
 			m, _, _ := fixture(t)
-			c, err := config.Load("../../configs/linux-systemd.yaml")
+			c, err := config.Load("../../configs/keenetic.yaml")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,7 +106,7 @@ func TestRegressionEmergencyBudgetWAN(t *testing.T) {
 	for _, budget := range []time.Duration{200 * time.Millisecond, 600 * time.Millisecond} {
 		t.Run(budget.String(), func(t *testing.T) {
 			m, tun, _ := fixture(t)
-			c, err := config.Load("../../configs/linux-systemd.yaml")
+			c, err := config.Load("../../configs/keenetic.yaml")
 			if err != nil {
 				t.Fatal(err)
 			}

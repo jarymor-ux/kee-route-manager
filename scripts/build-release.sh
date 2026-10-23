@@ -27,8 +27,8 @@ trap 'rm -rf "$TOOL_DIR"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TOOL_DIR/krm-release-tool" ./cmd/krm-release-tool
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LDFLAGS="-s -w -X main.version=$KRM_VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME"
-for target in amd64 arm64 armv7 mipsle; do
- case "$target" in armv7) arch=arm; arm=7; mips=;; mipsle) arch=mipsle; arm=; mips=softfloat;; *) arch=$target; arm=; mips=;; esac
+for target in amd64 arm64 armv7 mipsle mips; do
+ case "$target" in armv7) arch=arm; arm=7; mips=;; mipsle|mips) arch=$target; arm=; mips=softfloat;; *) arch=$target; arm=; mips=;; esac
  for component in kee-route-managerd kee-route-manager-ui kee-route-managerctl kee-route-manager-launcher krm-release-tool; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" GOMIPS="$mips" go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/$component-linux-$target" "./cmd/$component"
  done
@@ -49,5 +49,5 @@ for f in sorted(p.iterdir()):
 (p/'SHA256SUMS').write_text(''.join(entries))
 PY
 "$TOOL_DIR/krm-release-tool" sign --private "$PRIVATE_KEY" --input "$DIST/SHA256SUMS" --out "$DIST/SHA256SUMS.sig"
-python3 scripts/verify-release.py "$DIST"
+python3 scripts/verify-release.py "$DIST" --current
 printf 'Signed %s artifacts: %s\n' "$CHANNEL" "$DIST"

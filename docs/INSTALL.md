@@ -1,18 +1,24 @@
 # Installation
 
-**Current releases:** [v1.3.3 (stable)](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v1.3.3) and [v1.3.3-rc.1 (release candidate)](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v1.3.3-rc.1). Choose a single immutable release and use its matching artifacts. Do not install from the mutable `main` branch or `/releases/latest`.
+**Version 2.0.1 security:** built with Go 1.27.3, with the fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). Legacy immutable v1.3.3 uses affected Go 1.27.2; its signatures do not patch that toolchain. Follow [offline migration](BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets) before upgrading an older generated Keenetic YAML. No asset or historical tag is rewritten.
+
+**Release selection:** this runbook accompanies [v2.0.1](https://github.com/jarymor-ux/kee-route-manager/releases/tag/v2.0.1). Verify that its complete signed asset set is actually published before starting; if missing, stop. Choose one immutable release and matching artifacts. Never install from mutable `main` or `/releases/latest`, and do not substitute the older vulnerable v1.3.3.
 
 This is a short entry point. The authoritative step-by-step runbook, including backups, trust verification, migration and recovery, is [AGENT_INSTALL.md](AGENT_INSTALL.md).
+
+**Scope:** only Keenetic/Netcraze stock firmware and working Entware/Xray. See [hardware catalogue and KN-2410 steps](HARDWARE.md). Version 2.0.1 adds signed MIPS BE binaries; KN-2410/2510 remain experimental and require actual hardware acceptance. A separate PC can run the management UI manually, never KRM Core as a router.
 
 ## Prerequisites
 
 - A working Xray installation with valid **strict-JSON** configuration, known inbound/routing tags and access to its actual files. KRM does **not** install or configure Xray, XKeen or Entware for you.
-- Authorized SSH/root access, an out-of-band recovery path and a private backup of router/Xray configuration. Hardware support on Keenetic, OpenWrt and Linux remains experimental; read [known limitations](KNOWN_LIMITATIONS.md).
+- Authorized SSH/root access, an out-of-band recovery path and a private backup of router/Xray configuration. Hardware support on Keenetic/Netcraze remains experimental; read [known limitations](KNOWN_LIMITATIONS.md).
 - Independent health targets and your own supported VLESS subscription(s). Do not commit subscription URLs, provider headers, credentials or device identifiers to Git.
+
+Before installation, run `kee-route-managerctl preflight --config /PRIVATE/config.yaml --mode core` (or `local-ui`) with the signature-verified matching CLI. `--release-dir /PRIVATE/verified-release` also checks the extracted bundle. JSON results and the exit status describe actual gates, not model-name guesses; a failed required gate must stop installation. The Keenetic wrapper runs this preflight automatically. Check actual free `/opt` and staging space; use a private `TMPDIR` on persistent Entware storage rather than filling RAM-backed `/tmp`. For KN-2410, follow the [stock firmware → storage → BE Entware → XKeen/Xray → preflight → signed KRM → client-route procedure](HARDWARE.md#kn-2410-stock-firmware-to-an-accepted-installation).
 
 ## Fresh interactive installation
 
-1. Select the signed `bootstrap-keenetic.sh`, `bootstrap-openwrt.sh` or `bootstrap-linux.sh` **asset** from the same fixed release. Verify the source, release inventory and signing-key trust as described in the runbook.
+1. Select the signed `bootstrap-keenetic.sh` **asset** from the same fixed release. Verify the source, release inventory and signing-key trust as described in the runbook.
 2. Download that specific platform asset to the target host, **without piping the download into a shell**:
 
    ```sh
@@ -28,7 +34,7 @@ For generated local UI, the controller API uses TLS on loopback and the UI trust
 
 ## Prepared / noninteractive configuration
 
-To skip the wizard, prepare a private controller YAML from `configs/keenetic.yaml`, `configs/openwrt.yaml` or `configs/linux-systemd.yaml`, validate the Xray paths/tags and run:
+To skip the wizard, prepare a private controller YAML from `configs/keenetic.yaml`, validate the Xray paths/tags and run:
 
 ```sh
 KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstrap.sh
@@ -36,6 +42,6 @@ KRM_MODE=core KRM_CONFIG_FILE=/root/krm-install/config.yaml sh /tmp/krm-bootstra
 
 For prepared `KRM_MODE=local-ui`, supply **both** `KRM_CONFIG_FILE` and `KRM_UI_CONFIG_FILE`, with matching controller API and UI upstream TLS settings. Unlike wizard-generated files, the tracked controller templates use an HTTP **loopback-only** API and the tracked UI templates use `http://127.0.0.1:9443` upstream. Do not change either loopback upstream address to a LAN/WAN listener. The supplied UI templates bind `0.0.0.0:9444` with browser-facing TLS: review or restrict that listener to the trusted private interface before installing.
 
-Standalone `KRM_MODE=ui` needs a prepared UI YAML, `KRM_UPSTREAM_CA_FILE` and an authenticated SSH tunnel to the controller; no unchecked upstream certificates. Existing installations are **never overwritten** by the clean installer. Use the runbook's dedicated migration/restore/uninstall process, not the fresh bootstrap over a running installation.
+UI-only on a supported router uses `KRM_MODE=ui` and needs a prepared UI YAML, `KRM_UPSTREAM_CA_FILE` and an authenticated SSH tunnel to the controller; no unchecked upstream certificates. Existing installations are **never overwritten** by the clean installer. Use the runbook's dedicated migration/restore/uninstall process, not the fresh bootstrap over a running installation.
 
-Signed update **checks** can be automatic, but applying a release requires an explicit UI/CLI action. The launcher is maintained separately; on Linux/OpenWrt `firewall_mode: managed`, update staging/application is disabled. See [release details](RELEASE.md), [configuration](CONFIGURATION.md) and [limitations](KNOWN_LIMITATIONS.md).
+Signed update **checks** can be automatic, but applying a release requires an explicit UI/CLI action. The launcher is maintained separately; remote management UI is updated manually. See [release details](RELEASE.md), [configuration](CONFIGURATION.md) and [limitations](KNOWN_LIMITATIONS.md).

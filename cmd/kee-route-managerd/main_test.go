@@ -47,7 +47,7 @@ func TestEntrypoint(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "controller.yaml")
-	template, err := os.ReadFile("../../configs/linux-systemd.yaml")
+	template, err := os.ReadFile("../../configs/keenetic.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

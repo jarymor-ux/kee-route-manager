@@ -64,8 +64,8 @@ func Install(configFile, uiConfig, releaseDir, binDir string) error {
 		if err != nil {
 			return err
 		}
-		if ui.Instance.Role != "ui" || c.Platform.Kind != "keenetic" && c.Platform.Kind != "openwrt" {
-			return errors.New("joint local UI supervision supports Keenetic/OpenWrt; keep Linux UI in its unprivileged service")
+		if ui.Instance.Role != "ui" || c.Platform.Kind != "keenetic" {
+			return errors.New("joint local UI supervision requires Keenetic/Netcraze")
 		}
 		// Hold the configured port through bootstrap, both proving the prior UI
 		// stopped and preventing a competing supervisor from binding mid-install.
@@ -94,11 +94,20 @@ func Install(configFile, uiConfig, releaseDir, binDir string) error {
 	if uiConfig != "" {
 		components = append(components, "kee-route-manager-ui")
 	}
+	interruptedLinks := make(map[string]bool)
 	// Preflight every replacement before changing any of the standard entrypoints.
 	for _, name := range components {
 		path := filepath.Join(binDir, name)
-		if _, err := os.Lstat(path + ".launcher-new"); !os.IsNotExist(err) {
-			return fmt.Errorf("temporary executable entry already exists: %s", path+".launcher-new")
+		if info, err := os.Lstat(path + ".launcher-new"); err == nil {
+			// The committed bootstrap record precedes temporary publication.
+			// Only that same verified seed can own this exact interrupted link.
+			target, linkErr := os.Readlink(path + ".launcher-new")
+			if existing == nil || info.Mode()&os.ModeSymlink == 0 || linkErr != nil || target != filepath.Join(c.Update.InstallDir, "current", name) {
+				return fmt.Errorf("temporary executable entry already exists: %s", path+".launcher-new")
+			}
+			interruptedLinks[name] = true
+		} else if !os.IsNotExist(err) {
+			return err
 		}
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
@@ -135,11 +144,18 @@ func Install(configFile, uiConfig, releaseDir, binDir string) error {
 	for _, name := range components {
 		path := filepath.Join(binDir, name)
 		tmp := path + ".launcher-new"
-		if _, err := os.Lstat(tmp); !os.IsNotExist(err) {
-			return fmt.Errorf("temporary executable entry already exists: %s", tmp)
-		}
-		if err = os.Symlink(filepath.Join(c.Update.InstallDir, "current", name), tmp); err != nil {
-			return err
+		if interruptedLinks[name] {
+			target, e := os.Readlink(tmp)
+			if e != nil || target != filepath.Join(c.Update.InstallDir, "current", name) {
+				return fmt.Errorf("interrupted executable entry changed: %s", tmp)
+			}
+		} else {
+			if _, err := os.Lstat(tmp); !os.IsNotExist(err) {
+				return fmt.Errorf("temporary executable entry already exists: %s", tmp)
+			}
+			if err = os.Symlink(filepath.Join(c.Update.InstallDir, "current", name), tmp); err != nil {
+				return err
+			}
 		}
 		if err = os.Rename(tmp, path); err != nil {
 			_ = os.Remove(tmp)

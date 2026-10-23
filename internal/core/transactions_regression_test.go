@@ -119,7 +119,7 @@ func TestActionEventRoundTripWithLargeDiagnostics(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := m.cfg
-			c.Platform.Kind = "linux-systemd"
+			c.Platform.Kind = "keenetic"
 			c.Platform.XrayRestartCommand = []string{script, payload}
 			p, _, err := platform.New(c)
 			if err != nil {

@@ -66,7 +66,7 @@ func TestInteractiveInstallerDefaultsDoNotChangeLegacyDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	var out strings.Builder
-	if err := InitConfigForPlatform(strings.NewReader(installerScript("2", "", "", nil)), &out, path, false, PlatformOpenWrt); err != nil {
+	if err := InitConfigForPlatform(strings.NewReader(installerScript("2", "", "", nil)), &out, path, false, PlatformKeenetic); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(path)
@@ -76,7 +76,7 @@ func TestInteractiveInstallerDefaultsDoNotChangeLegacyDefaults(t *testing.T) {
 	if cfg.Benchmark.FullInterval.Duration != 6*time.Hour || cfg.Subscriptions.CacheEnabled {
 		t.Fatal("incorrect new interactive defaults")
 	}
-	options := validOptions(PlatformOpenWrt)
+	options := validOptions(PlatformKeenetic)
 	generated, err := BuildControllerConfig(options)
 	if err != nil {
 		t.Fatal(err)
@@ -136,20 +136,24 @@ func TestLocalUIWizardValidatesBindPortAndHostnameInBothLanguages(t *testing.T) 
 			if ui.Web.Listen != "192.168.1.1:443" || core.API.Listen != "127.0.0.1:9443" || core.Benchmark.FullInterval.Duration != 7*time.Minute || core.Subscriptions.CacheEnabled {
 				t.Fatal("UI options modified controller ownership or benchmark settings")
 			}
-			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || !ui.Web.TLS.AutoGenerate || !containsSetupHost(ui.Web.TLS.Hosts, "alice.jopa") {
-				t.Fatal("UI TLS trust or hostname SAN missing")
+			if ui.UIProxy.Upstream != "https://127.0.0.1:9443" || ui.UIProxy.InsecureTLS || ui.Web.TLS.Enabled || ui.Web.TLS.AutoGenerate {
+				t.Fatal("HTTP UI should retain verified TLS controller upstream")
 			}
 			messages := messagesEN
 			if lang == "1" {
 				messages = messagesRU
 			}
-			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, "https://alice.jopa", "alice.jopa → 192.168.1.1"} {
+			for _, message := range []string{messages.InvalidUIBind, messages.InvalidUIPort, messages.InvalidUIHostname, messages.UIHTTPWarning, "http://alice.jopa:443", "alice.jopa → 192.168.1.1"} {
 				if !strings.Contains(out.String(), message) {
 					t.Fatalf("missing prompt/summary %q", message)
 				}
 			}
-			// Generate exactly the configured UI identity in an isolated test directory.
-			uiTLS := ui.Web.TLS
+			// HTTPS remains available in an explicitly prepared UI config.
+			secureUI, err := BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Listen: ui.Web.Listen, Hostname: "alice.jopa"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			uiTLS := secureUI.Web.TLS
 			uiTLS.CertFile = filepath.Join(dir, "ui.crt")
 			uiTLS.KeyFile = filepath.Join(dir, "ui.key")
 			if err := tlsutil.EnsureTLS(uiTLS, ui.Web.Listen); err != nil {
@@ -189,7 +193,7 @@ func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
 			t.Fatalf("invalid hostname accepted: %q", name)
 		}
 	}
-	ui, err := BuildUIConfig(UIOptions{Platform: PlatformLinuxSystemd, Hostname: "Alice.Jopa"})
+	ui, err := BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Hostname: "Alice.Jopa"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +204,7 @@ func TestPanelHostnameValidationAndSecureUIDefault(t *testing.T) {
 		t.Fatal("programmatic builder accepted invalid hostname")
 	}
 	// Explicit prepared bindings retain their configured deployment behavior.
-	ui, err = BuildUIConfig(UIOptions{Platform: PlatformOpenWrt, Listen: "192.168.88.1:18443"})
+	ui, err = BuildUIConfig(UIOptions{Platform: PlatformKeenetic, Listen: "192.168.88.1:18443"})
 	if err != nil || ui.Web.Listen != "192.168.88.1:18443" {
 		t.Fatal("prepared listen ignored", err)
 	}
@@ -212,7 +216,7 @@ func TestLocalUIWizardLeavesNoPairOnCoreWriteFailure(t *testing.T) {
 	uiPath := filepath.Join(dir, "ui.yaml")
 	tlsDir := filepath.Join(dir, "tls")
 	var out strings.Builder
-	err := InitLocalUIConfig(strings.NewReader(installerScript("2", "", "", []string{"", "", ""})), &out, corePath, uiPath, tlsDir, PlatformOpenWrt)
+	err := InitLocalUIConfig(strings.NewReader(installerScript("2", "", "", []string{"", "", ""})), &out, corePath, uiPath, tlsDir, PlatformKeenetic)
 	if err == nil {
 		t.Fatal("unwritable core destination accepted")
 	}
