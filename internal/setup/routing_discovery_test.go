@@ -119,7 +119,7 @@ func TestDiscoverRoutingRefusesConflictingUnconditionalOwners(t *testing.T) {
 func TestDiscoverRoutingRespectsGlobalCatchAllOrdering(t *testing.T) {
 	for _, tc := range []struct {
 		name, rules string
-		accept bool
+		accept      bool
 	}{
 		{
 			name: "global DIRECT before VPN",
