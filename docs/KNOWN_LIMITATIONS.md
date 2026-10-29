@@ -1,6 +1,6 @@
 # Known limitations
 
-**Toolchain security:** version 2.0.3 builds with Go 1.27.3 and includes [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). The immutable legacy v1.3.3 release uses affected Go 1.27.2 and is not repaired by this source change. Only install the complete signature-verified v2.0.3 assets once actually published; never substitute unverified development builds. Signature validity is independent of known-vulnerability and hardware acceptance checks.
+**Toolchain security:** version 2.0.4 builds with Go 1.27.3 and includes [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) (`crypto/x509` compromised-intermediate distrust). The immutable legacy v1.3.3 release uses affected Go 1.27.2 and is not repaired by this source change. Only install the complete signature-verified v2.0.4 assets once actually published; never substitute unverified development builds. Signature validity is independent of known-vulnerability and hardware acceptance checks.
 
 Only Keenetic/Netcraze are current router targets. Hardware compatibility remains experimental; Version 2.0.1 includes MIPS BE; native hardware verification remains pending and immutable v1.3.3 has no BE binary. See [hardware catalogue](HARDWARE.md) and [offline configuration migration](BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets).
 

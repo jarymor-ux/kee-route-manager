@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.1.0-rc.4 — 2026-10-29
+## 2.1.0-rc.5 — 2026-10-29
+
+- Include the 2.0.4 stable subscription/name node preferences and aligned release documentation. Preserve the existing candidate installer and its experimental hardware, HTTP browser-transport and IPv4 limits.
+- Retain cancelled rc.4 without published assets or tag reuse; both channels include the preflight ESRCH fixture correction, with no additional runtime change.
+
+## 2.1.0-rc.4 — 2026-10-29 (unpublished tag)
 
 - Include the 2.0.3 source/name automatic-selection preferences, endpoint-rotation persistence, recoverable legacy migration and active-alias protection. Preserve explicit re-enable records and unresolved old source attribution across restart/cache changes.
 - Retain the existing 2.1 candidate installer behavior and its experimental hardware, HTTP browser-transport and IPv4 limitations. Older-version downgrade cannot preserve the new logical preferences.
@@ -25,7 +30,12 @@ Experimental candidate; exact-model native installation, LAN/UI, reboot and powe
 - Discover unambiguous native VPN routes, offer a guarded private-LAN/loopback HTTP browser UI with an unencrypted-transport warning and verified HTTPS upstream, and enable stable signed update checks while keeping auto-apply disabled.
 - Correct native Xray status recognition for symlink-installed executables while retaining production-process/probe isolation.
 
-## 2.0.3 — 2026-10-29
+## 2.0.4 — 2026-10-29
+
+- Publish the stable subscription/name node preferences described below after cancelling the unpublished 2.0.3 tag. Branch CI exposed an existing preflight fixture race: Linux ESRCH during `/proc` read means the killed child is already gone. Backport the existing RC test correction; this does not change application runtime behavior.
+- Retain cancelled `v2.0.3` and `v2.1.0-rc.4` tags without moving/reusing them. Neither has published release assets; the aligned candidate target is `2.1.0-rc.5`.
+
+## 2.0.3 — 2026-10-29 (unpublished tag)
 
 - Keep node automatic-selection preferences by configured source ID and exact node name while retaining connection fingerprints for routing. IP/port and other connection changes, temporary disappearance and restart no longer reset a named node's exclusion.
 - Preserve actual subscription/name aliases through connection deduplication and caching. Isolate different sources, share same-source/name settings and protect the active identity group. Refuse a refreshed excluded alias on the active connection before replacing its cache, including after a concurrent manual switch.
