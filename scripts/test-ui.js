@@ -1066,15 +1066,16 @@ async function panelEditorChecks() {
 
 async function nodeAutoSelectChecks() {
   const h = appHarness(); await new Promise(setImmediate);
-  h.run("authenticated=true; permissions=new Set(allPermissions); csrf='node-csrf'; activePage='nodes'; nodesData=[{id:'active',label:'Active',active:true,auto_select_enabled:true},{id:'fallback',label:'Fallback',auto_select_enabled:true}]; renderNodes()");
+  h.run("authenticated=true; permissions=new Set(allPermissions); csrf='node-csrf'; activePage='nodes'; nodesData=[{id:'active',label:'Active',active:true,auto_select_enabled:true},{id:'fallback',label:'Fallback',auto_select_enabled:true},{id:'alias',label:'Alias',auto_select_enabled:true,auto_select_locked:true}]; renderNodes()");
   assert.equal(h.run("requestPermission('/api/v1/nodes/auto-select')"),'vpn.control','preference writes require control permission');
   let finish;
   h.respond((url) => url.endsWith('/auto-select') ? new Promise(resolve => { finish=resolve; }) : {status:200,ok:true,data:url.endsWith('/nodes')?[{id:'active',label:'Active',active:true,auto_select_enabled:true},{id:'fallback',label:'Fallback',auto_select_enabled:false}]:{state:{pool:[],sources:{}}}});
   const change=h.run("setNodeAutoSelect('fallback',false)");
   await new Promise(setImmediate);
-  await h.run("setNodeAutoSelect('fallback',false);setNodeAutoSelect('active',false)");
+  const blocked=h.run("setNodeAutoSelect('fallback',false);setNodeAutoSelect('active',false);setNodeAutoSelect('alias',false)");
   const writes=h.requests.filter(req=>req.url.endsWith('/auto-select'));
   assert.equal(writes.length,1,'pending duplicate and active-node exclusion must not be submitted');
+  await blocked;
   assert.equal(writes[0].options.headers['X-KRM-CSRF'],'node-csrf');
   assert.deepEqual(JSON.parse(writes[0].options.body),{id:'fallback',enabled:false});
   finish({status:200,ok:true,data:{ok:true}});await change;

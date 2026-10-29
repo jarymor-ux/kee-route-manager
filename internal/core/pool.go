@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/jarymor-ux/kee-route-manager/internal/model"
@@ -141,12 +142,13 @@ func nodeSetChanged(a, b []model.Node) bool {
 	if len(a) != len(b) {
 		return true
 	}
-	set := map[string]bool{}
+	set := map[string]model.Node{}
 	for _, n := range a {
-		set[n.ID] = true
+		set[n.ID] = n
 	}
 	for _, n := range b {
-		if !set[n.ID] {
+		old, exists := set[n.ID]
+		if !exists || !slices.Equal(old.SubscriptionIdentities(), n.SubscriptionIdentities()) {
 			return true
 		}
 	}

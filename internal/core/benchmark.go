@@ -171,6 +171,12 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 		return finish(err)
 	}
 	if len(fetched.Nodes) == 0 {
+		m.routeMu.Lock()
+		err = m.migrateNodePreferences(nil)
+		m.routeMu.Unlock()
+		if err != nil {
+			return finish(err)
+		}
 		err = fmt.Errorf("no nodes available from subscriptions or cache")
 		return finish(err)
 	}
@@ -184,6 +190,12 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 		allNodes[n.ID] = n
 	}
 
+	m.routeMu.Lock()
+	err = m.migrateNodePreferences(fetched.Nodes)
+	m.routeMu.Unlock()
+	if err != nil {
+		return finish(err)
+	}
 	eligible := autoSelectNodes(fetched.Nodes, m.store.State())
 	_ = h.Update("benchmark", 0, len(eligible), "testing nodes")
 	var results []model.Measurement
@@ -221,12 +233,21 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 	for _, node := range m.store.Nodes() {
 		allNodes[node.ID] = node
 	}
+	// Current provider attribution wins for unchanged connection identities.
+	for _, node := range fetched.Nodes {
+		allNodes[node.ID] = node
+	}
 
 	// Health failover may have changed the active slot while the long benchmark was
 	// running. Re-read state under the routing mutation lock and retain that node.
 	state := m.store.State()
 	if mode != "manual" && state.AutomaticRoutingPaused {
 		return finish(nil)
+	}
+	// A manual switch or preference edit during probes may have made a fresh
+	// alias conflict with the active route. Refuse before writing its node cache.
+	if err = checkActiveNodeIdentities(state, fetched.Nodes); err != nil {
+		return finish(err)
 	}
 	// Preferences may change while probes run; never apply an excluded winner.
 	selected := m.selectPool(autoSelectNodes(eligible, state), results)

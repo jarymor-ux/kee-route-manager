@@ -66,6 +66,28 @@ func storeTree(t *testing.T, root string) map[string][32]byte {
 	return hashes
 }
 
+func TestInspectReadOnlyPreservesLogicalNodePreferencesAndAliases(t *testing.T) {
+	s, initial := readOnlyFixture(t)
+	nodes := []model.Node{{ID: "one", Sources: []string{"provider"}, SubscriptionNodes: []model.NodeIdentity{{SourceID: "provider", Name: "Active"}}}, {ID: "other", Label: "Amsterdam", Sources: []string{"provider"}}}
+	if err := s.ReplaceNodes(nodes); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(st *model.State) error {
+		st.NodeAutoSelect = map[string]bool{nodes[1].PreferenceKeys()[0]: false}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := storeTree(t, filepath.Dir(s.Path("")))
+	inspected, err := InspectReadOnly(s.Path(""), s.CachePath(""), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspected.NodeAutoSelectEnabled(nodes[1]) || !reflect.DeepEqual(before, storeTree(t, filepath.Dir(s.Path("")))) {
+		t.Fatal("update trial changed policy/cache/journal or lost logical exclusion")
+	}
+}
+
 func TestInspectReadOnlyValidatesPrimaryWithoutRecoveryOrWrites(t *testing.T) {
 	for _, failure := range []string{"none", "corrupt-primary", "missing-cache", "duplicate-node", "pending", "journal-state-drift", "unknown-field", "trailing-json", "symlink"} {
 		t.Run(failure, func(t *testing.T) {

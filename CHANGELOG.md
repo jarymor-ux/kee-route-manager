@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0-rc.4 — 2026-10-29
+
+- Include the 2.0.3 source/name automatic-selection preferences, endpoint-rotation persistence, recoverable legacy migration and active-alias protection. Preserve explicit re-enable records and unresolved old source attribution across restart/cache changes.
+- Retain the existing 2.1 candidate installer behavior and its experimental hardware, HTTP browser-transport and IPv4 limitations. Older-version downgrade cannot preserve the new logical preferences.
+
 ## 2.1.0-rc.3 — 2026-10-29
 
 - Include the persistent node automatic-selection controls from 2.0.2: active-node protection, benchmark/failover/recovery exclusions, durable preferences, authenticated API and desktop/mobile UI controls.
@@ -19,6 +24,13 @@ Experimental candidate; exact-model native installation, LAN/UI, reboot and powe
 - Add durable dependency/native/application installation journals, verified retries, no-overwrite publication and ownership-aware rollback before activation; resume matching signed launcher/start intent without overwriting config or credentials.
 - Discover unambiguous native VPN routes, offer a guarded private-LAN/loopback HTTP browser UI with an unencrypted-transport warning and verified HTTPS upstream, and enable stable signed update checks while keeping auto-apply disabled.
 - Correct native Xray status recognition for symlink-installed executables while retaining production-process/probe isolation.
+
+## 2.0.3 — 2026-10-29
+
+- Keep node automatic-selection preferences by configured source ID and exact node name while retaining connection fingerprints for routing. IP/port and other connection changes, temporary disappearance and restart no longer reset a named node's exclusion.
+- Preserve actual subscription/name aliases through connection deduplication and caching. Isolate different sources, share same-source/name settings and protect the active identity group. Refuse a refreshed excluded alias on the active connection before replacing its cache, including after a concurrent manual switch.
+- Migrate recoverable fingerprint bans before probing/cache replacement and after startup reconciliation, preserving unresolved legacy source attribution across refresh/restart. Retain explicit allow records so late legacy reappearance cannot undo re-enabling. Missing historical names remain an explicit migration limitation.
+- Preserve metadata during read-only update trials and document older-version downgrade limitations. Add endpoint-rotation, alias, migration, concurrency, cache-isolation and Chromium regressions. No launcher-protocol or configuration-default changes; hardware acceptance remains unchanged.
 
 ## 2.0.2 — 2026-10-29
 

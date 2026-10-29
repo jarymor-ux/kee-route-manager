@@ -3,6 +3,7 @@ package store
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -455,8 +456,28 @@ func (s *Store) validateWithNodes(v model.State, nodes map[string]model.Node) er
 			return fmt.Errorf("invalid excluded node identity")
 		}
 	}
-	if v.ActiveNodeID != "" && v.ExcludedNodeIDs[v.ActiveNodeID] {
-		return fmt.Errorf("active node cannot be excluded")
+	for key := range v.NodeAutoSelect {
+		if len(key) != 64 {
+			return fmt.Errorf("invalid node preference identity")
+		}
+		if _, err := hex.DecodeString(key); err != nil {
+			return fmt.Errorf("invalid node preference identity")
+		}
+	}
+	for id, sources := range v.LegacyNodeSources {
+		if id == "" || !v.ExcludedNodeIDs[id] || len(sources) == 0 {
+			return fmt.Errorf("invalid legacy node attribution")
+		}
+		seenSources := map[string]bool{}
+		for _, source := range sources {
+			if source == "" || seenSources[source] {
+				return fmt.Errorf("invalid legacy node source")
+			}
+			seenSources[source] = true
+		}
+	}
+	if active, ok := nodes[v.ActiveNodeID]; ok && !v.NodeAutoSelectEnabled(active) {
+		return fmt.Errorf("active subscription node cannot be excluded")
 	}
 	seen := map[string]bool{}
 	for i, slot := range v.Pool {
@@ -516,6 +537,7 @@ func copyNodes(nodes map[string]model.Node) map[string]model.Node {
 func cloneNode(node model.Node) model.Node {
 	node.Sources = append([]string(nil), node.Sources...)
 	node.ALPN = append([]string(nil), node.ALPN...)
+	node.SubscriptionNodes = append([]model.NodeIdentity(nil), node.SubscriptionNodes...)
 	return node
 }
 func (s *Store) persist(v model.State) error {

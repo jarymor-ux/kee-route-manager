@@ -171,8 +171,11 @@ func Fingerprint(n model.Node) string {
 func Merge(xs []model.Node, max int) []model.Node {
 	m := map[string]model.Node{}
 	for _, n := range xs {
+		n.SubscriptionNodes = n.SubscriptionIdentities()
 		if old, ok := m[n.ID]; ok {
 			old.Sources = uniq(append(old.Sources, n.Sources...))
+			old.SubscriptionNodes = append(old.SubscriptionNodes, n.SubscriptionNodes...)
+			old.SubscriptionNodes = old.SubscriptionIdentities()
 			m[n.ID] = old
 		} else {
 			n.Sources = uniq(n.Sources)

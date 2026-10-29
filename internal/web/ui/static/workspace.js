@@ -62,7 +62,7 @@ function nodeRows(items, controls = false) {
     return `<tr>
       <td><div class="node-primary"><strong>${esc(node.label)}</strong>${node.active ? ` ${badge('Активен', 'ok')}` : node.in_pool ? ` ${badge('Пул')}` : ''}${node.auto_select_enabled === false ? ` ${badge('Исключён', 'warn')}` : ''}</div>
       <span class="node-mobile-meta">${source} · ${state === 'healthy' ? badge('Доступен', 'ok') : state === 'error' ? badge('Ошибка', 'bad') : badge('Не проверен')}</span><details class="node-details"><summary>Подробнее<span class="sr-only"> об узле ${esc(node.label)}</span></summary><dl><dt>Источник</dt><dd>${source}</dd><dt>Тип</dt><dd>${type}</dd><dt>Score</dt><dd>${score}</dd></dl></details>
-      ${controls && can('vpn.control') ? `<label class="node-auto-select-label"${node.active ? ' title="Активный узел нельзя исключить. Сначала переключитесь на другой узел."' : ''}><input type="checkbox" role="switch" class="node-auto-select" data-id="${esc(node.id)}" aria-label="Автовыбор для ${esc(node.label)}"${node.auto_select_enabled !== false ? ' checked=""' : ''}${node.active || nodeSelectionSaving.has(node.id) ? ' disabled=""' : ''}>Автовыбор</label>` : ''}</td>
+      ${controls && can('vpn.control') ? `<label class="node-auto-select-label"${node.active ? ' title="Активный узел нельзя исключить. Сначала переключитесь на другой узел."' : node.auto_select_locked ? ' title="Узел имеет общее имя с активным узлом в одной из подписок. Сначала переключитесь на другой узел."' : ''}><input type="checkbox" role="switch" class="node-auto-select" data-id="${esc(node.id)}" aria-label="Автовыбор для ${esc(node.label)}"${node.auto_select_enabled !== false ? ' checked=""' : ''}${node.active || (node.auto_select_locked && node.auto_select_enabled !== false) || nodeSelectionSaving.has(node.id) ? ' disabled=""' : ''}>Автовыбор</label>` : ''}</td>
       <td>${source}</td><td>${type}</td><td>${latency}</td><td>${speed}</td><td>${score}</td>
       <td>${state === 'healthy' ? badge('Доступен', 'ok') : state === 'error' ? badge('Ошибка', 'bad') : badge('Не проверен')}</td>
     </tr>`;
@@ -91,7 +91,7 @@ function renderNodes(force = false) {
 
 async function setNodeAutoSelect(id, enabled) {
   const node = nodesData.find((item) => item.id === id);
-  if (!can('vpn.control') || !node || (!enabled && node.active) || nodeSelectionSaving.has(id)) return;
+  if (!can('vpn.control') || !node || (!enabled && (node.active || node.auto_select_locked)) || nodeSelectionSaving.has(id)) return;
   const generation = authGeneration;
   const focused = captureWorkspaceFocus($('#nodes-body'), ['.node-auto-select'], 'id');
   nodeSelectionSaving.add(id);

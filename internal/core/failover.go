@@ -136,7 +136,7 @@ func (m *Manager) checkHealth(ctx context.Context) {
 			return
 		}
 		for _, slot := range m.store.State().Pool {
-			if slot.NodeID != "" && !state.ExcludedNodeIDs[slot.NodeID] && (slot.LastVerifiedAt.IsZero() || time.Since(slot.LastVerifiedAt) >= m.cfg.Health.HotPoolFreshness.Duration) {
+			if slot.NodeID != "" && m.nodeAutoSelectEnabled(state, slot.NodeID) && (slot.LastVerifiedAt.IsZero() || time.Since(slot.LastVerifiedAt) >= m.cfg.Health.HotPoolFreshness.Duration) {
 				m.queueBenchmark("hot-pool-refresh")
 				break
 			}
@@ -162,7 +162,7 @@ func (m *Manager) emergencyCandidate(ctx context.Context, state model.State, tar
 	results := make(chan model.Slot, len(state.Pool))
 	var wg sync.WaitGroup
 	for _, slot := range state.Pool {
-		if slot.NodeID == "" || state.ExcludedNodeIDs[slot.NodeID] || (!includeActive && slot.Index == state.ActiveSlot) {
+		if slot.NodeID == "" || !m.nodeAutoSelectEnabled(state, slot.NodeID) || (!includeActive && slot.Index == state.ActiveSlot) {
 			continue
 		}
 		wg.Add(1)

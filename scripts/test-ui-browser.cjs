@@ -27,7 +27,8 @@ const metrics = () => ({cpu_percent:24,ram_percent:38,wan_connected:true,wan_nam
 const nodes = [
   {id:'zero',label:'Zero latency',sources:['Primary'],active:true,in_pool:true,network:'tcp',security:'reality',measurement:{latency_ms:0,speed_mbps:0,score:0,healthy:true,checked_at:now()}},
   {id:'known',label:'Known node',sources:['Backup'],network:'ws',security:'tls',measurement:{latency_ms:42,speed_mbps:76,score:100,healthy:false,checked_at:now()}},
-  {id:'missing',label:'Unchecked node',sources:['Backup'],network:'tcp',security:'tls',measurement:{latency_ms:null,speed_mbps:null,score:null}},
+  {id:'missing',label:'Unchecked node',sources:['Backup'],network:'tcp',security:'tls',auto_select_locked:true,measurement:{latency_ms:null,speed_mbps:null,score:null}},
+  {id:'locked-off',label:'Shared aliases',sources:['Primary','Other'],auto_select_locked:true,measurement:{}},
 ];
 function fakeAPI(url,method,body) {
   const route = url.pathname; state.requests.push({route,method,body});
@@ -84,7 +85,7 @@ async function main() {
   const browser=await chromium.launch({headless:true});
   try {
     for(const width of [1440,390,320]) for(const scheme of ['light','dark']) {
-      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;state.excluded.clear();
+      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;state.excluded.clear();state.excluded.add('locked-off');
       const context=await browser.newContext({viewport:{width,height:width<761?844:1000},colorScheme:scheme,serviceWorkers:'block'});
       const page=await context.newPage(); const errors=[];
       page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});page.on('dialog',dialog=>dialog.accept());
@@ -102,6 +103,9 @@ async function main() {
       await page.locator('#node-status-filter').selectOption('');await page.locator('#node-source-filter').selectOption('');
       assert(await page.locator('.node-auto-select[data-id="zero"]').isDisabled(),'active node exclusion is unavailable');
       assert(await page.locator('.node-auto-select[data-id="zero"]').isChecked(),'active node remains eligible');
+      assert(await page.locator('.node-auto-select[data-id="missing"]').isDisabled(),'node sharing the active identity must be locked');
+      assert(!await page.locator('.node-auto-select[data-id="locked-off"]').isDisabled(),'an excluded alias may be re-enabled without disabling the active route');
+      await page.locator('.node-auto-select[data-id="locked-off"]').check();
       await page.locator('.node-auto-select[data-id="known"]').uncheck();
       await page.waitForFunction(()=>document.querySelector('.node-auto-select[data-id="known"]')?.disabled===false&&!document.querySelector('.node-auto-select[data-id="known"]').checked);
       assert(state.excluded.has('known'),'node switch did not persist exclusion');
