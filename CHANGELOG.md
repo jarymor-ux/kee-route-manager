@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0-rc.3 — 2026-10-29
+
+- Include the persistent node automatic-selection controls from 2.0.2: active-node protection, benchmark/failover/recovery exclusions, durable preferences, authenticated API and desktop/mobile UI controls.
+- Retain the 2.1.0-rc.2 installer provisioning/recovery behavior and its existing experimental hardware, HTTP browser-transport and IPv4 boundaries. Launcher protocol and existing configuration defaults are unchanged by the node-selection feature.
+
 ## 2.1.0-rc.2 — 2026-10-23
 
 - First 2.1 candidate publication target after the immutable `v2.1.0-rc.1` tag stopped before asset upload. The signing job uses `umask 077`; explicitly initialize the transaction test's pre-existing 0755 directory so it tests permission recovery under both ordinary and private build masks. Run this regression under both ordinary and private masks in the check job. This changes tests, not application runtime behavior. Retain the failed tag without moving/reusing it.
@@ -14,6 +19,13 @@ Experimental candidate; exact-model native installation, LAN/UI, reboot and powe
 - Add durable dependency/native/application installation journals, verified retries, no-overwrite publication and ownership-aware rollback before activation; resume matching signed launcher/start intent without overwriting config or credentials.
 - Discover unambiguous native VPN routes, offer a guarded private-LAN/loopback HTTP browser UI with an unencrypted-transport warning and verified HTTPS upstream, and enable stable signed update checks while keeping auto-apply disabled.
 - Correct native Xray status recognition for symlink-installed executables while retaining production-process/probe isolation.
+
+## 2.0.2 — 2026-10-29
+
+- Add persistent per-node **Автовыбор** controls and an excluded-node filter. Excluded nodes remain visible with historical measurements, but new benchmarks, automatic failover and VPN recovery skip them.
+- Reject disabling the active node in both UI and daemon. Serialize preference changes with routing and recheck eligibility before applying in-flight benchmark results; re-enable an excluded node before selecting its pool slot manually.
+- Preserve exclusions by connection fingerprint across subscription refresh, provider label/source changes, restart, settings reload and `restore-xray`. Connection-parameter changes create a new identity enabled by default; older versions do not enforce exclusions.
+- Expose strict authenticated node preference writes with `vpn.control`, CSRF, same-origin validation and audit events. Add regression and Chromium desktop/mobile light/dark interaction coverage. No launcher-protocol or configuration-default changes; router hardware acceptance remains unchanged.
 
 ## 2.0.1 — 2026-10-22
 

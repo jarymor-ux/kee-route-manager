@@ -37,7 +37,7 @@ function filteredNodes() {
   const sort = $('#node-sort')?.value || 'label';
   const items = nodesData.filter((node) => (!query || `${node.label} ${(node.sources || []).join(' ')}`.toLowerCase().includes(query))
     && (!source || (node.sources || []).includes(source))
-    && (!state || (state === 'active' ? node.active : state === 'pool' ? node.in_pool : nodeState(node) === state)));
+    && (!state || (state === 'excluded' ? node.auto_select_enabled === false : state === 'active' ? node.active : state === 'pool' ? node.in_pool : nodeState(node) === state)));
   return items.sort((a, b) => {
     if (sort !== 'label') {
       const key = { latency: 'latency_ms', speed: 'speed_mbps', score: 'score' }[sort];
@@ -50,7 +50,7 @@ function filteredNodes() {
   });
 }
 
-function nodeRows(items) {
+function nodeRows(items, controls = false) {
   return items.map((node) => {
     const measurement = node.measurement || {};
     const state = nodeState(node);
@@ -60,15 +60,16 @@ function nodeRows(items) {
     const source = esc((node.sources || []).join(', ') || '—');
     const type = esc(`${node.network || '—'}/${node.security || '—'}`);
     return `<tr>
-      <td><div class="node-primary"><strong>${esc(node.label)}</strong>${node.active ? ` ${badge('Активен', 'ok')}` : node.in_pool ? ` ${badge('Пул')}` : ''}</div>
-      <span class="node-mobile-meta">${source} · ${state === 'healthy' ? badge('Доступен', 'ok') : state === 'error' ? badge('Ошибка', 'bad') : badge('Не проверен')}</span><details class="node-details"><summary>Подробнее<span class="sr-only"> об узле ${esc(node.label)}</span></summary><dl><dt>Источник</dt><dd>${source}</dd><dt>Тип</dt><dd>${type}</dd><dt>Score</dt><dd>${score}</dd></dl></details></td>
+      <td><div class="node-primary"><strong>${esc(node.label)}</strong>${node.active ? ` ${badge('Активен', 'ok')}` : node.in_pool ? ` ${badge('Пул')}` : ''}${node.auto_select_enabled === false ? ` ${badge('Исключён', 'warn')}` : ''}</div>
+      <span class="node-mobile-meta">${source} · ${state === 'healthy' ? badge('Доступен', 'ok') : state === 'error' ? badge('Ошибка', 'bad') : badge('Не проверен')}</span><details class="node-details"><summary>Подробнее<span class="sr-only"> об узле ${esc(node.label)}</span></summary><dl><dt>Источник</dt><dd>${source}</dd><dt>Тип</dt><dd>${type}</dd><dt>Score</dt><dd>${score}</dd></dl></details>
+      ${controls && can('vpn.control') ? `<label class="node-auto-select-label"${node.active ? ' title="Активный узел нельзя исключить. Сначала переключитесь на другой узел."' : ''}><input type="checkbox" role="switch" class="node-auto-select" data-id="${esc(node.id)}" aria-label="Автовыбор для ${esc(node.label)}"${node.auto_select_enabled !== false ? ' checked=""' : ''}${node.active || nodeSelectionSaving.has(node.id) ? ' disabled=""' : ''}>Автовыбор</label>` : ''}</td>
       <td>${source}</td><td>${type}</td><td>${latency}</td><td>${speed}</td><td>${score}</td>
       <td>${state === 'healthy' ? badge('Доступен', 'ok') : state === 'error' ? badge('Ошибка', 'bad') : badge('Не проверен')}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="7" class="muted">Нет узлов</td></tr>';
 }
 
-function renderNodes() {
+function renderNodes(force = false) {
   const sourceFilter = $('#node-source-filter');
   if (sourceFilter) {
     const selected = sourceFilter.value;
@@ -77,8 +78,43 @@ function renderNodes() {
     updateWorkspaceHTML(sourceFilter, `<option value="">Все источники</option>${sources.map((source) => `<option value="${esc(source)}" ${source === selected ? 'selected' : ''}>${esc(source)}</option>`).join('')}`);
     if (!available && selected && document.activeElement !== sourceFilter) sourceFilter.value = '';
   }
-  updateWorkspaceHTML($('#nodes-body'), nodeRows(filteredNodes()));
-  updateWorkspaceHTML($('#test-results'), `<table class="nodes-table"><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость теста</th><th>Score</th><th>Состояние</th></tr></thead><tbody>${nodeRows(nodesData)}</tbody></table>`);
+  const body = $('#nodes-body');
+  const focused = captureWorkspaceFocus(body, ['.node-auto-select'], 'id');
+  if (updateWorkspaceHTML(body, nodeRows(filteredNodes(), true), force || Boolean(focused?.selector))) {
+    body.querySelectorAll('.node-auto-select').forEach((input) => {
+      input.onchange = () => setNodeAutoSelect(input.dataset.id, input.checked);
+    });
+    restoreWorkspaceFocus(body, focused, 'id', '#node-search');
+  }
+  updateWorkspaceHTML($('#test-results'), `<table class="nodes-table"><thead><tr><th>Узел</th><th>Источник</th><th>Тип</th><th>Задержка</th><th>Скорость теста</th><th>Score</th><th>Состояние</th></tr></thead><tbody>${nodeRows(nodesData)}</tbody></table>`, force);
+}
+
+async function setNodeAutoSelect(id, enabled) {
+  const node = nodesData.find((item) => item.id === id);
+  if (!can('vpn.control') || !node || (!enabled && node.active) || nodeSelectionSaving.has(id)) return;
+  const generation = authGeneration;
+  const focused = captureWorkspaceFocus($('#nodes-body'), ['.node-auto-select'], 'id');
+  nodeSelectionSaving.add(id);
+  renderNodes(true);
+  try {
+    await api('/api/v1/nodes/auto-select', { method: 'POST', body: JSON.stringify({ id, enabled }) });
+    node.auto_select_enabled = enabled;
+    toast(enabled ? 'Узел включён в автовыбор' : 'Узел исключён из автовыбора');
+    await Promise.all([loadNodes(), loadStatus(true)]);
+  } catch (error) {
+    if (generation === authGeneration) {
+      toast(error.message, true);
+      if (can('vpn.view')) await loadNodes();
+    }
+  } finally {
+    if (generation === authGeneration) {
+      nodeSelectionSaving.delete(id);
+      if (can('vpn.view')) renderNodes(true);
+      if (activePage === 'nodes' && (document.activeElement === document.body || document.activeElement?.dataset.id === id)) {
+        restoreWorkspaceFocus($('#nodes-body'), focused, 'id', '#node-search');
+      }
+    }
+  }
 }
 
 async function loadRouter() {

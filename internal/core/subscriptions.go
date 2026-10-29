@@ -67,7 +67,7 @@ func (m *Manager) SaveSubscription(_ context.Context, source config.Source) erro
 			return nil
 		})
 	}
-	m.queueSubscriptionBenchmark()
+	m.queueConfigurationBenchmark("subscription-change")
 	return nil
 }
 
@@ -109,7 +109,7 @@ func (m *Manager) DeleteSubscription(_ context.Context, id string) error {
 			return nil
 		})
 	}
-	m.queueSubscriptionBenchmark()
+	m.queueConfigurationBenchmark("subscription-change")
 	return nil
 }
 
@@ -122,12 +122,12 @@ func (m *Manager) validateSubscriptionSources(sources []config.Source) error {
 	return nil
 }
 
-func (m *Manager) queueSubscriptionBenchmark() {
+func (m *Manager) queueConfigurationBenchmark(mode string) {
 	m.lifeMu.Lock()
 	started := m.ctx != nil && !m.stopping
 	m.lifeMu.Unlock()
 	if started {
-		m.queueBenchmark("subscription-change")
+		m.queueBenchmark(mode)
 	}
 }
 

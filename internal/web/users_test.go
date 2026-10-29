@@ -136,6 +136,7 @@ func TestEveryNetworkRouteChecksGranularPermissions(t *testing.T) {
 	routes := []struct{ method, path, permission, alternative string }{
 		{"GET", "/api/v1/status", "vpn.view", "router.view"},
 		{"GET", "/api/v1/nodes", "vpn.view", ""},
+		{"POST", "/api/v1/nodes/auto-select", "vpn.control", ""},
 		{"GET", "/api/v1/subscriptions", "subscriptions.view", "subscriptions.manage"},
 		{"POST", "/api/v1/subscriptions/save", "subscriptions.manage", ""},
 		{"POST", "/api/v1/subscriptions/delete", "subscriptions.manage", ""},

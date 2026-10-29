@@ -23,7 +23,7 @@ function requestPermission(path) {
   if (path.includes('/router/clients')) return 'router.clients';
   if (path.includes('/router/logs') || path.includes('/router/diagnostics')) return 'router.system';
   if (path.includes('/router/metrics')) return 'router.view';
-  if (path.includes('/nodes')) return 'vpn.view';
+  if (path.includes('/nodes')) return path.endsWith('/auto-select') ? 'vpn.control' : 'vpn.view';
   if (path.includes('/events')) return 'events.view';
   if (path.includes('/actions/policy')) return 'router.policy';
   if (path.includes('/actions/wake')) return 'router.wake';
@@ -34,6 +34,7 @@ function requestPermission(path) {
 }
 let statusData = null;
 let nodesData = [];
+const nodeSelectionSaving = new Set();
 let subscriptionData = [];
 let clientsData = [];
 let pollTimer;
@@ -84,6 +85,8 @@ function errorMessage(data, status) {
     dns_pending: 'Добавление локального DNS не завершено. Повторите смену адреса панели для восстановления.',
     dns_unavailable: 'Не удалось проверить локальный DNS. Повторите после восстановления связи с роутером.',
     user_changed: 'Пользователь уже изменён. Обновите список и откройте редактор заново.',
+    node_active: 'Активный узел нельзя исключить. Сначала переключитесь на другой узел.',
+    node_not_found: 'Узел больше не найден. Обновите список узлов.',
   };
   if (data?.code && messages[data.code]) return messages[data.code];
   if (data?.error === 'user changed; reload before saving') return messages.user_changed;
@@ -103,6 +106,7 @@ function showLogin() {
   currentUser = null;
   statusData = null;
   nodesData = [];
+  nodeSelectionSaving.clear();
   clientsData = [];
   usersData = [];
   permissionCatalog = [];
@@ -258,7 +262,7 @@ function renderStatus(data, force = false) {
   $('#system-logs').classList.toggle('hidden', !capabilities.system_logs || !can('router.system'));
   $('#diagnostics').classList.toggle('hidden', !capabilities.diagnostics || !can('router.system'));
 
-  $('#pool-count').textContent = String((state.pool || []).filter((slot) => slot.node_id && slot.healthy && slot.index !== state.active_slot).length);
+  $('#pool-count').textContent = String((state.pool || []).filter((slot) => slot.node_id && slot.healthy && !state.excluded_node_ids?.[slot.node_id] && slot.index !== state.active_slot).length);
   $('#last-test').textContent = fmtAge(state.last_benchmark?.finished_at);
   $('#last-test-detail').textContent = state.last_benchmark?.error || (state.last_benchmark?.finished_at ? `Проверено ${state.last_benchmark.tested_count || 0} из ${state.last_benchmark.node_count || 0} узлов` : 'Тест ещё не завершался');
   renderPool(state, force);
@@ -273,7 +277,8 @@ function renderPool(state, force = false) {
       <div class="slot">Слот ${slot.index + 1} ${slot.index === state.active_slot && !state.direct_mode ? badge('Активен', 'ok') : ''}</div>
       <div class="name" title="${esc(slot.label || 'Свободен')}">${esc(slot.label || 'Свободен')}</div>
       <div class="stats">${slot.node_id ? `${Math.round(slot.score || 0)} score · ${fmtAge(slot.last_verified_at)}` : 'Нет узла'}</div>
-      ${slot.node_id && can('vpn.control') ? `<button class="ghost compact slot-switch" data-index="${slot.index}">Переключить</button>` : ''}
+      ${state.excluded_node_ids?.[slot.node_id] ? badge('Исключён из автовыбора', 'warn') : ''}
+      ${slot.node_id && can('vpn.control') ? `<button class="ghost compact slot-switch" data-index="${slot.index}"${state.excluded_node_ids?.[slot.node_id] ? ' disabled="" title="Сначала включите автовыбор для этого узла"' : ''}>Переключить</button>` : ''}
     </article>`).join('');
   const focused = captureWorkspaceFocus($('#pool'), ['.slot-switch'], 'index');
   if (!updateWorkspaceHTML($('#pool'), html, force || Boolean(focused?.selector))) return;
@@ -746,6 +751,7 @@ function acceptSession(data) {
   if (changed) {
     // A response started before revocation must not repopulate restricted data.
     authGeneration++;
+    nodeSelectionSaving.clear();
     if (!can('subscriptions.manage')) clearSubscriptionEditor();
     if (!can('subscriptions.view|subscriptions.manage')) { subscriptionData = []; $('#subscriptions-body').innerHTML = ''; }
     else if (!can('subscriptions.manage')) {
@@ -760,6 +766,7 @@ function acceptSession(data) {
     if (!can('events.view')) $('#events-list').innerHTML = '';
     if (can('router.clients')) renderClients(clientsData, true);
     if (!can('vpn.control')) { renderPool(statusData?.state || {}, true); }
+    if (can('vpn.view')) renderNodes(true);
     if (!can('router.system')) { $('#tool-output').textContent = ''; $('#tool-output').classList.add('hidden'); }
     if (!can('updates.manage')) { updateRequestGeneration++; updateChecking = false; updateSwitching = false; pendingUpdate = null; updateState = null; renderUpdate(); }
     applyPermissions();
