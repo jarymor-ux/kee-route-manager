@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -178,7 +179,9 @@ func TestOfflineXrayValidationTimesOutAndKillsChildren(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		proc, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-		if os.IsNotExist(err) {
+		// A child can disappear between /proc lookup and reading its
+		// stat file. Linux may report ESRCH instead of ENOENT in this case.
+		if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 			break
 		}
 		if err != nil {

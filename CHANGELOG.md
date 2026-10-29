@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.0.3 — 2026-10-29
+## 2.0.4 — 2026-10-29
+
+- Publish the stable subscription/name node preferences described below after cancelling the unpublished 2.0.3 tag. Branch CI exposed an existing preflight fixture race: Linux ESRCH during `/proc` read means the killed child is already gone. Backport the existing RC test correction; this does not change application runtime behavior.
+- Retain cancelled `v2.0.3` and `v2.1.0-rc.4` tags without moving/reusing them. Neither has published release assets; the aligned candidate target is `2.1.0-rc.5`.
+
+## 2.0.3 — 2026-10-29 (unpublished tag)
 
 - Keep node automatic-selection preferences by configured source ID and exact node name while retaining connection fingerprints for routing. IP/port and other connection changes, temporary disappearance and restart no longer reset a named node's exclusion.
 - Preserve actual subscription/name aliases through connection deduplication and caching. Isolate different sources, share same-source/name settings and protect the active identity group. Refuse a refreshed excluded alias on the active connection before replacing its cache, including after a concurrent manual switch.
