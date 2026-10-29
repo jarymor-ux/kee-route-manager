@@ -20,6 +20,7 @@ var routePermissions = map[string][]string{
 	"/api/v1/auth/logout": {}, "/api/v1/session": {},
 	"/api/v1/status":                   {},
 	"/api/v1/nodes":                    {"vpn.view"},
+	"/api/v1/nodes/auto-select":        {"vpn.control"},
 	"/api/v1/subscriptions":            {"subscriptions.view", "subscriptions.manage"},
 	"/api/v1/subscriptions/save":       {"subscriptions.manage"},
 	"/api/v1/subscriptions/delete":     {"subscriptions.manage"},

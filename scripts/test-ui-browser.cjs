@@ -21,7 +21,7 @@ function settingsFixture() {
     pool:{provider_diversity:{enabled:false,max_per_provider:1}},
   };
 }
-const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle', sources:sourceFixture(),users:usersFixture(),activeSlot:0 };
+const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle', sources:sourceFixture(),users:usersFixture(),activeSlot:0,excluded:new Set() };
 const now = () => new Date().toISOString();
 const metrics = () => ({cpu_percent:24,ram_percent:38,wan_connected:true,wan_name:'ISP',wan_ip:'192.0.2.10',wan_description:'Ethernet',traffic_available:true,rx_mbps:18.4,tx_mbps:2.1,updated_at:now(),temperature_c:42,uptime_seconds:86410,ports:[{id:'LAN 1',link:'up',speed:'1000 Мбит/с'}]});
 const nodes = [
@@ -36,7 +36,8 @@ function fakeAPI(url,method,body) {
   if(!state.logged) return {error:'unauthorized',httpStatus:401};
   if(route === '/api/v1/session') return {csrf:'fixture-csrf',permissions:state.permissions,user:{id:'fixture-admin',username:'admin'}};
   if(route === '/api/v1/status') return {version:'1.3.1-fixture',xray_running:true,capabilities:{client_policy:true,wake_on_lan:true},state:{xray_configured:true,automatic_routing_paused:false,direct_mode:false,active_slot:state.activeSlot,active_node_id:state.activeSlot?'known':'zero',health_status:'healthy',pool:[{index:0,node_id:'zero',label:'Zero latency',score:0},{index:1,node_id:'known',label:'Known node',score:100}],sources:{Primary:{name:'Primary',status:'healthy',node_count:3}},last_benchmark:{finished_at:now()}}};
-  if(route === '/api/v1/nodes') return nodes;
+  if(route === '/api/v1/nodes') return nodes.map(node=>({...node,active:node.id===(state.activeSlot?'known':'zero'),auto_select_enabled:!state.excluded.has(node.id)}));
+  if(route === '/api/v1/nodes/auto-select') {const input=JSON.parse(body);if(input.enabled)state.excluded.delete(input.id);else state.excluded.add(input.id);return {ok:true};}
   if(route === '/api/v1/router/clients') return {updated_at:now(),value:[{name:`Workstation ${state.policyVersion}`,mac:'02:00:00:00:00:01',ip:'192.168.1.2',active:true,connection_policy:state.policyVersion%2?'Default route':'XKeen',link:'LAN'}]};
   if(route === '/api/v1/router/metrics') return metrics();
   if(route === '/api/v1/router/metrics/history') return {samples:[1200000,180000,175000,50000,45000].map((age,i)=>({...metrics(),cpu_percent:i*10,ram_percent:40,updated_at:new Date(Date.now()-age).toISOString()}))};
@@ -83,7 +84,7 @@ async function main() {
   const browser=await chromium.launch({headless:true});
   try {
     for(const width of [1440,390,320]) for(const scheme of ['light','dark']) {
-      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;
+      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;state.excluded.clear();
       const context=await browser.newContext({viewport:{width,height:width<761?844:1000},colorScheme:scheme,serviceWorkers:'block'});
       const page=await context.newPage(); const errors=[];
       page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});page.on('dialog',dialog=>dialog.accept());
@@ -94,11 +95,26 @@ async function main() {
       assert((await page.locator('#usage-chart svg').getAttribute('aria-label')).includes('15 минут'));
       await page.locator('#usage-chart svg').focus();await page.keyboard.press('Home');assert((await page.locator('#usage-chart .chart-tooltip').textContent()).includes('CPU:'));
       await page.keyboard.press('Escape');
-      await navigate(page,'nodes',width);await page.locator('#nodes-body tr').first().waitFor();
+      await navigate(page,'nodes',width);await page.locator('.node-auto-select[data-id="zero"]').waitFor();
       await page.locator('#node-sort').selectOption('latency');assert((await page.locator('#nodes-body tr').first().textContent()).includes('Zero latency'));
       await page.locator('#node-source-filter').selectOption('Backup');assert.equal(await page.locator('#nodes-body tr').count(),2);
       await page.locator('#node-status-filter').selectOption('unchecked');assert((await page.locator('#nodes-body').textContent()).includes('Unchecked node'));
       await page.locator('#node-status-filter').selectOption('');await page.locator('#node-source-filter').selectOption('');
+      assert(await page.locator('.node-auto-select[data-id="zero"]').isDisabled(),'active node exclusion is unavailable');
+      assert(await page.locator('.node-auto-select[data-id="zero"]').isChecked(),'active node remains eligible');
+      await page.locator('.node-auto-select[data-id="known"]').uncheck();
+      await page.waitForFunction(()=>document.querySelector('.node-auto-select[data-id="known"]')?.disabled===false&&!document.querySelector('.node-auto-select[data-id="known"]').checked);
+      assert(state.excluded.has('known'),'node switch did not persist exclusion');
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'known','node switch lost keyboard focus');
+      assert(await page.evaluate(async()=>{const control=document.querySelector('.node-auto-select[data-id="known"]');await loadNodes();return control===document.querySelector('.node-auto-select[data-id="known"]');}),'unchanged node polling replaced the focused switch');
+      await page.locator('#node-status-filter').selectOption('excluded');assert.equal(await page.locator('#nodes-body tr').count(),1);
+      await page.locator('.node-auto-select[data-id="known"]').click();
+      await page.waitForFunction(()=>!document.querySelector('.node-auto-select[data-id="known"]'));
+      assert(!state.excluded.has('known'),'node could not be re-enabled from excluded filter');
+      await page.locator('#node-status-filter').selectOption('');
+      state.permissions=permissions.filter(p=>p!=='vpn.control');await page.evaluate(()=>poll());
+      assert.equal(await page.locator('.node-auto-select').count(),0,'permission revocation left node switches');
+      state.permissions=[...permissions];await page.evaluate(()=>poll());
       if(width<761){await page.locator('.node-details summary').first().click();assert(await page.locator('.node-details').first().getAttribute('open')!==null);}
       await noOverflow(page,`${width}/${scheme} nodes`);
       await navigate(page,'subscriptions',width);await page.locator('#add-subscription').click();await page.locator('#subscription-modal').waitFor({state:'visible'});

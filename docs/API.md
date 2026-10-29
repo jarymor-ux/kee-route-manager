@@ -41,6 +41,16 @@ Mutation endpoints require the normal session, CSRF token and same-origin check.
 
 The optional browser HWID preset uses the existing `headers` object and source-store schema. It sends nothing until Save and retains an existing device identity. Request-header names are unique without regard to case. Clients must persist and reuse their chosen `X-HWID`; fetching never creates or rotates it. A provider rejection is reflected in the source's sanitized `last_error`, including explicit missing-HWID and device-limit diagnostics.
 
+## Node automatic selection
+
+`GET /api/v1/nodes` requires `vpn.view` and includes `auto_select_enabled` for each node. Missing preferences default to enabled. `state.excluded_node_ids` in VPN status records excluded identities, including nodes temporarily absent from subscriptions.
+
+`POST /api/v1/nodes/auto-select` requires `vpn.control`, CSRF and same origin. It accepts explicit `{ "id": "node-id", "enabled": false }` (or `true` to re-enable) and returns `200 { "ok": true }` after durable persistence. Missing/null fields, unknown fields and trailing JSON return400. The active node cannot be excluded: the daemon rechecks under its routing lock and returns409 with `code: "node_active"`. Unknown IDs return404 with `code: "node_not_found"`; an existing exclusion can be cleared even while its node is absent. Pending routing reconciliation or incompatible operations return409. The owner-only Unix socket exposes the same node endpoints without network-session authorization.
+
+Excluded nodes remain visible with previous measurements but are skipped by subsequent benchmarks, emergency fallback and VPN recovery. In-flight tests recheck eligibility before applying results. A probe already running can finish; changing eligibility queues a fresh benchmark when automatic routing is running. An excluded pool slot cannot be selected manually until re-enabled. Excluding nodes never itself changes the current route or enables direct access; a benchmark without eligible healthy candidates preserves the route and pool. Existing failover decisions still require their normal VPN/WAN evidence.
+
+Preferences survive daemon restart, subscription refresh, runtime settings reload and `restore-xray`. They use the existing connection fingerprint: label/source changes and duplicate appearances in different subscriptions share the preference; changed connection parameters create a new identity with selection enabled. Older versions do not enforce these exclusions.
+
 ## Users and permissions
 
 Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `permissions`, `updated_at`), top-level `username`, `permissions`, `csrf` and `expires_at`. User IDs remain stable across edits. Each network API request checks the current user and permissions; hiding a panel control is not authorization. Permission edits take effect for existing sessions on their next request. Password changes, rename, blocking and deletion revoke existing sessions. Already accepted operations can finish; revocation does not reverse routing effects.
@@ -50,7 +60,7 @@ Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `per
 | Permission | Authorized endpoints |
 | --- | --- |
 | `vpn.view` | Status, nodes |
-| `vpn.control` | Benchmark, cancellation, Xray restart, slot/direct switch |
+| `vpn.control` | Benchmark, cancellation, Xray restart, slot/direct switch, node automatic-selection preferences |
 | `subscriptions.view` | Subscription list without URL or headers |
 | `subscriptions.manage` | Subscription editor including URL/headers, save and delete |
 | `router.view` | Current metrics and history; status platform/capabilities without VPN state |

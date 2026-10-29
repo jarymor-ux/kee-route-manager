@@ -450,6 +450,14 @@ func (s *Store) validateWithNodes(v model.State, nodes map[string]model.Node) er
 	if v.XrayGeneration < 0 {
 		return fmt.Errorf("negative state generation")
 	}
+	for id, excluded := range v.ExcludedNodeIDs {
+		if id == "" || !excluded {
+			return fmt.Errorf("invalid excluded node identity")
+		}
+	}
+	if v.ActiveNodeID != "" && v.ExcludedNodeIDs[v.ActiveNodeID] {
+		return fmt.Errorf("active node cannot be excluded")
+	}
 	seen := map[string]bool{}
 	for i, slot := range v.Pool {
 		if slot.Index != i || slot.Tag != s.initial.Pool[i].Tag {

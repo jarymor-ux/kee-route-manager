@@ -156,7 +156,7 @@ func (m *Manager) Nodes() []model.NodeView {
 	}
 	out := []model.NodeView{}
 	for _, n := range m.store.Nodes() {
-		out = append(out, model.NodeView{ID: n.ID, Label: n.Label, Protocol: n.Protocol, Network: n.Network, Security: n.Security, Sources: n.Sources, Measurement: state.Measurements[n.ID], InPool: pool[n.ID], Active: n.ID == state.ActiveNodeID})
+		out = append(out, model.NodeView{ID: n.ID, Label: n.Label, Protocol: n.Protocol, Network: n.Network, Security: n.Security, Sources: n.Sources, Measurement: state.Measurements[n.ID], InPool: pool[n.ID], Active: n.ID == state.ActiveNodeID, AutoSelectEnabled: !state.ExcludedNodeIDs[n.ID]})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i].Measurement, out[j].Measurement

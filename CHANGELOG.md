@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.2 — 2026-10-29
+
+- Add persistent per-node **Автовыбор** controls and an excluded-node filter. Excluded nodes remain visible with historical measurements, but new benchmarks, automatic failover and VPN recovery skip them.
+- Reject disabling the active node in both UI and daemon. Serialize preference changes with routing and recheck eligibility before applying in-flight benchmark results; re-enable an excluded node before selecting its pool slot manually.
+- Preserve exclusions by connection fingerprint across subscription refresh, provider label/source changes, restart, settings reload and `restore-xray`. Connection-parameter changes create a new identity enabled by default; older versions do not enforce exclusions.
+- Expose strict authenticated node preference writes with `vpn.control`, CSRF, same-origin validation and audit events. Add regression and Chromium desktop/mobile light/dark interaction coverage. No launcher-protocol or configuration-default changes; router hardware acceptance remains unchanged.
+
 ## 2.0.1 — 2026-10-22
 
 - First 2.0 release target: the public `v2.0.0` tag failed CI and produced no release assets; that tag is retained without moving it. Correct the Linux process-lifecycle test to treat ESRCH (PID already gone) as successful process exit, with a regression. This fixes a false test failure, not application runtime behavior.

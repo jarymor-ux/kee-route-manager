@@ -92,6 +92,7 @@ type State struct {
 	LastSwitchReason       string                 `json:"last_switch_reason,omitempty"`
 	Pool                   []Slot                 `json:"pool"`
 	Measurements           map[string]Measurement `json:"measurements"`
+	ExcludedNodeIDs        map[string]bool        `json:"excluded_node_ids,omitempty"`
 	Sources                map[string]SourceState `json:"sources"`
 	LastBenchmark          BenchmarkSummary       `json:"last_benchmark"`
 	XrayConfigured         bool                   `json:"xray_configured"`
@@ -123,13 +124,14 @@ func itoa(v int) string {
 }
 
 type NodeView struct {
-	ID          string      `json:"id"`
-	Label       string      `json:"label"`
-	Protocol    string      `json:"protocol"`
-	Network     string      `json:"network"`
-	Security    string      `json:"security"`
-	Sources     []string    `json:"sources"`
-	Measurement Measurement `json:"measurement"`
-	InPool      bool        `json:"in_pool"`
-	Active      bool        `json:"active"`
+	ID                string      `json:"id"`
+	Label             string      `json:"label"`
+	Protocol          string      `json:"protocol"`
+	Network           string      `json:"network"`
+	Security          string      `json:"security"`
+	Sources           []string    `json:"sources"`
+	Measurement       Measurement `json:"measurement"`
+	InPool            bool        `json:"in_pool"`
+	Active            bool        `json:"active"`
+	AutoSelectEnabled bool        `json:"auto_select_enabled"`
 }

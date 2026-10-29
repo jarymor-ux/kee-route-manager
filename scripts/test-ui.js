@@ -1064,6 +1064,29 @@ async function panelEditorChecks() {
   assert.equal(h.blobURLs.size,0);
 }
 
+async function nodeAutoSelectChecks() {
+  const h = appHarness(); await new Promise(setImmediate);
+  h.run("authenticated=true; permissions=new Set(allPermissions); csrf='node-csrf'; activePage='nodes'; nodesData=[{id:'active',label:'Active',active:true,auto_select_enabled:true},{id:'fallback',label:'Fallback',auto_select_enabled:true}]; renderNodes()");
+  assert.equal(h.run("requestPermission('/api/v1/nodes/auto-select')"),'vpn.control','preference writes require control permission');
+  let finish;
+  h.respond((url) => url.endsWith('/auto-select') ? new Promise(resolve => { finish=resolve; }) : {status:200,ok:true,data:url.endsWith('/nodes')?[{id:'active',label:'Active',active:true,auto_select_enabled:true},{id:'fallback',label:'Fallback',auto_select_enabled:false}]:{state:{pool:[],sources:{}}}});
+  const change=h.run("setNodeAutoSelect('fallback',false)");
+  await new Promise(setImmediate);
+  await h.run("setNodeAutoSelect('fallback',false);setNodeAutoSelect('active',false)");
+  const writes=h.requests.filter(req=>req.url.endsWith('/auto-select'));
+  assert.equal(writes.length,1,'pending duplicate and active-node exclusion must not be submitted');
+  assert.equal(writes[0].options.headers['X-KRM-CSRF'],'node-csrf');
+  assert.deepEqual(JSON.parse(writes[0].options.body),{id:'fallback',enabled:false});
+  finish({status:200,ok:true,data:{ok:true}});await change;
+  h.select('#node-status-filter').value='excluded';
+  assert.deepEqual(Array.from(h.run('filteredNodes().map(n=>n.id)')),['fallback']);
+  h.select('#node-status-filter').value='';
+  h.run("acceptSession({permissions:['vpn.view']})");
+  assert(!h.select('#nodes-body').innerHTML.includes('class="node-auto-select"'),'revoking control removes node switches immediately');
+  const before=h.requests.length;await h.run("setNodeAutoSelect('fallback',true)");
+  assert.equal(h.requests.length,before,'viewer must not submit preference writes');
+}
+
 async function workspaceRegressionChecks() {
   const h = appHarness(); await new Promise(setImmediate);
   h.run("closeDialog('login'); authenticated=true; permissions=new Set(allPermissions); activePage='devices'; statusData={capabilities:{client_policy:true,wake_on_lan:true}}; renderClients([{name:'Desk',mac:'02:00:00:00:00:01',ip:'192.168.1.5'}])");
@@ -1192,6 +1215,7 @@ function chartRegressionChecks() {
 }
 
 async function main() {
+  await nodeAutoSelectChecks();
   chartRegressionChecks();
   await workspaceRegressionChecks();
   await foregroundRefreshChecks();

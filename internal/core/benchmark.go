@@ -184,12 +184,16 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 		allNodes[n.ID] = n
 	}
 
-	_ = h.Update("benchmark", 0, len(fetched.Nodes), "testing nodes")
-	results, err := m.bench.Run(ctx, fetched.Nodes, func(stage string, current, total int, msg string) {
-		_ = h.Update(stage, current, total, msg)
-	})
-	if err != nil {
-		return finish(err)
+	eligible := autoSelectNodes(fetched.Nodes, m.store.State())
+	_ = h.Update("benchmark", 0, len(eligible), "testing nodes")
+	var results []model.Measurement
+	if len(eligible) > 0 {
+		results, err = m.bench.Run(ctx, eligible, func(stage string, current, total int, msg string) {
+			_ = h.Update(stage, current, total, msg)
+		})
+		if err != nil {
+			return finish(err)
+		}
 	}
 
 	// Preserve prior measurements for a currently active node that disappeared from a
@@ -201,8 +205,6 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 	for _, result := range results {
 		measurements[result.NodeID] = result
 	}
-	selected := m.selectPool(fetched.Nodes, results)
-
 	_ = h.Update("apply", 0, m.cfg.Pool.Size, "applying hot pool")
 	m.routeMu.Lock()
 	defer m.routeMu.Unlock()
@@ -226,6 +228,8 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 	if mode != "manual" && state.AutomaticRoutingPaused {
 		return finish(nil)
 	}
+	// Preferences may change while probes run; never apply an excluded winner.
+	selected := m.selectPool(autoSelectNodes(eligible, state), results)
 	// Choose an authorized replacement before active retention can fill a single slot.
 	if state.ActiveNodeID != "" {
 		if previous, ok := state.Measurements[state.ActiveNodeID]; ok {
@@ -251,7 +255,7 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 		}
 		err = m.store.Update(func(st *model.State) error {
 			st.Measurements = keep
-			st.LastBenchmark = model.BenchmarkSummary{OperationID: h.ID(), StartedAt: started, FinishedAt: time.Now().UTC(), Mode: mode, NodeCount: len(fetched.Nodes), TestedCount: len(results), Results: trimResults(results, 100)}
+			st.LastBenchmark = model.BenchmarkSummary{OperationID: h.ID(), StartedAt: started, FinishedAt: time.Now().UTC(), Mode: mode, NodeCount: len(eligible), TestedCount: len(results), Results: trimResults(results, 100)}
 			return nil
 		})
 		return finish(err)
@@ -323,7 +327,7 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 	}
 
 	now := time.Now().UTC()
-	summary := model.BenchmarkSummary{OperationID: h.ID(), StartedAt: started, FinishedAt: now, Mode: mode, NodeCount: len(fetched.Nodes), TestedCount: len(results), Results: trimResults(results, 100)}
+	summary := model.BenchmarkSummary{OperationID: h.ID(), StartedAt: started, FinishedAt: now, Mode: mode, NodeCount: len(eligible), TestedCount: len(results), Results: trimResults(results, 100)}
 	if winner >= 0 {
 		summary.WinnerID = newSlots[winner].NodeID
 		summary.WinnerLabel = newSlots[winner].Label

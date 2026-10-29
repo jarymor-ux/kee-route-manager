@@ -2,9 +2,11 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
-**Version 2.0.1:** builds with Go 1.27.3, including the `crypto/x509` fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Use only the complete signature-verified `v2.0.1` release; if it is not published yet, stop rather than installing from a mutable branch. Legacy v1.3.3 uses affected Go 1.27.2 and remains immutable. [Offline configuration migration](docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets) is mandatory for older generated Keenetic YAML containing retired platform subsections.
+**Version 2.0.2:** builds with Go 1.27.3, including the `crypto/x509` fix for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Use only the complete signature-verified `v2.0.2` release; if it is not published yet, stop rather than installing from a mutable branch. Legacy v1.3.3 uses affected Go 1.27.2 and remains immutable. [Offline configuration migration](docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets) is mandatory for older generated Keenetic YAML containing retired platform subsections.
 
-Kee Route Manager (KRM) is an open panel for Xray, VPN subscriptions, route health and node failover on **Keenetic and Netcraze routers**. [Hardware requirements and compatibility](docs/HARDWARE.md) define the supported scope. **Version `v2.0.1` targets the stable channel; signed release and candidate channels remain separate.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+Kee Route Manager (KRM) is an open panel for Xray, VPN subscriptions, route health and node failover on **Keenetic and Netcraze routers**. [Hardware requirements and compatibility](docs/HARDWARE.md) define the supported scope. **Version `v2.0.2` targets the stable channel; signed release and candidate channels remain separate.** Platform support remains experimental pending the documented hardware acceptance; existing release tags and assets are unchanged.
+
+VPN → Nodes adds an **Автовыбор** switch to exclude individual nodes from testing, automatic selection, fallback and recovery. The active node cannot be disabled. Preferences survive subscription refresh and restart; switch the control back on to restore eligibility. See [node selection](docs/API.md#node-automatic-selection).
 
 The panel has Router and VPN navigation groups, live dashboards with bounded history, and multiple users with server-enforced permissions. Compatible router actions and manual route selection remain available during benchmarks; lifecycle actions cancel and join testing before execution. See [credential migration and rollback limits](docs/API.md#credential-migration-and-recovery).
 
@@ -27,7 +29,7 @@ Router → System offers Release Candidate (`rc`) and Release (`stable`) update 
 
 For an AI agent given only this repository link, start with [AGENTS.md](AGENTS.md), then follow [the full install runbook](docs/AGENT_INSTALL.md): SSH, backups, route selection, prepared or interactive configuration, core-only/local UI/remote UI, readiness, uninstall and rollback.
 
-For a fresh installation on a compatible Keenetic/Netcraze, select the **complete immutable signed `v2.0.1` release**, including `bootstrap-keenetic.sh` and the matching native binary. Version 2.0.1 adds MIPS BE `linux-mips`; KN-2410/2510 remain experimental pending physical-device acceptance. Verify that the release and every signed asset actually exist before proceeding; absence is a stop, not permission to fall back to v1.3.3 or a development build:
+For a fresh installation on a compatible Keenetic/Netcraze, select the **complete immutable signed `v2.0.2` release**, including `bootstrap-keenetic.sh` and the matching native binary. The 2.0 release line includes MIPS BE `linux-mips`; KN-2410/2510 remain experimental pending physical-device acceptance. Verify that the release and every signed asset actually exist before proceeding; absence is a stop, not permission to fall back to v1.3.3 or a development build:
 
 ```sh
 curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
