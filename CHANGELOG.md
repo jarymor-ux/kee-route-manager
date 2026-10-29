@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3 — 2026-10-29
+
+- Keep node automatic-selection preferences by configured source ID and exact node name while retaining connection fingerprints for routing. IP/port and other connection changes, temporary disappearance and restart no longer reset a named node's exclusion.
+- Preserve actual subscription/name aliases through connection deduplication and caching. Isolate different sources, share same-source/name settings and protect the active identity group. Refuse a refreshed excluded alias on the active connection before replacing its cache, including after a concurrent manual switch.
+- Migrate recoverable fingerprint bans before probing/cache replacement and after startup reconciliation, preserving unresolved legacy source attribution across refresh/restart. Retain explicit allow records so late legacy reappearance cannot undo re-enabling. Missing historical names remain an explicit migration limitation.
+- Preserve metadata during read-only update trials and document older-version downgrade limitations. Add endpoint-rotation, alias, migration, concurrency, cache-isolation and Chromium regressions. No launcher-protocol or configuration-default changes; hardware acceptance remains unchanged.
+
 ## 2.0.2 — 2026-10-29
 
 - Add persistent per-node **Автовыбор** controls and an excluded-node filter. Excluded nodes remain visible with historical measurements, but new benchmarks, automatic failover and VPN recovery skip them.

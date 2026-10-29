@@ -112,6 +112,8 @@ func (m *Manager) RestoreOriginalXray(ctx context.Context) error {
 		next.Pool = []model.Slot{}
 		next.Sources = m.store.State().Sources
 		next.ExcludedNodeIDs = m.store.State().ExcludedNodeIDs
+		next.NodeAutoSelect = m.store.State().NodeAutoSelect
+		next.LegacyNodeSources = m.store.State().LegacyNodeSources
 		return m.commitRoute(c, next, nil, "restore")
 	})
 }
@@ -149,7 +151,7 @@ func (m *Manager) SwitchSlot(ctx context.Context, index int) error {
 		if index < 0 || index >= len(state.Pool) || state.Pool[index].NodeID == "" {
 			return fmt.Errorf("invalid slot")
 		}
-		if state.ExcludedNodeIDs[state.Pool[index].NodeID] {
+		if !m.nodeAutoSelectEnabled(state, state.Pool[index].NodeID) {
 			return ErrNodeExcluded
 		}
 		if err := m.commitRoute(c, vpnState(state, state.Pool[index], "manual switch"), m.store.Nodes(), "select"); err != nil {

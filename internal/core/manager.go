@@ -107,6 +107,9 @@ func (m *Manager) start(parent context.Context, startupBenchmark bool) {
 			err = errors.Join(err, bypassErr)
 		}
 	}
+	if err == nil {
+		err = m.migrateNodePreferences(nil)
+	}
 	m.routeMu.Unlock()
 	cancel()
 	m.mu.Lock()
@@ -142,7 +145,20 @@ func (m *Manager) Status(ctx context.Context) Status {
 	m.mu.RLock()
 	running := m.xrayRunning
 	m.mu.RUnlock()
-	return Status{Version: m.version, State: m.store.State(), Operation: m.ops.Current(), Operations: m.ops.List(), Capabilities: m.platform.Capabilities(), Platform: m.platform.Kind(), XrayRunning: running, ServerTime: time.Now().UTC()}
+	state := m.store.State()
+	// Project effective connection-ID bans for existing panel clients without
+	// rewriting the daemon's persistent logical preferences.
+	for _, node := range m.store.Nodes() {
+		if state.NodeAutoSelectEnabled(node) {
+			delete(state.ExcludedNodeIDs, node.ID)
+		} else {
+			if state.ExcludedNodeIDs == nil {
+				state.ExcludedNodeIDs = map[string]bool{}
+			}
+			state.ExcludedNodeIDs[node.ID] = true
+		}
+	}
+	return Status{Version: m.version, State: state, Operation: m.ops.Current(), Operations: m.ops.List(), Capabilities: m.platform.Capabilities(), Platform: m.platform.Kind(), XrayRunning: running, ServerTime: time.Now().UTC()}
 }
 func (m *Manager) State() model.State                           { return m.store.State() }
 func (m *Manager) Events(after uint64, limit int) []event.Event { return m.store.Events(after, limit) }
@@ -155,8 +171,9 @@ func (m *Manager) Nodes() []model.NodeView {
 		}
 	}
 	out := []model.NodeView{}
+	active, _ := m.store.Node(state.ActiveNodeID)
 	for _, n := range m.store.Nodes() {
-		out = append(out, model.NodeView{ID: n.ID, Label: n.Label, Protocol: n.Protocol, Network: n.Network, Security: n.Security, Sources: n.Sources, Measurement: state.Measurements[n.ID], InPool: pool[n.ID], Active: n.ID == state.ActiveNodeID, AutoSelectEnabled: !state.ExcludedNodeIDs[n.ID]})
+		out = append(out, model.NodeView{ID: n.ID, Label: n.Label, Protocol: n.Protocol, Network: n.Network, Security: n.Security, Sources: n.Sources, Measurement: state.Measurements[n.ID], InPool: pool[n.ID], Active: n.ID == state.ActiveNodeID, AutoSelectEnabled: state.NodeAutoSelectEnabled(n), AutoSelectLocked: n.ID == state.ActiveNodeID || n.SharesPreference(active)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i].Measurement, out[j].Measurement

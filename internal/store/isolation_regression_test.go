@@ -85,7 +85,7 @@ func TestNodeSnapshotsCannotMutateCache(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			input := []model.Node{{ID: "node", Sources: []string{"provider"}, ALPN: []string{"h2"}}}
+			input := []model.Node{{ID: "node", Sources: []string{"provider"}, ALPN: []string{"h2"}, SubscriptionNodes: []model.NodeIdentity{{SourceID: "provider", Name: "Original"}}}}
 			if err := s.ReplaceNodes(input); err != nil {
 				t.Fatal(err)
 			}
@@ -99,8 +99,9 @@ func TestNodeSnapshotsCannotMutateCache(t *testing.T) {
 				changed = s.Nodes()[0]
 			}
 			changed.Sources[0], changed.ALPN[0] = "changed", "http/1.1"
+			changed.SubscriptionNodes[0].Name = "changed"
 			got, _ := s.Node("node")
-			if got.Sources[0] != "provider" || got.ALPN[0] != "h2" {
+			if got.Sources[0] != "provider" || got.ALPN[0] != "h2" || got.SubscriptionNodes[0].Name != "Original" {
 				t.Fatalf("%s aliases stored node: %+v", source, got)
 			}
 		})
