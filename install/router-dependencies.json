@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "xkeen": {
+    "url": "https://github.com/jameszeroX/XKeen/releases/download/2.1/xkeen.tar.gz",
+    "sha256": "4b9350b11fab7fd3e4973db609db0fb780994f4b5ab0096f0549bc52acac8c73",
+    "version": "2.1",
+    "commit": "c4b0fb5b956b4f70bf1b8e4a2e0eec452d61ebd1",
+    "license": {
+      "url": "https://raw.githubusercontent.com/jameszeroX/XKeen/c4b0fb5b956b4f70bf1b8e4a2e0eec452d61ebd1/LICENSE",
+      "sha256": "6daef93f251a7c87a0a823681118244a03b5dff4833a5b845ba5bfb103c23411"
+    }
+  },
+  "xray": {
+    "version": "v26.10.31",
+    "archives": {
+      "amd64": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-64.zip",
+        "sha256": "e4bd9119f50ae7c41658b1abd0679ae06f98bd864a2907ff33f2f2cf7081b214"
+      },
+      "arm64": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-arm64-v8a.zip",
+        "sha256": "1811c8f1da0c3b6dc707ebaf1c8390e987ba39859a8f0a7aadd8526157f2ec8d"
+      },
+      "armv7": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-arm32-v7a.zip",
+        "sha256": "2387f55239ee7799fd67d5382e79f589c1da07a97d993e86b058f2290b8e456b"
+      },
+      "mipsle": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-mips32le.zip",
+        "sha256": "7f3e56ea73f2e2ce12556ba3720e8894abd89c17aec5c70ea70ae6f48552cfb5"
+      },
+      "mips": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-mips32.zip",
+        "sha256": "45a84c48da48e7f7663c4c0030977ba0d56ba24a5c855de6a1d898be904e16db"
+      }
+    }
+  },
+  "geosite": {
+    "url": "https://github.com/v2fly/domain-list-community/releases/download/20261101074624/dlc.dat",
+    "sha256": "64f213e84d75f7fddf43b9a75f5afcce09f07124cce592e458cbbfa045906aa8",
+    "version": "20261101074624",
+    "commit": "01add61fbaf719b55673d969615cd328e80f214c",
+    "required_code": "CATEGORY-RU",
+    "license": {
+      "url": "https://raw.githubusercontent.com/v2fly/domain-list-community/01add61fbaf719b55673d969615cd328e80f214c/LICENSE",
+      "sha256": "b9d84a22870d3f21c91a4c6e410c9cc51d00902f5233ad0c84011479244bf7d2"
+    }
+  }
+}

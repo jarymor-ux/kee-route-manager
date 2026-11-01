@@ -1,6 +1,6 @@
 # Полная установка Kee Route Manager для AI-агента
 
-Этот файл — инструкция от ссылки на репозиторий до проверенной установки **v2.0.4** (stable channel), собираемой Go 1.27.3. Прочитайте также корневой `AGENTS.md`. До начала установки подтвердите фактическую публикацию полного подписанного набора v2.0.4; отсутствие релиза/asset означает остановку, а не установку с main или старой версии. Все модели остаются experimental до аппаратной приёмки; контейнерные проверки её не заменяют. Старые assets неизменны. KRM требует существующий рабочий Xray; автоматическую установку Entware/XKeen/Xray этот проект не выполняет.
+Этот файл описывает установку на Keenetic/Netcraze из одного полного подписанного релиза. Прочитайте корневой `AGENTS.md`. **Автоустановка отсутствующих XKeen/Xray — текущая неопубликованная доработка: она требует нового неизменяемого релиза с пятью `router-deps-linux-ARCH.tar.gz`; опубликованные assets v2.0.4 и прежних версий не меняются.** Номер следующего релиза здесь не назначается. Отсутствие полного релиза/asset означает остановку, а не установку с main или старой версии. Все модели остаются experimental до аппаратной приёмки; контейнерные проверки её не заменяют. Сначала самостоятельно подготовьте смонтированную Entware, SSH и совместимую прошивку. Новый installer устанавливает только отсутствующие XKeen/Xray и необходимые пакеты из доверенных feeds Entware; рабочую существующую установку сохраняет.
 
 **Прежний v1.0.0-rc.2 не использовать для новой установки:** его раздельные секции Xray `routing` перезаписывают друг друга. В новой версии routing объединён в выбранном base-файле и проверен с реальным Xray. Прежние опубликованные assets остаются неизменными.
 
@@ -21,7 +21,7 @@ command -v openssl
 openssl version
 ```
 
-Сверьте fingerprint по независимому каналу. Не используйте `StrictHostKeyChecking=no`. Для Keenetic проверьте `/opt` и Linux-shell, а не только встроенный CLI:
+Сверьте fingerprint по независимому каналу. Не используйте `StrictHostKeyChecking=no`. Для Keenetic проверьте `/opt` и Linux-shell, а не только встроенный CLI. На чистом роутере до bootstrap нужны смонтированная Entware и `/opt/bin/opkg`, root SSH-shell, корректное время, доступ к HTTPS и достаточно RAM/места для зависимости, staging и release slots. Entware/USB или внутренний накопитель, SSH и firmware components installer не настраивает. Для уже установленного Xray выполните:
 
 ```sh
 test -d /opt
@@ -31,11 +31,15 @@ test -x /opt/sbin/xkeen
 /opt/sbin/xray run -test -confdir /opt/etc/xray/configs
 ```
 
-Пути примера относятся к типичной установке XKeen на Entware; проверьте фактические пути и API-команды установленной версии Xray. Используется только `platform.kind: keenetic`; interception остаётся у оператора/XKeen, отдельного поля firewall-mode нет; не устанавливать KRM поверх неизвестного scheduler. KRM не устанавливает Entware/XKeen/Xray автоматически.
+Пути примера относятся к типичной установке XKeen на Entware; проверьте фактические пути и API-команды установленной версии Xray. Используется только `platform.kind: keenetic`; interception остаётся у оператора/XKeen, отдельного поля firewall-mode нет; не устанавливать KRM поверх неизвестного scheduler. Новый подписанный installer может установить отсутствующие XKeen/Xray; Entware он не устанавливает. Для existing config пути и tags выбираются по фактическому Xray. Частичная существующая установка, неоднозначные hook/module trees или независимый proxy-процесс требуют явного разбора, а не перезаписи.
 
 Проверьте строгий JSON во всех файлах `*.json`, единственную пользовательскую секцию `routing` в выбранном base-файле, фактический asset directory и семантику команд XKeen. Перезапуск должен завершаться синхронно, а status возвращать ошибку при отсутствии основного Xray; временные процессы benchmark не подтверждают его работу. Подробности настройки — в [CONFIGURATION.md](CONFIGURATION.md).
 
 Официальная инструкция [Entware для Keenetic](https://support.keenetic.com/eu/titan/kn-1812/en/20980-installing-the-entware-repository-on-a-usb-drive.html) объясняет подготовку USB/OPKG и отдельный порт SSH. OpenSSL должен поддерживать [Ed25519 через pkeyutl](https://docs.openssl.org/4.0/man1/openssl-pkeyutl/). Если доверенного OpenSSL/curl/CA нет, сначала установить их пакетным менеджером платформы; bootstrap завершается до исполнения скачанных программ.
+
+Нужны работающие RCI/NDMC и аутентификация, соответствующая прошивке: в KeeneticOS 5.2+ учитывайте RCI token. Нужные ядру Netfilter modules (`xt_comment`, `xt_TPROXY`, `xt_socket`) проверяются на устройстве; installer не меняет прошивку или набор её компонентов. Отсутствие RCI auth/kernel capabilities не устраняется скачиванием Xray.
+
+При новой установке XKeen без выбранной политики его upstream fallback может перехватить трафик **всех клиентов**. До установки требуется явное согласие в TTY, default «Нет»; для unattended сценария предусмотрен только осознанный `KRM_ALLOW_XKEEN_FALLBACK_ALL=1`. Installer не создаёт/меняет политики роутера автоматически. Существующие flags/options XKeen сохраняются; для нового XKeen автозапуск сначала выключен и включается через `-auto on` только после readiness KRM.
 
 ## 2. Инвентаризация и приватная резервная копия
 
@@ -49,7 +53,7 @@ crontab -l
 
 При переходе с прежнего проекта найдите его фактические пути/процессы на устройстве, остановите scheduler/watchdog, восстановите routing и WAN, проверьте Xray. Удаляйте только идентифицированные файлы. Инвентаризация и удаление старой установки выполняются на аппаратном этапе с владельцем, а не на компьютере разработки.
 
-**Безопасность старой версии:** v1.3.3 собран Go 1.27.2 и затронут [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Сборка 2.0.4 использует исправленный Go 1.27.3; устанавливать только после фактической публикации и проверки нового подписанного набора. Старые binaries не исправляются и не заменяются; не подменяйте доверенную подпись изменяемой веткой.
+**Безопасность старой версии:** v1.3.3 собран Go 1.27.2 и затронут [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Сборка 2.0.4 использует исправленный Go 1.27.3; устанавливать только после фактической публикации и проверки полного подписанного набора v2.0.4 либо нового совместимого релиза; для missing-stack сценария нужен отдельный новый релиз с dependency archives. Старые binaries не исправляются и не заменяются; не подменяйте доверенную подпись изменяемой веткой.
 
 ## 3. Получить одну фиксированную версию
 
@@ -65,8 +69,10 @@ git checkout RELEASE_TAG
 
 ```sh
 KRM_RELEASE_PUBLIC_KEY=/TRUSTED/release-public.key \
-python3 scripts/verify-release.py /PRIVATE/complete-release
+python3 scripts/verify-release.py /PRIVATE/complete-release --router-deps
 ```
+
+Флаг `--router-deps` обязателен для нового сценария установки зависимостей: он требует все пять native dependency archives. Для проверки старого неизменяемого релиза без этих assets используйте прежнюю команду без флага; это не добавляет ему новых функций. В новом релизе native archive покрыт теми же Ed25519 manifest/SHA256SUMS подписями, digest и size; downloaded code не исполняется до проверки.
 
 Выполнять bootstrap можно только после успешной проверки подписанного inventory, включая его собственный digest; перенесите проверенные bytes на роутер по аутентифицированному SSH. При ошибке остановитесь.
 
@@ -74,7 +80,7 @@ python3 scripts/verify-release.py /PRIVATE/complete-release
 
 ## 4. Выбрать подготовленную или интерактивную конфигурацию
 
-При новой установке без `KRM_CONFIG_FILE` приватный config создаёт RU/EN wizard после полной проверки signed assets. Подготовка YAML вручную необязательна; предварительно определите реальные Xray paths и routing tags, subscriptions и независимые health targets. Для prepared/noninteractive пути выполните подготовку ниже: если передан `KRM_CONFIG_FILE`, wizard не запускается.
+При новой установке без `KRM_CONFIG_FILE` приватный config создаёт RU/EN wizard после полной проверки signed assets. Если в стандартном Xray config directory нет ни одного `*.json`, bootstrap выбирает fresh-режим: пути и routing tags задаются генератором; нужны собственная подписка, score URL и минимум два health URL на независимых hostname. Если JSON уже есть, мастер спрашивает фактические paths/tags и сохраняет существующие конфиги. Подготовка YAML вручную необязательна. Для prepared/noninteractive пути выполните подготовку ниже: если передан `KRM_CONFIG_FILE`, wizard не запускается.
 
 Скопируйте подходящий шаблон `configs/keenetic.yaml` в приватный каталог на целевом устройстве (например `/root/krm-install/config.yaml`), mode 0600. Не редактируйте tracked template реальными данными.
 
@@ -98,6 +104,14 @@ kee-route-managerctl validate --config /root/krm-install/config.yaml
 
 Если ctl ещё не установлен, на доверенном компьютере используйте собранный `dist/kee-route-managerctl` с приватной копией routing JSON или проверенный бинарник из release. `route-candidates` только читает strict JSON и показывает кандидатов; выбор не должен быть автоматическим при неоднозначных rules. Не запускайте непроверенный бинарник для проверки его самого.
 
+Новый offline CLI также умеет подготовить базовые JSON в новом каталоге, не запуская Xray:
+
+```sh
+kee-route-managerctl init-xray --output-dir /PRIVATE/new-xray-configs
+```
+
+Он не перезаписывает файлы. Автоматический fresh config использует `/opt/sbin/xray`, assets `/opt/etc/xray/dat`, config/managed `/opt/etc/xray/configs` и `05_routing.json`. Шесть strict-JSON файлов задают Redirect TCP/TProxy UDP на порту 61219, inbound tags `redirect,tproxy`. Первыми напрямую идут `domain:ru` и `ext:geosite_v2fly.dat:category-ru`; остальное — через `krm-bootstrap`, первоначально blackhole до выбора узла единственным daemon. DNS `{}` использует системный resolver. Личные узлы/ключи и исключения игровых портов не копируются; initial exclusion lists пусты. Existing/prepared YAML не переписывается под эти значения.
+
 ## 5. Установить через wizard или готовый config
 
 Выберите интерактивный или prepared config путь и безопасный пароль. Installer читает пароль с терминала; для полностью автоматического запуска создайте root-only `KRM_PASSWORD_FILE` вне Git и удалите после настройки. Не передавайте пароль параметром командной строки.
@@ -109,9 +123,9 @@ curl --proto '=https' -fsSLo /tmp/krm-bootstrap.sh RELEASE_URL
 sh /tmp/krm-bootstrap.sh
 ```
 
-Без `KRM_MODE` используется `local-ui`. После полной проверки release assets bootstrap запускает подписанный `kee-route-managerctl init-config`, предлагает русский или английский язык, проверяет созданный временный config и только затем передаёт его installer. Нужен интерактивный TTY. Wizard настраивает Xray paths, реальные inbound/outbound tags, subscriptions/headers, score/health targets, размер пула, speed test и update discovery. Routing tags нельзя угадывать; при неоднозначности сначала используйте `route-candidates`. Health targets желательно выбирать на разных hostname у независимых операторов: при quorum 2 один сервер под двумя URL не даёт независимых свидетельств.
+Без `KRM_MODE` используется `local-ui`. После полной проверки release assets bootstrap запускает подписанный `kee-route-managerctl init-config`, предлагает русский или английский язык, проверяет созданный временный config и только затем передаёт его installer. Нужен интерактивный TTY. В fresh-режиме wizard использует описанные сгенерированные paths/tags и требует два независимых health hostname; для existing JSON спрашивает реальные Xray paths/inbound/outbound tags. В обоих случаях он настраивает subscriptions/headers, score/health targets, размер пула, speed test и update discovery. Для existing config routing tags нельзя угадывать; при неоднозначности сначала используйте `route-candidates`. Health targets желательно выбирать на разных hostname у независимых операторов: при quorum 2 один сервер под двумя URL не даёт независимых свидетельств.
 
-Безопасные defaults: firewall `existing`, API на loopback, приватные config/credentials, speed test выключен, автоматическое применение обновлений выключено (`auto_apply: false`). Поиск обновлений — отдельная опция, не разрешение на их применение. При включении speed test нужен HTTPS URL-шаблон с `{bytes}`. Wizard не устанавливает Xray и не угадывает рабочие routing tags.
+Безопасные defaults: firewall `existing`, API на loopback, приватные config/credentials, speed test выключен, автоматическое применение обновлений выключено (`auto_apply: false`). Поиск обновлений — отдельная опция, не разрешение на их применение. При включении speed test нужен HTTPS URL-шаблон с `{bytes}`. Сам wizard создаёт конфиг; подписанный installer отдельно устанавливает отсутствующие XKeen/Xray до runtime preflight. Рабочие routing tags существующей установки не угадываются. Fresh restart выполняется синхронно через `/bin/sh -c 'XKEEN_FOREGROUND=1 exec /opt/sbin/xkeen -restart </dev/null'`; legacy/prepared команды не меняются.
 
 Advanced/noninteractive сценарий сохраняется и пропускает wizard:
 
@@ -178,7 +192,7 @@ kee-route-manager-ui serve --config /ABSOLUTE/PRIVATE/ui.yaml
 
 ## 8. Проверить и принять
 
-Проверки выполнять с учётом [ограничений платформ](KNOWN_LIMITATIONS.md), сохраняя независимый доступ по SSH. Минимум:
+Проверки выполнять с учётом [ограничений платформ](KNOWN_LIMITATIONS.md), сохраняя независимый доступ по SSH. Точечная проверка коррекции `.ru` в уже работающей маршрутизации не является приёмкой новой чистой установки. Fresh install, reboot и отказоустойчивость нужно проверить на точной модели/прошивке отдельно. Минимум:
 
 ```sh
 kee-route-managerctl benchmark --config CONFIG_PATH
@@ -222,7 +236,7 @@ kee-route-manager-launcher install --config CONFIG_PATH --ui-config UI_CONFIG_PA
 kee-route-managerctl restore-xray --config CONFIG_PATH
 ```
 
-Используйте signed `install/PLATFORM/uninstall.sh` из payload. Он также выполняет restore через живой daemon **до** остановки. Успешный restore сохраняет `automatic_routing_paused: true`: scheduler не устанавливает маршрутизацию заново, в том числе после перезапуска daemon. Возобновление требует успешного ручного `benchmark`; не запускайте его во время удаления. Прежние опубликованные assets этим исправлением не обновляются. Ошибка restore оставляет сервисы и файлы для диагностики. По умолчанию приватный config/state сохраняются; `--purge` удаляет только стандартные KRM config/state/cache/update-slot directories. Нестандартные пути проверять и очищать отдельно.
+Используйте signed `install/PLATFORM/uninstall.sh` из payload. Он также выполняет restore через живой daemon **до** остановки. Успешный restore сохраняет `automatic_routing_paused: true`: scheduler не устанавливает маршрутизацию заново, в том числе после перезапуска daemon. Возобновление требует успешного ручного `benchmark`; не запускайте его во время удаления. Прежние опубликованные assets этим исправлением не обновляются. Ошибка restore оставляет сервисы и файлы для диагностики. При частичной ошибке установки сохранённые stack-файлы остаются для диагностики: повторный запуск может потребовать явного разбора частичной установки. Uninstall KRM не удаляет установленные XKeen/Xray, GeoSite, Entware packages или их interception; это отдельное обслуживание после проверки WAN и backup. Для fresh-конфига restore возвращает исходный `krm-bootstrap` blackhole для трафика вне direct-правил; это не переход всего трафика в WAN. До удаления обеспечьте отдельный проверенный план восстановления interception/обычного Xray, не угадывая firewall-команды. По умолчанию приватный config/state сохраняются; `--purge` удаляет только стандартные KRM config/state/cache/update-slot directories. Нестандартные пути проверять и очищать отдельно.
 
 Укажите режим установки явно:
 

@@ -67,6 +67,8 @@ if current:
         raise SystemExit('retired installation targets in current release')
 else:
     required |= legacy
+if '--router-deps' in sys.argv[2:]:
+    required |= {f'router-deps-linux-{arch}.tar.gz' for arch in ('amd64', 'arm64', 'armv7', 'mipsle', 'mips')}
 if not required <= seen:
     raise SystemExit('missing required assets ' + str(required - seen))
 expected = seen | {name, name + '.sig'}

@@ -22,6 +22,8 @@ git -c commit.gpgsign=false commit --quiet -m 'Disposable release fixture source
 go build -o "$WORK/tool" ./cmd/krm-release-tool
 "$WORK/tool" keygen --public "$WORK/public" --private "$WORK/private"
 export KRM_RELEASE_PUBLIC_KEY="$WORK/public"
+# Share the verified upstream cache between the two isolated signed builds.
+export KRM_DEPENDENCY_CACHE="${KRM_DEPENDENCY_CACHE:-$WORK/dependency-cache}"
 # Exercise exact Git release identity for both channels without a VERSION file.
 for fixture_version in 9.9.9-rc.1 9.9.9; do
  if [[ "$fixture_version" == 9.9.9 ]]; then
@@ -51,7 +53,7 @@ for platform in ('keenetic',):
  assert 'TAG=v'+version in body and 'CHANNEL='+channel in body
 assert not (output/'bootstrap-openwrt.sh').exists() and not (output/'bootstrap-linux.sh').exists()
 for asset in output.iterdir():
- if '-linux-' not in asset.name: continue
+ if not any(asset.name.startswith(component+'-linux-') for component in ('kee-route-managerd','kee-route-manager-ui','kee-route-managerctl','kee-route-manager-launcher','krm-release-tool')): continue
  metadata=subprocess.check_output(['go','version','-m',str(asset)],text=True)
  build={line.split('=',1)[0].strip().split()[-1]:line.split('=',1)[1] for line in metadata.splitlines() if line.startswith('\tbuild\t') and '=' in line}
  assert build.get('vcs.revision')==commit and build.get('vcs.modified')=='false', asset.name

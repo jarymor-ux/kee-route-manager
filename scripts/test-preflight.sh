@@ -8,6 +8,7 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/install/keenetic" "$WORK/install/common" "$WORK/dist"
 cp install/keenetic/{install,preflight}.sh "$WORK/install/keenetic/"
 cp install/common/architecture.sh "$WORK/install/common/"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/install/keenetic/prepare-stack.sh"
 case "$(uname -m)" in x86_64) arch=amd64;; aarch64) arch=arm64;; *) echo 'wrapper fixture requires native amd64/arm64 host' >&2; exit 1;; esac
 cat > "$WORK/dist/kee-route-managerctl-linux-$arch" <<'CLI'
 #!/bin/sh
