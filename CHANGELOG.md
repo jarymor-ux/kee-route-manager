@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.5 — 2026-11-01
+
+- Install missing XKeen/Xray from architecture-specific dependency archives covered by the same signed immutable release. Pin upstream sources and licenses; use soft-float Xray on MIPS and remove installer-only migration/cleanup from the bundled XKeen runtime.
+- Generate private hybrid TCP Redirect/UDP TProxy configs with explicit `.ru` and `category-ru` direct routing; keep other intercepted traffic blocked until KRM selects a subscription node. Require two independent health hosts in the fresh wizard.
+- Preserve existing runtimes/configuration, reject legacy/partial interception trees, require explicit consent to XKeen fallback across all clients, and roll back owned file publications on failure. Entware, RCI and Netfilter remain prerequisites; hardware acceptance and automatic WAN bypass remain unverified.
+
 ## 2.0.4 — 2026-10-29
 
 - Publish the stable subscription/name node preferences described below after cancelling the unpublished 2.0.3 tag. Branch CI exposed an existing preflight fixture race: Linux ESRCH during `/proc` read means the killed child is already gone. Backport the existing RC test correction; this does not change application runtime behavior.

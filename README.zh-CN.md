@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文**
 
-**版本 2.0.4：**使用 Go 1.27.3 构建，包含 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)（`crypto/x509`）修复。仅使用完整且签名验证通过的 `v2.0.4` 或更高已审核版本；如尚未发布，应停止安装，不能改用可变分支。旧版 v1.3.3 使用受影响的 Go 1.27.2，文件保持不变。旧 Keenetic 自动生成配置中若有已移除的平台子项，必须先进行[离线迁移](docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets)。
+**版本 2.0.5：**使用 Go 1.27.3 构建，包含 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)（`crypto/x509`）修复。仅使用完整且签名验证通过的 `v2.0.4` 或更高已审核版本；如尚未发布，应停止安装，不能改用可变分支。旧版 v1.3.3 使用受影响的 Go 1.27.2，文件保持不变。旧 Keenetic 自动生成配置中若有已移除的平台子项，必须先进行[离线迁移](docs/BREAKING_CHANGES.md#201-keeneticnetcraze-only-router-targets)。
 
 KRM 是**仅面向 Keenetic 和 Netcraze 路由器**的开源 Xray、VPN 订阅、路由健康与节点切换面板。统一的型号、架构与资源要求见[硬件兼容性](docs/HARDWARE.md)。目前仅支持 Xray，不支持 AmneziaWG 或其他 VPN 内核。**`v2.0.4` 面向 stable 渠道；Release 与 Release Candidate 仍独立发布。所有型号在完成硬件验收前仍为 experimental。** 已在一台 Keenetic 上验证 launcher 迁移和通过面板 API 从 GitHub 更新，Xray 进程及设备策略保持不变。重启、断电和故障候选版本的硬件回滚仍待验证。既有版本的标签和发布文件保持不变。
 
@@ -27,7 +27,7 @@ Router → Settings 提供运行配置表单、校验、版本冲突保护和初
 
 AI 代理应先阅读 [AGENTS.md](AGENTS.md)，再按照 [完整安装流程](docs/AGENT_INSTALL.md) 执行 SSH、备份、配置、core/UI 安装、TLS、验证、卸载及回滚。
 
-安装时仅使用一个完整且验证通过的不可变签名版本，不要使用可变的 `main` 或 `/releases/latest`。**以下自动安装缺失 XKeen/Xray 的功能目前仅在未发布源码中；不可变的 v2.0.4 文件不包含这项新增功能。** 请等待包含五个 `router-deps-linux-ARCH.tar.gz` 的独立签名版本；文件不齐全时停止。
+安装时仅使用一个完整且验证通过的不可变签名版本，不要使用可变的 `main` 或 `/releases/latest`。**自动安装缺失 XKeen/Xray 的功能包含在 v2.0.5 中；不可变的 v2.0.4 文件不包含这项新增功能。** 请仅在 v2.0.5 正式发布且包含五个 `router-deps-linux-ARCH.tar.gz` 的独立签名版本；文件不齐全时停止。
 
 新安装器在已安装并挂载的 Entware 上安装缺失的 XKeen/Xray，所需软件包来自已配置的可信 Entware feeds；不会安装 Entware、格式化磁盘或配置 SSH/固件。没有所选路由器策略时，新 XKeen 可能拦截所有客户端流量：必须在终端明确同意（默认否），或在无人值守安装中设置 `KRM_ALLOW_XKEEN_FALLBACK_ALL=1`。安装器不自动创建或更改路由器策略；不明确或不完整的既有 hooks/模块树会被拒绝。
 
