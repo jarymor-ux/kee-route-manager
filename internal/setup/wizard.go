@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,6 +67,8 @@ type Messages struct {
 	HealthHelp             string
 	HealthPrompt           string
 	AddHealth              string
+	IndependentHealthHelp  string
+	DuplicateHealthHost    string
 	PoolPrompt             string
 	SpeedEnable            string
 	SpeedURLHelp           string
@@ -147,6 +150,8 @@ var messagesRU = Messages{
 	HealthHelp:             "Health targets используются для проверки реальной доступности маршрута. Рекомендуются два независимых hostname.",
 	HealthPrompt:           "URL health target",
 	AddHealth:              "Добавить ещё один health target? [д/Н]",
+	IndependentHealthHelp:  "Для автоматического переключения нужны health targets как минимум на двух независимых hostname. Введите второй URL.",
+	DuplicateHealthHost:    "Этот hostname уже используется. Укажите health URL другого независимого сервера.",
 	PoolPrompt:             "Размер пула [5]",
 	SpeedEnable:            "Включить проверку скорости? [д/Н]",
 	SpeedURLHelp:           "HTTPS URL-шаблон для download benchmark. Обязателен placeholder {bytes}.",
@@ -228,6 +233,8 @@ var messagesEN = Messages{
 	HealthHelp:             "Health targets verify real route availability. Two independent hostnames are recommended.",
 	HealthPrompt:           "Health target URL",
 	AddHealth:              "Add another health target? [y/N]",
+	IndependentHealthHelp:  "Automatic failover requires health targets on at least two independent hostnames. Enter the second URL.",
+	DuplicateHealthHost:    "This hostname is already used. Enter a health URL on another independent server.",
 	PoolPrompt:             "Pool size [5]",
 	SpeedEnable:            "Enable speed test? [y/N]",
 	SpeedURLHelp:           "Download benchmark URL template. It must contain the {bytes} placeholder.",
@@ -265,13 +272,14 @@ var messagesEN = Messages{
 }
 
 type wizard struct {
-	in  *bufio.Reader
-	out io.Writer
-	msg Messages
+	in        *bufio.Reader
+	out       io.Writer
+	msg       Messages
+	freshXray bool
 }
 
 func InitConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool) error {
-	return initConfig(in, out, outputPath, overwrite, "", "", "")
+	return initConfig(in, out, outputPath, overwrite, "", "", "", false)
 }
 
 func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform) error {
@@ -280,11 +288,30 @@ func InitConfigForPlatform(in io.Reader, out io.Writer, outputPath string, overw
 	default:
 		return fmt.Errorf("unsupported platform %q", platform)
 	}
-	return initConfig(in, out, outputPath, overwrite, platform, "", "")
+	return initConfig(in, out, outputPath, overwrite, platform, "", "", false)
 }
 
 // InitLocalUIConfig creates the installer pair and a staged TLS identity offline.
 func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
+	return initLocalUIConfig(in, out, outputPath, uiPath, tlsDir, platform, false)
+}
+
+// InitFreshInstallerConfig pins controller routing to the separately generated
+// fresh Xray bootstrap. Existing configurations are never overwritten.
+func InitFreshInstallerConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform) error {
+	if platform != PlatformKeenetic {
+		return fmt.Errorf("unsupported platform %q", platform)
+	}
+	if uiPath != "" || tlsDir != "" {
+		return initLocalUIConfig(in, out, outputPath, uiPath, tlsDir, platform, true)
+	}
+	if _, err := os.Lstat(outputPath); !os.IsNotExist(err) {
+		return fmt.Errorf("controller output already exists or cannot be inspected")
+	}
+	return initConfig(in, out, outputPath, false, platform, "", "", true)
+}
+
+func initLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir string, platform Platform, freshXray bool) error {
 	switch platform {
 	case PlatformKeenetic:
 	default:
@@ -302,10 +329,10 @@ func InitLocalUIConfig(in io.Reader, out io.Writer, outputPath, uiPath, tlsDir s
 	if _, err := os.Lstat(tlsDir); !os.IsNotExist(err) {
 		return fmt.Errorf("TLS directory already exists or cannot be inspected")
 	}
-	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir)
+	return initConfig(in, out, outputPath, false, platform, uiPath, tlsDir, freshXray)
 }
 
-func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string) (resultErr error) {
+func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, platform Platform, uiPath, tlsDir string, freshXray bool) (resultErr error) {
 	if in == nil || out == nil {
 		return fmt.Errorf("wizard input and output are required")
 	}
@@ -313,7 +340,7 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 		return fmt.Errorf("output path is required")
 	}
 
-	w := &wizard{in: bufio.NewReader(in), out: out}
+	w := &wizard{in: bufio.NewReader(in), out: out, freshXray: freshXray}
 	if err := w.chooseLanguage(); err != nil {
 		return err
 	}
@@ -324,6 +351,11 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	cfg, err := BuildControllerConfig(opts)
 	if err != nil {
 		return err
+	}
+	if freshXray {
+		// XKeen otherwise detaches without a terminal; wait for restart completion
+		// before the controller begins its readiness checks.
+		cfg.Platform.XrayRestartCommand = []string{"/bin/sh", "-c", "XKEEN_FOREGROUND=1 exec /opt/sbin/xkeen -restart </dev/null"}
 	}
 	if uiPath != "" {
 		prefix := ""
@@ -352,6 +384,9 @@ func initConfig(in io.Reader, out io.Writer, outputPath string, overwrite bool, 
 	allowOverwrite := overwrite
 	if !overwrite && uiPath == "" {
 		if _, err := os.Stat(outputPath); err == nil {
+			if freshXray {
+				return fmt.Errorf("controller output already exists")
+			}
 			ok, err = w.askBool(w.msg.Overwrite, false)
 			if err != nil {
 				return err
@@ -461,36 +496,39 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 		}
 	}
 	binaryDefault, configDirDefault, _ := platformDefaults(platform)
-
-	fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
-	binary, err := w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
-	configDir, err := w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	routingDefault := filepath.Join(configDir, "05_routing.json")
-	fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
-	routing, err := w.askDefault(w.msg.BaseRoutingPrompt, routingDefault)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
-	inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
-	}
-	inbound := splitTags(inboundRaw)
-	if len(inbound) == 0 {
-		return SetupOptions{}, wizardSummary{}, fmt.Errorf("inbound tags are required")
-	}
-	fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
-	outbound, err := w.askRequired(w.msg.OutboundTagPrompt)
-	if err != nil {
-		return SetupOptions{}, wizardSummary{}, err
+	binary, configDir := binaryDefault, configDirDefault
+	routing := filepath.Join(configDir, "05_routing.json")
+	inbound, outbound := []string{"redirect", "tproxy"}, "krm-bootstrap"
+	if !w.freshXray {
+		fmt.Fprintln(w.out, w.msg.XrayBinaryHelp)
+		binary, err = w.askDefault(w.msg.XrayBinaryPrompt, binaryDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		fmt.Fprintln(w.out, w.msg.XrayConfigDirHelp)
+		configDir, err = w.askDefault(w.msg.XrayConfigDirPrompt, configDirDefault)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		fmt.Fprintln(w.out, w.msg.BaseRoutingHelp)
+		routing, err = w.askDefault(w.msg.BaseRoutingPrompt, filepath.Join(configDir, "05_routing.json"))
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		fmt.Fprintln(w.out, w.msg.InboundTagsHelp)
+		inboundRaw, err := w.askDefault(w.msg.InboundTagsPrompt, "redirect,tproxy")
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
+		inbound = splitTags(inboundRaw)
+		if len(inbound) == 0 {
+			return SetupOptions{}, wizardSummary{}, fmt.Errorf("inbound tags are required")
+		}
+		fmt.Fprintln(w.out, w.msg.OutboundTagHelp)
+		outbound, err = w.askRequired(w.msg.OutboundTagPrompt)
+		if err != nil {
+			return SetupOptions{}, wizardSummary{}, err
+		}
 	}
 
 	subscriptions, err := w.askSubscriptions()
@@ -577,6 +615,9 @@ func (w *wizard) collect(platform Platform) (SetupOptions, wizardSummary, error)
 			SpeedURLTemplate: speedURL,
 		},
 		Update: update,
+	}
+	if w.freshXray {
+		opts.Xray.AssetDir = "/opt/etc/xray/dat"
 	}
 	subscriptionNames := make([]string, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
@@ -716,12 +757,26 @@ func (w *wizard) askHeaderValue(name string) (string, error) {
 
 func (w *wizard) askHealthTargets() ([]config.Target, error) {
 	var out []config.Target
+	hosts := map[string]bool{}
 	for {
 		u, err := w.askURL(w.msg.HealthPrompt)
 		if err != nil {
 			return nil, err
 		}
+		if w.freshXray {
+			parsed, _ := url.Parse(u)
+			host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+			if hosts[host] {
+				fmt.Fprintln(w.out, w.msg.DuplicateHealthHost)
+				continue
+			}
+			hosts[host] = true
+		}
 		out = append(out, target(fmt.Sprintf("health%d", len(out)+1), fmt.Sprintf("Health target %d", len(out)+1), u))
+		if w.freshXray && len(hosts) < 2 {
+			fmt.Fprintln(w.out, w.msg.IndependentHealthHelp)
+			continue
+		}
 		more, err := w.askBool(w.msg.AddHealth, false)
 		if err != nil {
 			return nil, err

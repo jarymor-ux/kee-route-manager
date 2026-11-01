@@ -19,6 +19,7 @@ trap 'rm -rf "$TMP"' EXIT
 CGO_ENABLED=0 go build -trimpath -o "$TMP/ctl" ./cmd/kee-route-managerctl
 for cfg in configs/*.yaml; do "$TMP/ctl" validate --config "$cfg" >/dev/null; done
 python3 scripts/test-bootstrap.py
+python3 scripts/test-router-deps.py
 python3 scripts/test-build-version.py
 python3 scripts/test-docs-scope.py
 printf 'Source, tests, syntax, embedded assets, templates and adversarial bootstrap checks passed.\n'

@@ -53,6 +53,7 @@ jobs:
         run: |
           docker build -t krm-test -f scripts/test.Dockerfile .
           docker run --rm --network none -v "$PWD:/src:ro" krm-test python3 scripts/test-bootstrap.py
+          docker run --rm --network none -v "$PWD:/src:ro" krm-test bash scripts/test-prepare-stack.sh
           docker run --rm --network none -v "$PWD:/src:ro" krm-test ./scripts/test-install.sh
       - name: Signed release fixture and all artifact digests
         run: ./scripts/test-release.sh

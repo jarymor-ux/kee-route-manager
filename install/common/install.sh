@@ -166,4 +166,7 @@ if [ "$MODE" != core ]; then
  done
  [ "$ui_ready" = 1 ] || fail 'UI/upstream not ready; installation retained for diagnosis'
 fi
+if [ "${KRM_ENABLE_NEW_XKEEN_AUTOSTART:-0}" = 1 ] && [ "$MODE" != ui ]; then
+ XKEEN_FOREGROUND=1 /opt/sbin/xkeen -auto on > "$STAGE/xkeen-autostart.log" 2>&1 || fail 'KRM is installed but enabling new XKeen autostart failed; inspect it before reboot'
+fi
 printf 'Installed mode=%s. Check readiness, initial benchmark, HTTPS login and router recovery using docs/AGENT_INSTALL.md.\n' "$MODE"

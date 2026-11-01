@@ -33,6 +33,9 @@ for target in amd64 arm64 armv7 mipsle mips; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" GOMIPS="$mips" go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/$component-linux-$target" "./cmd/$component"
  done
 done
+# Third-party stack payloads are acquired and checked on the trusted build host,
+# then covered by this release's existing Ed25519 manifest/checksum signatures.
+python3 scripts/prepare-router-deps.py "$DIST" --cache "${KRM_DEPENDENCY_CACHE:-$TOOL_DIR/dependency-cache}"
 # Signed install payload contains configuration, all service/uninstall scripts and the selected trust key.
 TRUST_DIR="$TOOL_DIR/trust"
 mkdir -p "$TRUST_DIR"
@@ -49,5 +52,5 @@ for f in sorted(p.iterdir()):
 (p/'SHA256SUMS').write_text(''.join(entries))
 PY
 "$TOOL_DIR/krm-release-tool" sign --private "$PRIVATE_KEY" --input "$DIST/SHA256SUMS" --out "$DIST/SHA256SUMS.sig"
-python3 scripts/verify-release.py "$DIST" --current
+python3 scripts/verify-release.py "$DIST" --current --router-deps
 printf 'Signed %s artifacts: %s\n' "$CHANNEL" "$DIST"

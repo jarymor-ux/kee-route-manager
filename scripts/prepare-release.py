@@ -41,4 +41,14 @@ while module_json.strip():
  license_id={'go.yaml.in/yaml/v3':'MIT AND Apache-2.0'}.get(path,'NOASSERTION')
  sbom['packages'].append({'SPDXID':module_id,'name':path,'versionInfo':module['Version'],'downloadLocation':'NOASSERTION','filesAnalyzed':False,'licenseConcluded':'NOASSERTION','licenseDeclared':license_id,'copyrightText':'NOASSERTION','externalRefs':[{'referenceCategory':'PACKAGE-MANAGER','referenceType':'purl','referenceLocator':'pkg:golang/'+path+'@'+module['Version']}],'comment':'Resolved runtime Go module; content checksum '+module.get('Sum','unavailable')})
  sbom['relationships'].append({'spdxElementId':pkgid,'relationshipType':'DEPENDS_ON','relatedSpdxElement':module_id})
+# Nested dependency archives retain their licenses and reviewed source pins.
+# Record those runtime packages as well as the top-level distributable files.
+if any(f.name.startswith('router-deps-linux-') for f in out.iterdir()):
+ dependencies=json.loads((source/'install/router-dependencies.json').read_text())
+ for key,name,license_id in [('xkeen','XKeen','BSD-3-Clause'),('xray','Xray-core','MPL-2.0'),('geosite','domain-list-community','MIT')]:
+  dependency=dependencies[key]
+  dependency_id='SPDXRef-Package-Router-'+name
+  sources=list(dependency['archives'].values()) if key=='xray' else [dependency]
+  sbom['packages'].append({'SPDXID':dependency_id,'name':name,'versionInfo':dependency['version'],'downloadLocation':sources[0]['url'],'filesAnalyzed':False,'licenseConcluded':'NOASSERTION','licenseDeclared':license_id,'copyrightText':'NOASSERTION','comment':'Bundled only for explicit missing-stack installation; reviewed upstream SHA-256 pins: '+', '.join(asset['sha256'] for asset in sources)})
+  sbom['relationships'].append({'spdxElementId':pkgid,'relationshipType':'DEPENDS_ON','relatedSpdxElement':dependency_id})
 (out/'SBOM.spdx.json').write_text(json.dumps(sbom,indent=2)+'\n')

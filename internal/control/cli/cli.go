@@ -37,7 +37,7 @@ func Run(ctx context.Context, args []string, version, commit, buildTime string) 
 
 func runWithIO(ctx context.Context, args []string, version, commit, buildTime string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kee-route-managerctl <init-config|preflight|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
+		return fmt.Errorf("usage: kee-route-managerctl <init-config|init-xray|preflight|status|ready|benchmark|switch --slot N|direct|restore-xray|update-status|update-check|update-apply [--target-version VERSION]|validate|passwd|route-candidates|version> [--config PATH] [--socket PATH]")
 	}
 	command, args := args[0], args[1:]
 	switch command {
@@ -54,6 +54,8 @@ func runWithIO(ctx context.Context, args []string, version, commit, buildTime st
 		return routeCandidates(args)
 	case "init-config":
 		return initConfig(args, in, out)
+	case "init-xray":
+		return initXray(args, out)
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	p := f.String("config", configflag.DefaultPath(), "configuration path")
@@ -214,11 +216,18 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 	platform := f.String("platform", "", "target router family (keenetic for Keenetic/Netcraze)")
 	uiOutput := f.String("ui-output", "", "create a local HTTPS UI configuration alongside the controller")
 	tlsDir := f.String("tls-dir", "", "new private directory for the local controller TLS identity")
+	freshXray := f.Bool("fresh-xray", false, "configure a fresh Keenetic Xray bootstrap without manual routing tags")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", f.Arg(0))
+	}
+	if *freshXray {
+		if *overwrite {
+			return fmt.Errorf("fresh installation cannot overwrite existing files")
+		}
+		return setup.InitFreshInstallerConfig(in, out, *output, *uiOutput, *tlsDir, setup.Platform(*platform))
 	}
 	if *uiOutput != "" || *tlsDir != "" {
 		if *overwrite {
@@ -230,4 +239,24 @@ func initConfig(args []string, in io.Reader, out io.Writer) error {
 		return setup.InitConfigForPlatform(in, out, *output, *overwrite, setup.Platform(*platform))
 	}
 	return setup.InitConfig(in, out, *output, *overwrite)
+}
+
+func initXray(args []string, out io.Writer) error {
+	f := flag.NewFlagSet("init-xray", flag.ContinueOnError)
+	f.SetOutput(out)
+	dir := f.String("output-dir", "", "new private Xray bootstrap configuration directory")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected argument %q", f.Arg(0))
+	}
+	if strings.TrimSpace(*dir) == "" {
+		return fmt.Errorf("output directory is required")
+	}
+	if err := setup.WriteXrayBootstrap(*dir); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, *dir)
+	return nil
 }

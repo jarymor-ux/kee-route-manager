@@ -51,6 +51,28 @@ class BootstrapTests(unittest.TestCase):
   result=self.run_bootstrap(d,e)
   self.assertNotEqual(result.returncode,0);self.assertIn('not enough staging free space',result.stderr);self.assertFalse(m.exists())
   order=(d/'order.log').read_text();self.assertNotIn('fetch:release-files.tar.gz',order);self.assertNotIn('fetch:kee-route-managerd',order)
+ def test_router_dependencies_are_authenticated_before_installer(self):
+  d,a,m,e=self.fixture();e['KRM_MODE']='core'
+  result=self.run_bootstrap(d,e)
+  self.assertEqual(result.returncode,0,result.stderr)
+  self.assertIn('fetch:router-deps-linux-amd64.tar.gz',(d/'order.log').read_text())
+  d,a,m,e=self.fixture();e['KRM_MODE']='core'
+  (a/'router-deps-linux-amd64.tar.gz').write_bytes(b'tampered dependencies')
+  result=self.run_bootstrap(d,e)
+  self.assertNotEqual(result.returncode,0)
+  self.assertIn('checksum mismatch',result.stderr)
+  self.assertFalse(m.exists())
+ def test_working_native_stack_does_not_download_dependencies(self):
+  d,a,m,e=self.fixture();e['KRM_MODE']='core'
+  native=d/'native-opt'
+  (native/'sbin').mkdir(parents=True)
+  (native/'etc/xray/configs').mkdir(parents=True)
+  for component in ('xray','xkeen'):
+   file=native/'sbin'/component;file.write_text('#!/bin/sh\nexit 0\n');file.chmod(0o755)
+  (native/'etc/xray/configs/05_routing.json').write_text('{}')
+  result=self.run_bootstrap(d,e)
+  self.assertEqual(result.returncode,0,result.stderr)
+  self.assertNotIn('fetch:router-deps-',(d/'order.log').read_text())
  def test_future_release_source_has_only_keenetic_install_target(self):
   self.assertFalse((ROOT/'install/openwrt').exists())
   self.assertFalse((ROOT/'install/linux-systemd').exists())
@@ -107,6 +129,7 @@ class BootstrapTests(unittest.TestCase):
   d=pathlib.Path(tempfile.mkdtemp(dir=self.root));out=d/'dist';out.mkdir();(d/'install').mkdir()
   (d/'install/bootstrap.sh').write_bytes((ROOT/'install/bootstrap.sh').read_bytes())
   (out/'fixture-binary').write_bytes(b'release payload')
+  (out/'router-deps-linux-arm64.tar.gz').write_bytes(b'synthetic signed dependency archive')
   env=os.environ.copy();env['KRM_SOURCE_COMMIT']='fixture-commit';env['KRM_RELEASE_PUBLIC_KEY']=str(self.root/'public');env.pop('KRM_RELEASE_CHANNEL',None)
   subprocess.run([sys.executable,str(ROOT/'scripts/prepare-release.py'),str(out),'1.0.0-rc.2'],cwd=d,env=env,check=True)
   for name,platform in (('keenetic','keenetic'),):
@@ -116,13 +139,19 @@ class BootstrapTests(unittest.TestCase):
   inventory=json.loads((out/'SBOM.spdx.json').read_text())
   self.assertTrue(inventory['documentNamespace'].endswith('/1.0.0-rc.2/fixture-commit'))
   self.assertEqual(inventory['packages'][0]['licenseDeclared'],'Apache-2.0')
-  self.assertEqual({f['fileName'] for f in inventory['files']},{'./fixture-binary','./bootstrap-keenetic.sh'})
+  self.assertEqual({f['fileName'] for f in inventory['files']},{'./fixture-binary','./bootstrap-keenetic.sh','./router-deps-linux-arm64.tar.gz'})
   for entry in inventory['files']:
    self.assertEqual(entry['checksums'][0]['checksumValue'],hashlib.sha256((out/entry['fileName']).read_bytes()).hexdigest())
   modules=[pkg for pkg in inventory['packages'] if pkg['name']=='go.yaml.in/yaml/v3']
   self.assertEqual(len(modules),1);self.assertEqual(modules[0]['versionInfo'],'v3.0.5')
   self.assertEqual(modules[0]['licenseDeclared'],'MIT AND Apache-2.0')
   self.assertTrue(any(r['relationshipType']=='DEPENDS_ON' and r['relatedSpdxElement']==modules[0]['SPDXID'] for r in inventory['relationships']))
+  bundled={p['name']:p for p in inventory['packages'] if p['name'] in {'XKeen','Xray-core','domain-list-community'}}
+  self.assertEqual(set(bundled),{'XKeen','Xray-core','domain-list-community'})
+  self.assertEqual(bundled['XKeen']['versionInfo'],'2.1')
+  self.assertEqual(bundled['XKeen']['licenseDeclared'],'BSD-3-Clause')
+  self.assertEqual(bundled['Xray-core']['licenseDeclared'],'MPL-2.0')
+  self.assertEqual(bundled['domain-list-community']['licenseDeclared'],'MIT')
  def test_release_channel_binding(self):
   for version,channel in [('0.0.0','stable'),('1.2.3','stable'),('1.2.3-rc.1','rc'),('1.2.3-rc.12','rc')]:
    self.assertEqual(channel_for_version(version),channel)
@@ -266,13 +295,17 @@ exit 0
   for component in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']:
    body=ctl if component=='kee-route-managerctl' else '#!/bin/sh\nexit 0\n'
    (assets/(component+'-linux-'+arch)).write_text(body)
+  (assets/('router-deps-linux-'+arch+'.tar.gz')).write_bytes(b'synthetic signed dependency payload')
   subprocess.run([str(self.tool),'manifest','--version',version,'--channel',channel,'--base-url','https://github.com/jarymor-ux/kee-route-manager/releases/download/v'+version,'--dist',str(assets),'--out',str(assets/manifest_name),'--private',str(self.root/'private')],check=True)
   manifest=json.loads((assets/manifest_name).read_text())
   self.assertEqual(manifest['update_protocol'],1)
-  self.assertEqual({a['name'] for a in manifest['assets']},{'release-files.tar.gz'}|{c+'-linux-'+arch for c in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']})
+  self.assertEqual({a['name'] for a in manifest['assets']},{'release-files.tar.gz','router-deps-linux-'+arch+'.tar.gz'}|{c+'-linux-'+arch for c in ['kee-route-managerd','kee-route-managerctl','kee-route-manager-ui','kee-route-manager-launcher']})
   self.sign_checksums(assets)
   pub=base64.b64decode((self.root/'public').read_text().strip()+'===');pem=base64.b64encode(bytes.fromhex('302a300506032b6570032100')+pub).decode()
   bootstrap=ROOT.joinpath('install/bootstrap.sh').read_text().replace('@VERSION@',pinned_version).replace('@CHANNEL@',pinned_channel).replace('@PLATFORM@',platform).replace('@ARCH_DETECTION@',(ROOT/'install/common/architecture.sh').read_text()).replace('@PUBLIC_PEM@','-----BEGIN PUBLIC KEY-----\n'+pem+'\n-----END PUBLIC KEY-----')
+  # Native presence detection uses a private filesystem fixture, never the
+  # developer/router host's actual stack or another container test's /opt.
+  bootstrap=bootstrap.replace('/opt/sbin/xray',str(d/'native-opt/sbin/xray')).replace('/opt/sbin/xkeen',str(d/'native-opt/sbin/xkeen')).replace('/opt/etc/xray/configs',str(d/'native-opt/etc/xray/configs'))
   (d/'bootstrap.sh').write_text(bootstrap);(d/'config.yaml').write_text('private fixture');(d/'ui.yaml').write_text('private ui fixture')
   scripts={'id':'#!/bin/sh\necho 0\n','uname':'#!/bin/sh\necho x86_64\n','curl':'''#!/bin/sh
 while [ "$#" -gt 0 ]; do

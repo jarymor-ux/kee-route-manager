@@ -72,6 +72,14 @@ protocol=$(awk '/^  "update_protocol": / {gsub(/,/,"",$2);print $2}' "$MANIFEST"
 [ "$version" = "@VERSION@" ] && [ "$channel" = "$CHANNEL" ] && [ "$schema" = 1 ] && [ "$protocol" = 1 ] || fail 'signed manifest version/channel/schema/update protocol does not match pinned bootstrap'
 MODE=${KRM_MODE:-local-ui}
 case "$MODE" in core|local-ui|ui);; *) fail 'KRM_MODE must be core, local-ui or ui';; esac
+FRESH_XRAY=1
+for config_file in /opt/etc/xray/configs/*.json; do
+ if [ -e "$config_file" ] || [ -L "$config_file" ]; then FRESH_XRAY=0; break; fi
+done
+DEPS=
+if [ "$MODE" != ui ] && { [ ! -x /opt/sbin/xray ] || [ ! -x /opt/sbin/xkeen ] || [ "$FRESH_XRAY" = 1 ]; }; then
+ DEPS=router-deps-linux-$ARCH.tar.gz
+fi
 if [ "$NEED_CONFIG" = 1 ] && [ "$MODE" = ui ]; then
  fail 'KRM_MODE=ui requires KRM_CONFIG_FILE pointing to a prepared UI config; init-config generates controller configuration only'
 fi
@@ -86,7 +94,9 @@ for component in $components; do
  binary_bytes=$((binary_bytes + bytes))
 done
 archive_bytes=$(manifest_size release-files.tar.gz) || exit 1
-require_staging_space "$((archive_bytes + 2 * binary_bytes + 4194304))"
+dependency_bytes=0
+[ -z "$DEPS" ] || dependency_bytes=$(manifest_size "$DEPS") || exit 1
+require_staging_space "$((archive_bytes + 2 * binary_bytes + 2 * dependency_bytes + 4194304))"
 fetch release-files.tar.gz release-files.tar.gz
 verify_file release-files.tar.gz
 mkdir payload
@@ -98,7 +108,7 @@ tar -tvzf release-files.tar.gz > archive.entries || fail 'cannot list verified a
 if awk 'BEGIN {bad=0} !/^[d-]/ {bad=1} END {exit bad}' archive.entries; then :; else fail 'unsafe archive entry types'; fi
 extracted_bytes=$(awk '/^-/ {if ($3 !~ /^[0-9]+$/) exit 1; total+=$3} END {printf "%.0f\n",total}' archive.entries) || fail 'cannot determine payload extraction size'
 [ "$extracted_bytes" -le 209715200 ] || fail 'verified install payload expands beyond the supported limit'
-require_staging_space "$((extracted_bytes + 2 * binary_bytes + 4194304))"
+require_staging_space "$((extracted_bytes + 2 * binary_bytes + 2 * dependency_bytes + 4194304))"
 tar -xzf release-files.tar.gz -C payload
 mkdir -p payload/dist
 cp "$MANIFEST" "$MANIFEST.sig" SHA256SUMS SHA256SUMS.sig payload/dist/
@@ -111,6 +121,11 @@ for component in $components; do
  cp "$name" "payload/dist/$name"
  chmod 0755 "payload/dist/$name"
 done
+if [ -n "$DEPS" ]; then
+ fetch "$DEPS" "$DEPS"
+ verify_file "$DEPS"
+ cp "$DEPS" "payload/dist/$DEPS"
+fi
 # No downloaded program has been executed before signature and digest checks.
 # Ignore inherited internal staging state; only this verified wizard creates it.
 unset KRM_GENERATED_TLS_DIR
@@ -126,15 +141,17 @@ EOF
  fi
  CTL="payload/dist/kee-route-managerctl-linux-$ARCH"
  GENERATED_CONFIG="$WORK/generated-config.yaml"
+ set --
+ [ "$FRESH_XRAY" != 1 ] || set -- --fresh-xray
  if [ "$MODE" = local-ui ]; then
   [ -z "${KRM_UI_CONFIG_FILE:-}" ] && [ -z "${KRM_UPSTREAM_CA_FILE:-}" ] || fail 'configless local-ui generates its own UI config and local trust; use prepared controller/UI configs for custom settings'
   KRM_UI_CONFIG_FILE="$WORK/generated-ui.yaml"
   KRM_GENERATED_TLS_DIR="$WORK/controller-tls"
-  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" --ui-output "$KRM_UI_CONFIG_FILE" --tls-dir "$KRM_GENERATED_TLS_DIR" || fail 'configuration wizard was cancelled or failed'
+  "$CTL" init-config "$@" --platform "$PLATFORM" --output "$GENERATED_CONFIG" --ui-output "$KRM_UI_CONFIG_FILE" --tls-dir "$KRM_GENERATED_TLS_DIR" || fail 'configuration wizard was cancelled or failed'
   KRM_UPSTREAM_CA_FILE="$KRM_GENERATED_TLS_DIR/tls.crt"
   export KRM_UI_CONFIG_FILE KRM_GENERATED_TLS_DIR KRM_UPSTREAM_CA_FILE
  else
-  "$CTL" init-config --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
+  "$CTL" init-config "$@" --platform "$PLATFORM" --output "$GENERATED_CONFIG" || fail 'configuration wizard was cancelled or failed'
  fi
  [ -f "$GENERATED_CONFIG" ] || fail 'configuration wizard did not create a configuration'
  "$CTL" validate --config "$GENERATED_CONFIG" >/dev/null || fail 'configuration wizard produced an invalid configuration'
