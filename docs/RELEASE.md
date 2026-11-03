@@ -67,7 +67,7 @@ Five components are built for Linux amd64, arm64, armv7, mipsle and MIPS BE mips
 
 Bootstrap verifies native Ed25519 signatures and SHA-256 before executing any downloaded program. Controller installs receive the signed manifest and a complete daemon/UI/CLI binary set for their architecture, even when the UI is not enabled. The separately verified launcher authenticates the initial seed using its signed channel and seeds a private release slot. Seed import preserves the configured future update channel; installing a stable seed with an RC discovery preference, or the reverse, is allowed. Configless wizard defaults remain RC: select `stable` explicitly when enabling updates if that is the desired discovery preference. Prepared configuration is preserved. Installed component links select the active slot; the stable launcher executable is outside those slots and is not automatically replaced by an application update.
 
-## v2.0.5 missing-stack dependency packaging
+## v2.0.6 missing-stack dependency packaging
 
 This installer feature requires a new release; it is absent from immutable v2.0.4 assets. [install/router-dependencies.json](../install/router-dependencies.json) pins XKeen 2.1, Xray v26.10.31 for each architecture, and v2fly GeoSite snapshot `20261101074624`, with SHA-256, source identity and license references. `scripts/prepare-router-deps.py` runs on the trusted builder: it checks these fixed sources and creates deterministic per-architecture archives without executing downloaded programs. The release builder invokes it automatically before signing. An optional external `KRM_DEPENDENCY_CACHE` retains verified source downloads; cache files are still hash-checked. For a separate packaging check:
 
