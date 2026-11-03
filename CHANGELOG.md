@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0-rc.6 — 2026-11-03
+
+- Add global persistent subscription auto-update pause and one-shot refresh for mobile/WISP connections, with the same cached-node checks, cancellation, source-identity safeguards and saved-copy status as stable 2.0.6.
+- Preserve the pause across restart, settings reload and restore. Explicit refresh saves successful sources even in ordinary no-cache mode, retains good copies on failure and does not resume automatic updates or routing after restore.
+- Add authenticated API, cache/source concurrency and desktop/mobile UI regressions. Preserve the existing 2.1 candidate installer, browser transport and hardware limitations; no launcher-protocol or YAML-default changes.
+
 ## 2.1.0-rc.5 — 2026-10-29
 
 - Include the 2.0.4 stable subscription/name node preferences and aligned release documentation. Preserve the existing candidate installer and its experimental hardware, HTTP browser-transport and IPv4 limits.

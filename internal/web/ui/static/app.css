@@ -151,6 +151,10 @@ td strong { font-weight: 600; }
 .node-primary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .node-mobile-meta, .node-details { display: none; }
 .subscription-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.subscription-update-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
+.subscription-auto-update { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.subscription-auto-update input { width: 20px; height: 20px; }
+#subscription-update-status { max-width: 850px; margin-bottom: 20px; }
 .subscriptions-table { min-width: 830px; }
 .subscriptions-note { margin-top: 12px; }
 .subscriptions-note code { color: var(--text); }

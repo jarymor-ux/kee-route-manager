@@ -36,6 +36,13 @@ let statusData = null;
 let nodesData = [];
 const nodeSelectionSaving = new Set();
 let subscriptionData = [];
+let subscriptionStates = {};
+let subscriptionAutoUpdateEnabled = true;
+let subscriptionCacheEnabled = true;
+let subscriptionControlsLoaded = false;
+let subscriptionControlsError = '';
+let subscriptionControlPending = false;
+let subscriptionLoadGeneration = 0;
 let clientsData = [];
 let pollTimer;
 let pendingUpdate = null;
@@ -121,6 +128,7 @@ function showLogin() {
   pendingUpdate = null;
   updateState = null;
   subscriptionData = [];
+  clearSubscriptionControls();
   clearSubscriptionEditor();
   renderUpdate();
   openDialog('login', '#username', false);
@@ -206,7 +214,7 @@ async function loadStatus(force = false) {
 }
 
 function operationLabel(type) {
-  const labels = { benchmark: 'Тестирование', 'switch-slot': 'Переключение маршрута', 'switch-direct': 'Прямой маршрут', 'client-policy': 'Политика устройства', 'wake-on-lan': 'Wake-on-LAN', 'xray-restart': 'Перезапуск Xray', 'router-reboot': 'Перезагрузка', 'panel-dns': 'Локальный адрес панели' };
+  const labels = { benchmark: 'Тестирование', 'switch-slot': 'Переключение маршрута', 'switch-direct': 'Прямой маршрут', 'client-policy': 'Политика устройства', 'wake-on-lan': 'Wake-on-LAN', 'xray-restart': 'Перезапуск Xray', 'router-reboot': 'Перезагрузка', 'panel-dns': 'Локальный адрес панели', 'subscription-auto-update': 'Автообновление подписок', 'subscription-refresh': 'Обновление подписок' };
   return labels[type] || type;
 }
 function operationStatus(status) {
@@ -295,7 +303,7 @@ function renderSources(sources) {
     return `<article class="card">
       <div class="eyebrow">${esc(source.name || source.id)}</div>
       <div class="metric small-metric">${source.node_count || 0} узлов</div>
-      <div class="source-status">${badge(({ healthy: 'Доступен', unavailable: 'Недоступен', degraded: 'Деградация', recovering: 'Восстановление' })[source.status] || source.status || 'Нет данных', kind)}<span class="muted">${source.using_cache ? 'кэш' : 'сеть'}</span></div>
+      <div class="source-status">${badge(({ healthy: 'Доступен', unavailable: 'Недоступен', degraded: 'Деградация', recovering: 'Восстановление', cached: 'Сохранённая копия' })[source.status] || source.status || 'Нет данных', kind)}<span class="muted">${source.using_cache ? 'кэш' : 'сеть'}</span></div>
       <div class="sub">${esc(source.last_error || `Обновлено ${fmtAge(source.last_success_at)}`)}</div>
     </article>`;
   }).join('') : '<article class="card"><div class="sub">Источники ещё не загружены</div></article>';
@@ -312,15 +320,19 @@ function subscriptionEndpointLabel(raw) {
 }
 
 function renderSubscriptions(force = false) {
+  renderSubscriptionControls();
   const body = $('#subscriptions-body');
   const html = subscriptionData.map((source) => {
     const headerCount = source.header_count ?? Object.keys(source.headers || {}).length;
+    const savedAt = subscriptionStates[source.id]?.cache_fetched_at;
+    const timestamp = Date.parse(savedAt);
+    const saved = Number.isFinite(timestamp) && timestamp > 0;
     return `<tr>
       <td><strong>${esc(source.name || source.id)}</strong></td>
       <td><code>${esc(source.id)}</code></td>
       <td>${esc(source.url ? subscriptionEndpointLabel(source.url) : 'Скрыт')}</td>
       <td>${headerCount ? `${headerCount} шт.` : '—'}</td>
-      <td>${source.enabled ? badge('Включена', 'ok') : badge('Выключена')}</td>
+      <td>${source.enabled ? badge('Включена', 'ok') : badge('Выключена')}<div class="sub">${saved ? `Сохранено: ${esc(new Date(timestamp).toLocaleString('ru-RU'))}` : 'Нет сохранённой копии'}</div></td>
       <td>${can('subscriptions.manage') ? `<div class="subscription-actions">
         <button class="ghost compact subscription-edit" data-id="${esc(source.id)}">Изменить</button>
         <button class="danger-outline compact subscription-delete" data-id="${esc(source.id)}">Удалить</button>
@@ -339,16 +351,85 @@ function renderSubscriptions(force = false) {
   restoreWorkspaceFocus(body, focused, 'id', can('subscriptions.manage') ? '#add-subscription' : '#logout');
 }
 
-async function loadSubscriptions(force = false) {
+function clearSubscriptionControls() {
+  subscriptionStates = {};
+  subscriptionAutoUpdateEnabled = true;
+  subscriptionCacheEnabled = true;
+  subscriptionControlsLoaded = false;
+  subscriptionControlsError = '';
+  subscriptionControlPending = false;
+  subscriptionLoadGeneration++;
+  renderSubscriptionControls();
+}
+
+function renderSubscriptionControls() {
+  const disabled = !subscriptionControlsLoaded || subscriptionControlPending || !can('subscriptions.manage');
+  if (!subscriptionControlPending) $('#subscription-auto-update').checked = subscriptionAutoUpdateEnabled;
+  $('#subscription-auto-update').disabled = disabled;
+  $('#subscription-refresh').disabled = disabled;
+  $('#subscription-refresh').textContent = subscriptionControlPending ? 'Подождите…' : 'Обновить сейчас';
+  $('#subscription-update-status').textContent = !subscriptionControlsLoaded ? subscriptionControlsError : !subscriptionAutoUpdateEnabled
+    ? 'Автообновление приостановлено для всех подписок. Используются сохранённые копии независимо от возраста. Проверка узлов и переключение при отказах продолжают работать. «Обновить сейчас» не снимает паузу.'
+    : subscriptionCacheEnabled ? 'Автообновление включено для всех подписок. Успешные загрузки сохраняются в кэш.'
+      : 'Автообновление включено. Кэш для обычных тестов выключен; «Обновить сейчас» сохраняет копии для работы на паузе.';
+}
+
+async function loadSubscriptions(force = false, controlRefresh = false) {
+  if (subscriptionControlPending && !controlRefresh) return;
+  const generation = authGeneration;
+  const request = ++subscriptionLoadGeneration;
   try {
     const data = await api('/api/v1/subscriptions');
+    if (generation !== authGeneration || request !== subscriptionLoadGeneration) return;
     subscriptionData = Array.isArray(data.sources) ? data.sources : [];
+    subscriptionStates = data.states || {};
+    subscriptionAutoUpdateEnabled = data.auto_update_enabled !== false;
+    subscriptionCacheEnabled = data.cache_enabled !== false;
+    subscriptionControlsLoaded = true;
+    subscriptionControlsError = '';
     renderSubscriptions(force);
   } catch (error) {
-    subscriptionData = [];
-    renderSubscriptions(force);
+    if (generation !== authGeneration || request !== subscriptionLoadGeneration) return;
+    if (controlRefresh) {
+      subscriptionControlsLoaded = false;
+      subscriptionControlsError = 'Не удалось проверить режим автообновления. Обновите страницу или откройте раздел заново.';
+      renderSubscriptionControls();
+    }
     toast(error.message, true);
   }
+}
+
+async function updateSubscriptions(path, body, message) {
+  if (!can('subscriptions.manage') || !subscriptionControlsLoaded || subscriptionControlPending) return;
+  const generation = authGeneration;
+  subscriptionControlPending = true;
+  subscriptionLoadGeneration++;
+  renderSubscriptionControls();
+  try {
+    await api(path, { method: 'POST', body: JSON.stringify(body) });
+    if (generation !== authGeneration) return;
+    toast(message);
+  } catch (error) {
+    if (generation !== authGeneration) return;
+    toast(error.message, true);
+  } finally {
+    if (generation === authGeneration) {
+      // Partial refreshes retain successful caches; always reload their dates.
+      await loadSubscriptions(false, true);
+      if (generation === authGeneration) {
+        subscriptionControlPending = false;
+        renderSubscriptionControls();
+      }
+    }
+  }
+}
+
+function setSubscriptionAutoUpdate(enabled) {
+  return updateSubscriptions('/api/v1/subscriptions/auto-update', { enabled }, enabled ? 'Автообновление подписок включено' : 'Автообновление подписок приостановлено');
+}
+
+function refreshSubscriptions() {
+  return updateSubscriptions('/api/v1/subscriptions/refresh', {}, 'Подписки обновлены; режим автообновления сохранён');
 }
 
 function clearSubscriptionEditor() {
@@ -715,6 +796,8 @@ $('#tabs').onclick = (event) => {
 if (window.addEventListener) window.addEventListener('hashchange', () => navigate(window.location.hash.slice(1), false));
 
 $('#add-subscription').onclick = () => openSubscriptionEditor();
+$('#subscription-auto-update').onchange = () => setSubscriptionAutoUpdate($('#subscription-auto-update').checked);
+$('#subscription-refresh').onclick = refreshSubscriptions;
 $('#subscription-cancel').onclick = clearSubscriptionEditor;
 $('#subscription-hwid').onclick = addSubscriptionHWID;
 $('#subscription-form').addEventListener('submit', saveSubscription);
@@ -752,8 +835,10 @@ function acceptSession(data) {
     // A response started before revocation must not repopulate restricted data.
     authGeneration++;
     nodeSelectionSaving.clear();
+    subscriptionControlPending = false;
+    subscriptionLoadGeneration++;
     if (!can('subscriptions.manage')) clearSubscriptionEditor();
-    if (!can('subscriptions.view|subscriptions.manage')) { subscriptionData = []; $('#subscriptions-body').innerHTML = ''; }
+    if (!can('subscriptions.view|subscriptions.manage')) { subscriptionData = []; clearSubscriptionControls(); $('#subscriptions-body').innerHTML = ''; }
     else if (!can('subscriptions.manage')) {
       subscriptionData = subscriptionData.map(({ url, headers, ...source }) => ({ ...source, header_count: source.header_count ?? Object.keys(headers || {}).length }));
       renderSubscriptions(true);
@@ -784,6 +869,7 @@ function applyPermissions() {
     $(`#tabs .nav-group[data-group="${group}"]`).classList.toggle('hidden', !available);
   });
   renderUpdate();
+  renderSubscriptionControls();
 }
 
 async function loadPage(page) {

@@ -67,6 +67,11 @@
     <div><h2>Подписки</h2><p>Источники узлов. Изменения применяются сразу и сохраняются приватно.</p></div>
     <button data-permission="subscriptions.manage" id="add-subscription" class="primary">Добавить подписку</button>
   </div>
+  <div class="subscription-update-controls">
+    <label class="subscription-auto-update" data-permission="subscriptions.manage"><input id="subscription-auto-update" type="checkbox" role="switch" checked disabled aria-describedby="subscription-update-status">Автообновление подписок</label>
+    <button id="subscription-refresh" class="ghost" data-permission="subscriptions.manage" disabled>Обновить сейчас</button>
+  </div>
+  <p id="subscription-update-status" class="sub" role="status"></p>
   <div class="table-wrap"><table class="subscriptions-table"><thead><tr><th>Название</th><th>ID</th><th>Источник</th><th>Headers</th><th>Состояние</th><th>Действия</th></tr></thead><tbody id="subscriptions-body"></tbody></table></div>
   <p class="sub subscriptions-note">После первого изменения через UI управляемый список подписок хранится отдельно в state-dir и имеет приоритет над <code>subscriptions.sources</code> из YAML.</p>
 </section>
