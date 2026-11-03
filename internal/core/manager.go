@@ -39,6 +39,7 @@ type Manager struct {
 	wg                    sync.WaitGroup
 	mu                    sync.RWMutex
 	subscriptionMu        sync.Mutex
+	sourceRefreshMu       sync.Mutex
 	routeMu               sync.Mutex
 	lifeMu                sync.Mutex
 	admissionMu           sync.Mutex
@@ -80,6 +81,11 @@ type ClientsSnapshot struct {
 }
 
 func New(c config.Config, version string, st *store.Store, ops *operation.Coordinator, p platform.Adapter, xm tunnel.TunnelCore, fetch sourceFetcher, be benchmarkRunner) *Manager {
+	if st != nil {
+		if f, ok := fetch.(interface{ SetAutoUpdatePaused(bool) }); ok {
+			f.SetAutoUpdatePaused(st.State().SubscriptionUpdatesPaused)
+		}
+	}
 	return &Manager{cfg: c, version: version, store: st, ops: ops, platform: p, xray: xm, fetcher: fetch, bench: be}
 }
 func (m *Manager) Start(parent context.Context) {

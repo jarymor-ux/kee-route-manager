@@ -194,6 +194,87 @@ async function versionReloadChecks() {
   }
 }
 
+async function subscriptionUpdateChecks() {
+  const h = appHarness();
+  await new Promise(setImmediate);
+  h.run('authenticated = true; permissions = new Set(allPermissions); csrf = "fixture-csrf"');
+  assert.equal(h.run('operationLabel("subscription-auto-update")'), 'Автообновление подписок');
+  assert.equal(h.run('operationLabel("subscription-refresh")'), 'Обновление подписок');
+  h.run('renderSources({primary:{name:"Primary",status:"cached",using_cache:true,node_count:2,cache_fetched_at:"2026-10-01T00:00:00Z"}})');
+  assert(h.select('#sources').innerHTML.includes('Сохранённая копия'), 'overview must label paused subscription data as a saved copy');
+  assert(h.select('#sources').innerHTML.includes('badge warn'), 'saved subscription data must not imply provider health');
+  assert(!h.select('#sources').innerHTML.includes('Доступен') && !h.select('#sources').innerHTML.includes('badge ok'));
+  const snapshot = { sources: [{ id: 'primary', name: 'Primary', enabled: true }, { id: 'empty', enabled: true }], auto_update_enabled: false, cache_enabled: false,
+    states: { primary: { status: 'cached', using_cache: true, cache_fetched_at: '2026-10-01T00:00:00Z', node_count: 2 }, empty: { last_success_at: '2026-10-02T00:00:00Z' } } };
+  let refreshes = 0;
+  h.respond((url, options) => {
+    if (url.endsWith('/auto-update')) snapshot.auto_update_enabled = JSON.parse(options.body).enabled;
+    if (url.endsWith('/refresh')) refreshes++;
+    return { status: 200, ok: true, data: url.endsWith('/subscriptions') ? snapshot : { ok: true } };
+  });
+  await h.run('loadSubscriptions()');
+  assert.equal(h.select('#subscription-auto-update').checked, false, 'saved global pause must be shown');
+  assert.equal(h.select('#subscription-refresh').disabled, false, 'manual refresh remains available while paused');
+  assert(h.select('#subscription-update-status').textContent.includes('приостановлено'));
+  assert(h.select('#subscriptions-body').innerHTML.includes('Сохранено:'));
+  assert(h.select('#subscriptions-body').innerHTML.includes('Нет сохранённой копии'), 'download success alone must not imply a saved cache');
+  assert(!h.select('#subscriptions-body').innerHTML.includes('Доступен'), 'cached data must not claim provider health');
+  await h.run('refreshSubscriptions()');
+  assert.equal(refreshes, 1);
+  assert.equal(h.select('#subscription-auto-update').checked, false, 'one-time refresh must preserve pause');
+  const refresh = h.requests.find((r) => r.url.endsWith('/refresh'));
+  assert.equal(refresh.options.method, 'POST');
+  assert.equal(refresh.options.body, '{}');
+  assert.equal(refresh.options.headers['X-KRM-CSRF'], 'fixture-csrf');
+
+  let oldRead;
+  h.respond(() => new Promise((resolve) => { oldRead = resolve; }));
+  const staleRead = h.run('loadSubscriptions()');
+  await new Promise(setImmediate);
+  h.respond((url, options) => {
+    if (url.endsWith('/auto-update')) snapshot.auto_update_enabled = JSON.parse(options.body).enabled;
+    return { status: 200, ok: true, data: url.endsWith('/subscriptions') ? snapshot : { ok: true } };
+  });
+  await h.run('setSubscriptionAutoUpdate(true)');
+  oldRead({ status: 200, ok: true, data: { ...snapshot, auto_update_enabled: false } }); await staleRead;
+  assert.equal(snapshot.auto_update_enabled, true);
+  assert.equal(h.select('#subscription-auto-update').checked, true, 'an older list response must not overwrite a newer mode change');
+
+  let release;
+  h.respond(async (url) => {
+    if (url.endsWith('/refresh')) await new Promise((resolve) => { release = resolve; });
+    return { status: 200, ok: true, data: url.endsWith('/subscriptions') ? snapshot : { ok: true } };
+  });
+  const pending = h.run('refreshSubscriptions()');
+  await new Promise(setImmediate);
+  assert(h.select('#subscription-auto-update').disabled && h.select('#subscription-refresh').disabled, 'both controls must lock during an update');
+  const count = h.requests.length;
+  await h.run('refreshSubscriptions()');
+  await h.run('setSubscriptionAutoUpdate(false)');
+  assert.equal(h.requests.length, count, 'pending controls must not dispatch overlapping mutations');
+  h.run('acceptSession({permissions:["subscriptions.view"],csrf:"viewer-csrf"})');
+  release(); await pending;
+  assert.equal(h.select('#subscription-refresh').disabled, true, 'late completion must not enable a revoked control');
+  const viewerCount = h.requests.length;
+  await h.run('refreshSubscriptions()'); await h.run('setSubscriptionAutoUpdate(false)');
+  assert.equal(h.requests.length, viewerCount, 'viewers cannot update subscriptions');
+
+  h.run('permissions = new Set(allPermissions)');
+  h.respond((url) => ({ status: 200, ok: true, data: url.endsWith('/subscriptions') ? snapshot : { ok: true } }));
+  await h.run('loadSubscriptions()');
+  h.respond((url) => url.endsWith('/subscriptions') ? { status: 503, ok: false, data: { code: 'unavailable' } } : { status: 200, ok: true, data: { ok: true } });
+  await h.run('setSubscriptionAutoUpdate(false)');
+  assert.equal(h.select('#subscription-auto-update').disabled, true, 'an unconfirmed mode after a failed reload must not remain actionable');
+  assert(h.select('#subscription-update-status').textContent.includes('Не удалось'));
+
+  h.respond({ status: 200, ok: true, data: { sources: [] } });
+  await h.run('loadSubscriptions()');
+  assert.equal(h.select('#subscription-auto-update').checked, true, 'old response defaults to automatic updates');
+  h.run('showLogin()');
+  assert.equal(h.select('#subscription-refresh').disabled, true);
+  assert.equal(h.select('#subscription-update-status').textContent, '', 'logout must clear subscription control state');
+}
+
 async function subscriptionHWIDChecks() {
   const h = appHarness();
   await new Promise(setImmediate);
@@ -1231,6 +1312,7 @@ async function main() {
   await userManagementChecks();
   await appChecks();
   await versionReloadChecks();
+  await subscriptionUpdateChecks();
   await subscriptionHWIDChecks();
   await updateChecks();
   await updateTrialReconnectChecks();

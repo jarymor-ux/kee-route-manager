@@ -36,8 +36,12 @@ Panel sessions with `subscriptions.manage` can manage subscription sources at ru
 - `GET /api/v1/subscriptions` requires `subscriptions.view` or `subscriptions.manage`. Managers receive configured sources including URL and headers required by the editor; readers receive only ID, redacted name and enabled state. The response is marked `Cache-Control: no-store`; treat it as secret material.
 - `POST /api/v1/subscriptions/save` accepts one source object with `id`, `name`, `url`, `enabled` and `headers`. Existing IDs are replaced; new IDs are appended.
 - `POST /api/v1/subscriptions/delete` accepts `{ "id": "source-id" }`.
+- `POST /api/v1/subscriptions/auto-update` requires `subscriptions.manage` and an explicit `{ "enabled": false }` (pause all) or `{ "enabled": true }` (resume all). It persists the preference before changing live policy, cancels automatic downloads and discards obsolete benchmark results. It is available during a benchmark but refused during conflicting lifecycle work or unfinished routing reconciliation.
+- `POST /api/v1/subscriptions/refresh` requires `subscriptions.manage` and `{}`. It synchronously downloads all enabled sources once, ignoring automatic backoff and saving successful copies regardless of ordinary `cache_enabled`. The global pause is unchanged. A conflicting test/refresh returns `409`/`busy`. Failed providers return a sanitized operation error; successful sources and previous good copies remain saved. A fully successful refresh schedules a cache-only benchmark, subject to the separate automatic-routing pause.
 
-Mutation endpoints require the normal session, CSRF token and same-origin check. They run the same configuration validation as startup, so invalid IDs/URLs/headers, the source limit and deletion of the last configured source are rejected. Successful changes are persisted before becoming live and schedule a benchmark; errors returned to the browser never include upstream URLs, headers or persistence details.
+The GET response also includes `auto_update_enabled`, `cache_enabled` and `states` keyed by source ID for both managers and readers. `cache_fetched_at` and `cache_expires_at` describe actual matching saved copies; a zero timestamp means none is available. `cached` indicates a saved candidate, not a successful current provider request or a working VPN connection. Missing copies are `unavailable`. Copy dates are read without contacting providers. Both controls are also exposed on the owner-only Unix socket.
+
+Mutation endpoints require the normal session, CSRF token and same-origin check. Source save/delete run the same configuration validation as startup, so invalid IDs/URLs/headers, the source limit and deletion of the last configured source are rejected. Successful changes are persisted before becoming live and schedule a benchmark; errors returned to the browser never include upstream URLs, headers or persistence details.
 
 The optional browser HWID preset uses the existing `headers` object and source-store schema. It sends nothing until Save and retains an existing device identity. Request-header names are unique without regard to case. Clients must persist and reuse their chosen `X-HWID`; fetching never creates or rotates it. A provider rejection is reflected in the source's sanitized `last_error`, including explicit missing-HWID and device-limit diagnostics.
 
@@ -68,7 +72,7 @@ Login and `GET /api/v1/session` return `user` (`id`, `username`, `enabled`, `per
 | `vpn.view` | Status, nodes |
 | `vpn.control` | Benchmark, cancellation, Xray restart, slot/direct switch, node automatic-selection preferences |
 | `subscriptions.view` | Subscription list without URL or headers |
-| `subscriptions.manage` | Subscription editor including URL/headers, save and delete |
+| `subscriptions.manage` | Subscription editor including URL/headers, save/delete, global automatic-update pause/resume and one-shot refresh |
 | `router.view` | Current metrics and history; status platform/capabilities without VPN state |
 | `router.clients` | Devices and policies snapshot |
 | `router.policy` | Change device policy |
