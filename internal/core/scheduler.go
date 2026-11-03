@@ -53,6 +53,10 @@ func (m *Manager) sourceLoop() {
 	}
 }
 func (m *Manager) refreshSources() {
+	if m.store.State().SubscriptionUpdatesPaused || !m.sourceRefreshMu.TryLock() {
+		return
+	}
+	defer m.sourceRefreshMu.Unlock()
 	// Without caching, subscription downloads belong to benchmark admission.
 	// A separate poll would rotate provider credentials and perpetuate tests.
 	if !m.cfg.Subscriptions.CacheEnabled {

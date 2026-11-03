@@ -14,6 +14,12 @@ import (
 func (m *Manager) queueBenchmark(mode string) {
 	m.mu.Lock()
 	m.benchmarkQueueVersion++
+	// A one-shot refresh already saved the candidates for its pending test.
+	// Coalesced health work must not turn that test into another download.
+	// Explicit source edits still invalidate those candidates and take priority.
+	if m.benchmarkQueued && m.benchmarkQueueMode == "subscription-refresh" && mode != "subscription-change" {
+		mode = "subscription-refresh"
+	}
 	m.benchmarkQueueMode = mode
 	if m.benchmarkQueued {
 		m.mu.Unlock()
@@ -109,6 +115,7 @@ func (m *Manager) RestoreOriginalXray(ctx context.Context) error {
 		defer m.routeMu.Unlock()
 		next := model.NewState(m.version, m.cfg.Xray.SlotTagPrefix, m.cfg.Pool.Size)
 		next.AutomaticRoutingPaused = true
+		next.SubscriptionUpdatesPaused = m.store.State().SubscriptionUpdatesPaused
 		next.Pool = []model.Slot{}
 		next.Sources = m.store.State().Sources
 		next.ExcludedNodeIDs = m.store.State().ExcludedNodeIDs

@@ -26,12 +26,17 @@ cleanup(){
  if [ "$result" != 0 ] && [ -f "$STAGE/publications" ]; then
   while read -r temporary target; do
    # Hard-link identity proves this is our published file, even on failure.
+   # Entware ash supports -ef; inode identity is required for safe rollback.
+   # shellcheck disable=SC3013
    if [ "$temporary" -ef "$target" ]; then rm -f "$target"; fi
   done < "$STAGE/publications"
  fi
+ # Entware ash supports inode identity checks against held directory FDs.
+ # shellcheck disable=SC3013
  if [ "$result" != 0 ] && [ "$new_xkeen_tree" = 1 ] && [ /opt/sbin/.xkeen -ef "/proc/$$/fd/4" ]; then
   rm -rf /opt/sbin/.xkeen
  fi
+ # shellcheck disable=SC3013
  if [ "$result" != 0 ] && [ "$new_config_dir" = 1 ] && [ "$config_dir" -ef "/proc/$$/fd/3" ]; then
   rmdir "$config_dir" 2>/dev/null || true
  fi

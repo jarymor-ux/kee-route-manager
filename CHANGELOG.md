@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.6 — 2026-11-03
+
+- Add one global persistent subscription auto-update pause and a one-shot refresh in VPN → Subscriptions. Keep health checks, node testing and failover working from matching saved copies regardless of age; cancel obsolete automatic downloads and protect their cache commits.
+- Save explicitly refreshed subscriptions even in ordinary no-cache mode, retain good copies on provider errors and show actual saved dates/missing copies. Preserve pause across restart, settings reload and restore; do not reuse caches after URL/header changes.
+- Restrict both controls to subscription managers with CSRF, origin checks, local socket dispatch and audited actions. Preserve existing defaults, launcher protocol and experimental hardware limits.
+- Retain unpublished v2.0.5 without moving/reusing its tag; scope ShellCheck annotations to the Entware-supported inode comparisons required for safe installer rollback.
+
 ## 2.0.5 — 2026-11-01
 
 - Install missing XKeen/Xray from architecture-specific dependency archives covered by the same signed immutable release. Pin upstream sources and licenses; use soft-float Xray on MIPS and remove installer-only migration/cleanup from the bundled XKeen runtime.
