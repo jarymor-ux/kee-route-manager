@@ -114,6 +114,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/v1/subscriptions", s.protect(s.subscriptions, false))
 	mux.HandleFunc("/api/v1/subscriptions/save", s.protect(s.saveSubscription, true))
 	mux.HandleFunc("/api/v1/subscriptions/delete", s.protect(s.deleteSubscription, true))
+	mux.HandleFunc("/api/v1/subscriptions/auto-update", s.protect(s.subscriptionAutoUpdate, true))
+	mux.HandleFunc("/api/v1/subscriptions/refresh", s.protect(s.subscriptionRefresh, true))
 	mux.HandleFunc("/api/v1/events", s.protect(s.events, false))
 	mux.HandleFunc("/api/v1/users", s.protect(s.listUsers, false))
 	mux.HandleFunc("/api/v1/users/save", s.protect(s.saveUser, true))
@@ -403,11 +405,11 @@ func (s *Server) subscriptions(w http.ResponseWriter, r *http.Request, session a
 			for _, source := range sources {
 				public = append(public, map[string]any{"id": source.ID, "name": redact.Text(source.Name), "enabled": source.Enabled})
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"sources": public})
+			writeJSON(w, http.StatusOK, s.subscriptionResponse(r.Context(), public))
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
+	writeJSON(w, http.StatusOK, s.subscriptionResponse(r.Context(), sources))
 }
 func (s *Server) saveSubscription(w http.ResponseWriter, r *http.Request, _ auth.Session) {
 	manager, ok := s.mgr.(subscriptionController)
@@ -723,6 +725,9 @@ func (s *Server) LocalHandler() http.Handler {
 	register("/api/v1/status", http.MethodGet, s.status)
 	register("/api/v1/nodes", http.MethodGet, s.nodes)
 	register("/api/v1/nodes/auto-select", http.MethodPost, s.nodeAutoSelect)
+	register("/api/v1/subscriptions", http.MethodGet, s.subscriptions)
+	register("/api/v1/subscriptions/auto-update", http.MethodPost, s.subscriptionAutoUpdate)
+	register("/api/v1/subscriptions/refresh", http.MethodPost, s.subscriptionRefresh)
 	register("/api/v1/actions/benchmark", http.MethodPost, s.benchmark)
 	register("/api/v1/actions/benchmark/cancel", http.MethodPost, s.cancelBenchmark)
 	register("/api/v1/actions/switch", http.MethodPost, s.switchSlot)

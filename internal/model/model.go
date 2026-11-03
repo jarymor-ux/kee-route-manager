@@ -39,6 +39,7 @@ type Measurement struct {
 	CheckedAt  time.Time `json:"checked_at"`
 }
 type SourceState struct {
+	CacheFetchedAt      time.Time `json:"cache_fetched_at,omitempty"`
 	ID                  string    `json:"id"`
 	Name                string    `json:"name"`
 	Status              string    `json:"status"`
@@ -75,33 +76,34 @@ type BenchmarkSummary struct {
 	Results     []Measurement `json:"results,omitempty"`
 }
 type State struct {
-	SchemaVersion          int                    `json:"schema_version"`
-	Version                string                 `json:"version"`
-	UpdatedAt              time.Time              `json:"updated_at"`
-	StartedAt              time.Time              `json:"started_at"`
-	ActiveSlot             int                    `json:"active_slot"`
-	ActiveNodeID           string                 `json:"active_node_id,omitempty"`
-	ActiveSince            time.Time              `json:"active_since,omitempty"`
-	DirectMode             bool                   `json:"direct_mode"`
-	AutomaticRoutingPaused bool                   `json:"automatic_routing_paused"`
-	ConsecutiveFailures    int                    `json:"consecutive_failures"`
-	ConsecutiveSuccess     int                    `json:"consecutive_success"`
-	LastHealthAt           time.Time              `json:"last_health_at,omitempty"`
-	LastHealthClass        string                 `json:"last_health_class,omitempty"`
-	LastHealthMessage      string                 `json:"last_health_message,omitempty"`
-	LastSwitchAt           time.Time              `json:"last_switch_at,omitempty"`
-	LastSwitchReason       string                 `json:"last_switch_reason,omitempty"`
-	Pool                   []Slot                 `json:"pool"`
-	Measurements           map[string]Measurement `json:"measurements"`
-	ExcludedNodeIDs        map[string]bool        `json:"excluded_node_ids,omitempty"`
-	NodeAutoSelect         map[string]bool        `json:"node_auto_select,omitempty"`
-	LegacyNodeSources      map[string][]string    `json:"legacy_node_sources,omitempty"`
-	Sources                map[string]SourceState `json:"sources"`
-	LastBenchmark          BenchmarkSummary       `json:"last_benchmark"`
-	XrayConfigured         bool                   `json:"xray_configured"`
-	XrayConfigHash         string                 `json:"xray_config_hash,omitempty"`
-	XrayGeneration         int64                  `json:"xray_generation"`
-	XrayLastError          string                 `json:"xray_last_error,omitempty"`
+	SubscriptionUpdatesPaused bool                   `json:"subscription_updates_paused,omitempty"`
+	SchemaVersion             int                    `json:"schema_version"`
+	Version                   string                 `json:"version"`
+	UpdatedAt                 time.Time              `json:"updated_at"`
+	StartedAt                 time.Time              `json:"started_at"`
+	ActiveSlot                int                    `json:"active_slot"`
+	ActiveNodeID              string                 `json:"active_node_id,omitempty"`
+	ActiveSince               time.Time              `json:"active_since,omitempty"`
+	DirectMode                bool                   `json:"direct_mode"`
+	AutomaticRoutingPaused    bool                   `json:"automatic_routing_paused"`
+	ConsecutiveFailures       int                    `json:"consecutive_failures"`
+	ConsecutiveSuccess        int                    `json:"consecutive_success"`
+	LastHealthAt              time.Time              `json:"last_health_at,omitempty"`
+	LastHealthClass           string                 `json:"last_health_class,omitempty"`
+	LastHealthMessage         string                 `json:"last_health_message,omitempty"`
+	LastSwitchAt              time.Time              `json:"last_switch_at,omitempty"`
+	LastSwitchReason          string                 `json:"last_switch_reason,omitempty"`
+	Pool                      []Slot                 `json:"pool"`
+	Measurements              map[string]Measurement `json:"measurements"`
+	ExcludedNodeIDs           map[string]bool        `json:"excluded_node_ids,omitempty"`
+	NodeAutoSelect            map[string]bool        `json:"node_auto_select,omitempty"`
+	LegacyNodeSources         map[string][]string    `json:"legacy_node_sources,omitempty"`
+	Sources                   map[string]SourceState `json:"sources"`
+	LastBenchmark             BenchmarkSummary       `json:"last_benchmark"`
+	XrayConfigured            bool                   `json:"xray_configured"`
+	XrayConfigHash            string                 `json:"xray_config_hash,omitempty"`
+	XrayGeneration            int64                  `json:"xray_generation"`
+	XrayLastError             string                 `json:"xray_last_error,omitempty"`
 }
 
 func NewState(version, prefix string, size int) State {

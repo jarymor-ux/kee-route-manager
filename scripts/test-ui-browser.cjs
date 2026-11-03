@@ -21,7 +21,7 @@ function settingsFixture() {
     pool:{provider_diversity:{enabled:false,max_per_provider:1}},
   };
 }
-const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle', sources:sourceFixture(),users:usersFixture(),activeSlot:0,excluded:new Set() };
+const state = { permissions:[...permissions], logged:true, revision:'fixture-original', settings:settingsFixture(), policyVersion:0, requests:[], saves:[], panelStatus:'idle', sources:sourceFixture(),subscriptionAutoUpdate:true,subscriptionStates:{},users:usersFixture(),activeSlot:0,excluded:new Set() };
 const now = () => new Date().toISOString();
 const metrics = () => ({cpu_percent:24,ram_percent:38,wan_connected:true,wan_name:'ISP',wan_ip:'192.0.2.10',wan_description:'Ethernet',traffic_available:true,rx_mbps:18.4,tx_mbps:2.1,updated_at:now(),temperature_c:42,uptime_seconds:86410,ports:[{id:'LAN 1',link:'up',speed:'1000 Мбит/с'}]});
 const nodes = [
@@ -42,7 +42,9 @@ function fakeAPI(url,method,body) {
   if(route === '/api/v1/router/clients') return {updated_at:now(),value:[{name:`Workstation ${state.policyVersion}`,mac:'02:00:00:00:00:01',ip:'192.168.1.2',active:true,connection_policy:state.policyVersion%2?'Default route':'XKeen',link:'LAN'}]};
   if(route === '/api/v1/router/metrics') return metrics();
   if(route === '/api/v1/router/metrics/history') return {samples:[1200000,180000,175000,50000,45000].map((age,i)=>({...metrics(),cpu_percent:i*10,ram_percent:40,updated_at:new Date(Date.now()-age).toISOString()}))};
-  if(route === '/api/v1/subscriptions') return {sources:state.sources};
+  if(route === '/api/v1/subscriptions') return {sources:state.sources,auto_update_enabled:state.subscriptionAutoUpdate,cache_enabled:state.settings.subscriptions.cache_enabled,states:state.subscriptionStates};
+  if(route === '/api/v1/subscriptions/auto-update') {state.subscriptionAutoUpdate=JSON.parse(body).enabled;return {ok:true};}
+  if(route === '/api/v1/subscriptions/refresh') {for(const source of state.sources) if(source.enabled)state.subscriptionStates[source.id]={status:'cached',using_cache:true,cache_fetched_at:now(),node_count:3};return {ok:true};}
   if(route === '/api/v1/subscriptions/save') {const source=JSON.parse(body);state.sources=state.sources.filter(item=>item.id!==source.id).concat(source);return {ok:true};}
   if(route === '/api/v1/subscriptions/delete') {state.sources=state.sources.filter(item=>item.id!==JSON.parse(body).id);return {ok:true};}
   if(route === '/api/v1/users') return {users:state.users,permissions,roles:{admin:permissions,viewer:['vpn.view','router.view']}};
@@ -85,7 +87,7 @@ async function main() {
   const browser=await chromium.launch({headless:true});
   try {
     for(const width of [1440,390,320]) for(const scheme of ['light','dark']) {
-      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.users=usersFixture();state.activeSlot=0;state.excluded.clear();state.excluded.add('locked-off');
+      state.logged=true;state.permissions=[...permissions];state.settings=settingsFixture();state.revision='fixture-original';state.policyVersion=0;state.panelStatus='idle';state.sources=sourceFixture();state.subscriptionAutoUpdate=true;state.subscriptionStates={};state.users=usersFixture();state.activeSlot=0;state.excluded.clear();state.excluded.add('locked-off');
       const context=await browser.newContext({viewport:{width,height:width<761?844:1000},colorScheme:scheme,serviceWorkers:'block'});
       const page=await context.newPage(); const errors=[];
       page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});page.on('dialog',dialog=>dialog.accept());
@@ -121,7 +123,21 @@ async function main() {
       state.permissions=[...permissions];await page.evaluate(()=>poll());
       if(width<761){await page.locator('.node-details summary').first().click();assert(await page.locator('.node-details').first().getAttribute('open')!==null);}
       await noOverflow(page,`${width}/${scheme} nodes`);
-      await navigate(page,'subscriptions',width);await page.locator('#add-subscription').click();await page.locator('#subscription-modal').waitFor({state:'visible'});
+      await navigate(page,'subscriptions',width);
+      const autoUpdate=page.locator('#subscription-auto-update');await autoUpdate.waitFor();await autoUpdate.uncheck();
+      await page.waitForFunction(()=>!document.querySelector('#subscription-auto-update').disabled);
+      assert.equal(await autoUpdate.isChecked(),false,'global subscription pause was not retained');
+      assert((await page.locator('#subscription-update-status').textContent()).includes('приостановлено'));
+      assert((await page.locator('#subscriptions-body').textContent()).includes('Нет сохранённой копии'));
+      await page.locator('#subscription-refresh').click();await page.waitForFunction(()=>!document.querySelector('#subscription-refresh').disabled);
+      assert.equal(await autoUpdate.isChecked(),false,'manual refresh resumed automatic subscription downloads');
+      assert((await page.locator('#subscriptions-body').textContent()).includes('Сохранено:'));
+      await page.reload();await page.locator('#subscription-refresh').waitFor();await page.waitForFunction(()=>!document.querySelector('#subscription-refresh').disabled);await page.evaluate(()=>clearInterval(pollTimer));
+      assert.equal(await autoUpdate.isChecked(),false,'reload lost the persisted global pause');
+      await autoUpdate.focus();await page.evaluate(()=>loadSubscriptions());assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-auto-update','background metadata refresh lost global switch focus');
+      await noOverflow(page,`${width}/${scheme} subscriptions`);
+      await page.screenshot({path:path.join(screenshots,`${width}-${scheme}-subscriptions.png`),fullPage:true});
+      await page.locator('#add-subscription').click();await page.locator('#subscription-modal').waitFor({state:'visible'});
       assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-id');assert.equal(await page.locator('main').evaluate(el=>el.inert),true);
       await page.locator('#subscription-modal button[type="submit"]').focus();await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'subscription-id');
       await page.keyboard.press('Escape');assert(await page.locator('#subscription-modal').evaluate(el=>el.classList.contains('hidden')));assert.equal(await page.evaluate(()=>document.activeElement.id),'add-subscription');

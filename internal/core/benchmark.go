@@ -156,7 +156,17 @@ func (m *Manager) runBenchmark(reservation *benchmarkReservation, mode, source s
 	_ = h.Update("subscriptions", 0, len(m.SubscriptionSources()), "fetching subscriptions")
 	beforeFetch := m.store.State()
 	forceFetch := mode != "emergency"
-	fetched = m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
+	if mode == "subscription-refresh" {
+		if f, ok := m.fetcher.(interface {
+			FetchCached(context.Context, map[string]model.SourceState) subscription.Result
+		}); ok {
+			fetched = f.FetchCached(ctx, beforeFetch.Sources)
+		} else {
+			return finish(errors.New("subscription cache management unavailable"))
+		}
+	} else {
+		fetched = m.fetcher.FetchAll(ctx, beforeFetch.Sources, forceFetch)
+	}
 	m.subscriptionMu.Lock()
 	if m.sourcesVersion != sourcesVersion {
 		m.subscriptionMu.Unlock()

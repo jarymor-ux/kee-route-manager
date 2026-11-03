@@ -30,6 +30,12 @@ type Fetcher struct {
 	now         func() time.Time
 	sourceStore *SourceStore
 	owner       *Fetcher
+	paused      bool
+	cacheOnly   bool
+	explicit    bool
+	generation  uint64
+	nextFetch   uint64
+	downloads   map[uint64]context.CancelFunc
 }
 type Result struct {
 	Nodes  []model.Node
@@ -82,14 +88,65 @@ func (f *Fetcher) ReplaceSources(sources []config.Source) error {
 }
 
 func (f *Fetcher) FetchAll(ctx context.Context, prev map[string]model.SourceState, force bool) Result {
-	f.mu.RLock()
+	return f.fetch(ctx, prev, force, false, false)
+}
+
+// SetAutoUpdatePaused cancels automatic downloads and invalidates their cache
+// commits before returning. Explicit refreshes remain operator-authorized.
+func (f *Fetcher) SetAutoUpdatePaused(paused bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.paused == paused {
+		return
+	}
+	f.paused = paused
+	f.generation++
+	for _, cancel := range f.downloads {
+		cancel()
+	}
+}
+
+// RefreshAll performs one explicit download, ignoring automatic retry backoff.
+// It saves usable responses even when ordinary no-cache mode is configured.
+func (f *Fetcher) RefreshAll(ctx context.Context, prev map[string]model.SourceState) Result {
+	return f.fetch(ctx, prev, true, true, false)
+}
+
+// FetchCached never contacts a provider and does not reject a copy for age.
+func (f *Fetcher) FetchCached(ctx context.Context, prev map[string]model.SourceState) Result {
+	return f.fetch(ctx, prev, false, false, true)
+}
+
+func (f *Fetcher) fetch(ctx context.Context, prev map[string]model.SourceState, force, explicit, cacheOnly bool) Result {
+	f.mu.Lock()
 	cfg := f.cfg
 	cfg.Sources = cloneSources(f.cfg.Sources)
-	snapshot := &Fetcher{cfg: cfg, backoff: f.backoff, dir: f.dir, client: f.client, now: f.now, owner: f}
-	f.mu.RUnlock()
+	cacheOnly = cacheOnly || (f.paused && !explicit)
+	if explicit || cacheOnly {
+		cfg.CacheEnabled = true
+	}
+	snapshot := &Fetcher{cfg: cfg, backoff: f.backoff, dir: f.dir, client: f.client, now: f.now, owner: f, cacheOnly: cacheOnly, explicit: explicit, generation: f.generation}
+	if !explicit && !cacheOnly {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		f.nextFetch++
+		id := f.nextFetch
+		if f.downloads == nil {
+			f.downloads = map[uint64]context.CancelFunc{}
+		}
+		f.downloads[id] = cancel
+		owner := f
+		defer func() {
+			cancel()
+			owner.mu.Lock()
+			delete(owner.downloads, id)
+			owner.mu.Unlock()
+		}()
+	}
+	f.mu.Unlock()
 	// Downloads use an immutable snapshot; replacing sources never waits for I/O.
 	f = snapshot
-	if f.cfg.CacheEnabled {
+	if f.cfg.CacheEnabled && !f.cacheOnly {
 		_ = os.MkdirAll(f.dir, 0700)
 	}
 	r := Result{States: map[string]model.SourceState{}}
@@ -153,17 +210,35 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	st.Name = s.Name
 	st.UsingCache = false
 	st.CacheExpiresAt = time.Time{}
-	if f.cfg.CacheEnabled && !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering") {
+	if f.cacheOnly {
+		xs, c, err := f.loadSource(s)
+		st.CacheFetchedAt = time.Time{}
+		st.NodeCount = 0
+		if err != nil {
+			st.Status = "unavailable"
+			st.LastError = "no saved subscription for the current source; refresh explicitly"
+			return nil, st, errors.New(st.LastError)
+		}
+		st.Status = "cached"
+		st.UsingCache = true
+		st.CacheFetchedAt = c.FetchedAt
+		st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
+		st.NodeCount = len(xs)
+		return xs, st, nil
+	}
+	if f.cfg.CacheEnabled && !force && !old.LastSuccessAt.IsZero() && now.Before(old.LastSuccessAt.Add(f.cfg.RefreshInterval.Duration)) && (old.Status == "healthy" || old.Status == "recovering" || old.Status == "cached") {
 		if xs, c, e := f.loadSource(s); e == nil && now.Before(c.FetchedAt.Add(f.cfg.CacheTTL.Duration)) {
 			st.UsingCache = true
+			st.CacheFetchedAt = c.FetchedAt
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
 			return xs, st, nil
 		}
 	}
-	if f.cfg.CacheEnabled && !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
+	if f.cfg.CacheEnabled && !f.explicit && !old.NextRetryAt.IsZero() && now.Before(old.NextRetryAt) {
 		if xs, c, e := f.loadSource(s); e == nil {
 			st.UsingCache = true
+			st.CacheFetchedAt = c.FetchedAt
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
 			if now.Before(st.CacheExpiresAt) {
@@ -204,6 +279,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 				st.NextRetryAt = time.Time{}
 				st.UsingCache = false
 				if f.cfg.CacheEnabled {
+					st.CacheFetchedAt = now
 					st.CacheExpiresAt = now.Add(f.cfg.CacheTTL.Duration)
 				}
 				return xs, st, nil
@@ -230,6 +306,7 @@ func (f *Fetcher) one(ctx context.Context, s config.Source, old model.SourceStat
 	if f.cfg.CacheEnabled {
 		if xs, c, e := f.loadSource(s); e == nil {
 			st.UsingCache = true
+			st.CacheFetchedAt = c.FetchedAt
 			st.NodeCount = len(xs)
 			st.CacheExpiresAt = c.FetchedAt.Add(f.cfg.CacheTTL.Duration)
 			if now.Before(st.CacheExpiresAt) {
@@ -345,6 +422,9 @@ func (f *Fetcher) save(c cache) error {
 	if f.owner != nil {
 		f.owner.mu.RLock()
 		defer f.owner.mu.RUnlock()
+		if !f.explicit && (f.owner.paused || f.generation != f.owner.generation) {
+			return errors.New("subscription update policy changed before cache commit")
+		}
 		current := false
 		for _, source := range f.owner.cfg.Sources {
 			if source.ID == c.SourceID && sourceIdentity(source) == c.Identity {
